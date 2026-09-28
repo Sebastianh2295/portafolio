@@ -192,6 +192,45 @@ button.kpi:hover { border-color: var(--azul); }
 .btn.peligro-suave:hover { background: #fbe3e0; }
 .nowrap { white-space: nowrap; }
 .version { font-size: 11px; color: var(--texto2); }
+/* ---- Dashboard v9 ---- */
+.grafico-tend { position: relative; height: 300px; width: 100%; }
+.grid3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+.salud-barra { display: flex; gap: 2px; height: 28px; border-radius: 6px; overflow: hidden; background: #fff; }
+.salud-seg { min-width: 6px; }
+.salud-leyenda { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-top: 10px; }
+.salud-item { display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 14px; background: none; border: 0; padding: 2px 0; cursor: pointer; color: var(--texto); }
+.salud-item b { font-size: 18px; color: var(--texto); }
+.balas { display: flex; flex-direction: column; }
+.bala { display: grid; grid-template-columns: minmax(150px, 1.3fr) minmax(160px, 3fr) 110px 70px 100px; gap: 12px; align-items: center; padding: 8px 4px; border-bottom: 1px solid #eef1f5; }
+.bala:hover { background: #f4f8fd; }
+.bala-nombre { display: flex; flex-direction: column; min-width: 0; }
+.bala-nombre b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bala-pista { position: relative; height: 14px; background: #e8edf4; border-radius: 4px; }
+.bala-real { position: absolute; left: 0; top: 0; bottom: 0; background: var(--azul); border-radius: 4px; }
+.bala-real.excede { background: var(--rojo); }
+.bala-plan { position: absolute; top: -4px; width: 3px; height: 22px; background: var(--dorado); border-radius: 2px; transform: translateX(-1px); }
+.bala-num { white-space: nowrap; font-size: 13px; }
+.bala-desv { font-size: 13px; font-weight: bold; text-align: right; white-space: nowrap; }
+.bala-desv.bien { color: #1e5e3a; } .bala-desv.alerta { color: #8a6500; } .bala-desv.mal { color: var(--rojo); }
+.bala-sem { font-size: 13px; white-space: nowrap; }
+.balas.compacta .bala { grid-template-columns: minmax(140px, 1.4fr) minmax(120px, 2fr) 100px; }
+.texto-rojo { color: var(--rojo); }
+.lg-tick { width: 3px; height: 14px; background: var(--dorado); border-radius: 2px; }
+.barras { display: flex; flex-direction: column; gap: 8px; }
+.barra-fila { display: grid; grid-template-columns: minmax(90px, 45%) 1fr 34px; gap: 10px; align-items: center; font-size: 13px; }
+.barra-et { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.barra-pista { height: 14px; background: #eef1f5; border-radius: 4px; overflow: hidden; }
+.barra-val { display: block; height: 100%; border-radius: 0 4px 4px 0; }
+.barra-num { text-align: right; font-weight: bold; }
+@media (max-width: 760px) {
+  .bala { grid-template-columns: 1fr auto; gap: 4px 10px; }
+  .bala-pista { grid-column: 1 / -1; order: 3; }
+  .bala-desv, .bala-sem { display: none; }
+  .balas.compacta .bala { grid-template-columns: 1fr auto; }
+  .filtro select, .filtro input { flex: none; }
+  .kpis { grid-template-columns: 1fr 1fr; }
+  .kpi-v { font-size: 22px; }
+}
 .enlace-edicion { margin-top: 6px; }
 .celda-acta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 .modal-caja.visor { max-width: 960px; }
@@ -212,7 +251,8 @@ button.kpi:hover { border-color: var(--azul); }
   .opc { display: none; }
   .barra .quien { width: 100%; order: -1; margin-left: 0; }
   .barra-filtros { padding: 8px 10px; }
-  .filtro, .filtro select { min-width: 0; flex: 1 1 130px; }
+  .filtro { min-width: 0; flex: 1 1 130px; }
+  .filtro select { min-width: 0; }
   .filtro-info { margin-left: 0; width: 100%; padding-bottom: 0; }
   .comp-cab { display: none; }
   .comp-fila { grid-template-columns: 1fr 1fr; }

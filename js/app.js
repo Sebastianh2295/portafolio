@@ -10,7 +10,7 @@
   };
   const COLORES = { azul: "#104994", azulClaro: "#6BBAEF", dorado: "#D6964A", Verde: "#2E8B57", Amarillo: "#E0A800", Rojo: "#C0392B" };
   const VISTAS = [
-    { id: "dashboard", t: "Inicio y dashboard" },
+    { id: "dashboard", t: "Dashboard" },
     { id: "avances", t: "Avances de la semana" },
     { id: "seguimiento", t: "Seguimiento y compromisos" },
     { id: "proyectos", t: "Proyectos" },
@@ -22,9 +22,9 @@
 
   // Ayuda corta de cada pantalla: para qué sirve y cómo se usa.
   const AYUDAS = {
-    dashboard: ["Aquí ves el estado del portafolio y lo que requiere atención hoy.",
-      "Haz clic en un indicador para ver los proyectos que lo componen.",
-      "En «Pendientes» están los seguimientos por reportar, los compromisos vencidos y los hitos atrasados."],
+    dashboard: ["Estado del portafolio de un vistazo: salud, avance, presupuesto y distribución de los proyectos.",
+      "Usa los filtros de arriba para ver un PM, un proyecto, un estado o una metodología.",
+      "Haz clic en un indicador, en un color del semáforo o en un proyecto para ir al detalle."],
     avances: ["Resume lo reportado en la semana elegida: avance, logros, próximos pasos, bloqueos y compromisos.",
       "Abajo aparecen los proyectos semanales que aún no reportan.",
       "Haz clic en una fila para abrir el proyecto."],
@@ -257,51 +257,112 @@
     S.charts.push(new Chart(canvas, config));
   }
 
-  // ---------- Inicio y dashboard ----------
+  // ---------- Dashboard ----------
+  // Barras horizontales en HTML: etiqueta, barra y valor siempre visibles (no depende solo del color).
+  function barrasH(filas, { max, formato = (v) => v, color = COLORES.azul } = {}) {
+    const tope = max || Math.max(1, ...filas.map((f) => f.valor));
+    return `<div class="barras">${filas.map((f) => `<div class="barra-fila${f.pid ? " clic" : ""}"${f.pid ? ` data-pid="${esc(f.pid)}"` : ""} title="${esc(f.etiqueta)}: ${esc(formato(f.valor))}">
+      <span class="barra-et">${esc(f.etiqueta)}</span>
+      <span class="barra-pista"><span class="barra-val" style="width:${Math.max(f.valor ? 2 : 0, (f.valor / tope) * 100)}%;background:${f.color || color}"></span></span>
+      <span class="barra-num">${esc(formato(f.valor))}</span></div>`).join("") || vacio("Sin datos en la selección.")}</div>`;
+  }
+
+  // Avance promedio del portafolio semana a semana (último reporte de cada proyecto hasta esa semana).
+  function tendenciaAvance(activos, semanas = 12) {
+    const hoy = R.hoyISO();
+    const puntos = [];
+    for (let k = semanas - 1; k >= 0; k--) {
+      const corte = R.sumarDias(hoy, -7 * k);
+      const valores = activos.map((p) => {
+        const segs = R.seguimientosDe(p.ID_Proyecto, S.datos.Seguimientos).filter((s) => s.Fecha_Corte && s.Fecha_Corte <= corte && s.Avance_Real !== "");
+        return segs.length ? Number(segs[segs.length - 1].Avance_Real) || 0 : null;
+      }).filter((v) => v !== null);
+      puntos.push({ semana: R.semanaISO(corte), valor: valores.length ? Math.round(valores.reduce((a, b) => a + b, 0) / valores.length) : null, n: valores.length });
+    }
+    return puntos;
+  }
+
   function vDashboard(el) {
     const ps = filtrados();
-    const ids = new Set(ps.map((p) => p.ID_Proyecto));
     const k = R.kpis(ps, S.datos.Seguimientos);
     const activos = ps.filter((p) => p.Estado === "Activo");
-    const hoy = R.hoyISO();
+    const n = (v) => Number(v) || 0;
+    const desv = Math.round(k.avanceReal - k.avancePlan);
 
-    const segPend = activos.map((p) => ({ p, e: R.estadoSeguimiento(p, S.datos.Seguimientos) }))
-      .filter((x) => x.e.estado === "Vencido" || x.e.estado === "Por vencer").sort((a, b) => a.e.faltan - b.e.faltan);
-    const compPend = compromisosDe(ids).map((c) => ({ c, e: R.estadoCompromiso(c) }))
-      .filter((x) => x.e === "Vencido" || x.e === "Por vencer").sort((a, b) => (a.c.Fecha_Compromiso < b.c.Fecha_Compromiso ? -1 : 1));
-    const hitosAtr = S.datos.Hitos.filter((h) => ids.has(h.ID_Proyecto) && h.Estado !== "Cumplido" && h.Fecha_Plan && h.Fecha_Plan < hoy)
-      .sort((a, b) => (a.Fecha_Plan < b.Fecha_Plan ? -1 : 1));
-    const bloque = (titulo, items, fila, vacioTxt) => `<div class="pend-bloque"><h3>${titulo} <span class="contador">${items.length}</span></h3>
-      ${items.length ? `<ul class="pend-lista">${items.slice(0, 6).map(fila).join("")}</ul>${items.length > 6 ? `<button class="btn enlace" data-ir="seguimiento">Ver todos</button>` : ""}` : `<p class="sub">${vacioTxt}</p>`}</div>`;
+    // Salud: barra 100 % apilada con etiquetas
+    const sems = ["Verde", "Amarillo", "Rojo"];
+    const conteo = sems.map((s) => ({ s, c: activos.filter((p) => p.Semaforo === s).length }));
+    const sinSem = activos.length - conteo.reduce((a, x) => a + x.c, 0);
+    const totalSalud = Math.max(1, activos.length);
+    const salud = `<div class="salud-barra" role="img" aria-label="${conteo.map((x) => `${x.s} ${x.c}`).join(", ")}">
+        ${conteo.filter((x) => x.c).map((x) => `<span class="salud-seg" style="flex:${x.c};background:${COLORES[x.s]}" title="${x.s}: ${x.c} proyecto(s)"></span>`).join("")}
+        ${sinSem ? `<span class="salud-seg" style="flex:${sinSem};background:#b8c0cc" title="Sin semáforo: ${sinSem}"></span>` : ""}
+      </div>
+      <div class="salud-leyenda">${conteo.map((x) => `<button class="salud-item" data-sem="${x.s}"><span class="dot" style="background:${COLORES[x.s]}"></span><b>${x.c}</b> ${x.s.toLowerCase()} <span class="sub">${Math.round((x.c / totalSalud) * 100)}%</span></button>`).join("")}
+        ${sinSem ? `<span class="salud-item"><span class="dot" style="background:#b8c0cc"></span><b>${sinSem}</b> sin semáforo</span>` : ""}</div>`;
+
+    // Avance real vs planeado (bala): ordenado de mayor atraso a mayor adelanto
+    const avance = activos.map((p) => ({ p, real: n(p.Avance_Real), plan: n(p.Avance_Planeado), d: n(p.Avance_Real) - n(p.Avance_Planeado) }))
+      .sort((a, b) => a.d - b.d);
+    const balas = avance.map(({ p, real, plan, d }) => `<div class="bala clic" data-pid="${esc(p.ID_Proyecto)}" title="${esc(p.Nombre)} · real ${real}% · planeado ${plan}%">
+        <div class="bala-nombre"><b>${esc(p.Nombre)}</b><span class="sub">${esc(nombreUsuario(p.PM))}</span></div>
+        <div class="bala-pista"><span class="bala-real" style="width:${Math.min(100, real)}%"></span><span class="bala-plan" style="left:${Math.min(100, plan)}%"></span></div>
+        <div class="bala-num"><b>${real}%</b> <span class="sub">plan ${plan}%</span></div>
+        <div class="bala-desv ${d < -15 ? "mal" : d < -5 ? "alerta" : "bien"}">${d > 0 ? "+" : ""}${d} pts</div>
+        <div class="bala-sem">${chipSemaforo(p.Semaforo)}</div></div>`).join("");
+
+    // Presupuesto: ejecutado vs presupuesto por proyecto
+    const pres = activos.filter((p) => n(p.Presupuesto) > 0).map((p) => ({ p, pct: (n(p.Ejecutado) / n(p.Presupuesto)) * 100 })).sort((a, b) => b.pct - a.pct);
+    const presHTML = pres.map(({ p, pct }) => `<div class="bala clic presu" data-pid="${esc(p.ID_Proyecto)}" title="${esc(p.Nombre)} · ${cop(p.Ejecutado)} de ${cop(p.Presupuesto)}">
+        <div class="bala-nombre"><b>${esc(p.Nombre)}</b><span class="sub">${cop(p.Ejecutado)} de ${cop(p.Presupuesto)}</span></div>
+        <div class="bala-pista"><span class="bala-real ${pct > 100 ? "excede" : ""}" style="width:${Math.min(100, pct)}%"></span><span class="bala-plan" style="left:${Math.min(100, n(p.Avance_Real))}%" title="Avance real ${n(p.Avance_Real)}%"></span></div>
+        <div class="bala-num"><b class="${pct > 100 ? "texto-rojo" : ""}">${Math.round(pct)}%</b> <span class="sub">ejecutado</span></div></div>`).join("");
+
+    // Distribuciones
+    const porFase = (S.cat.Fase || []).map((f) => ({ etiqueta: f, valor: activos.filter((p) => p.Fase === f).length }));
+    const porPM = [...new Set(activos.map((p) => p.PM))].map((c) => ({ etiqueta: nombreUsuario(c), valor: activos.filter((p) => p.PM === c).length })).sort((a, b) => b.valor - a.valor);
+    const porArea = [...new Set(activos.map((p) => p.Cliente_Area))].map((a) => ({ etiqueta: a || "Sin área", valor: activos.filter((p) => p.Cliente_Area === a).length })).sort((a, b) => b.valor - a.valor);
+    const porEstado = (S.cat.Estado || []).map((e) => ({ etiqueta: e, valor: ps.filter((p) => p.Estado === e).length }));
+
+    const tendencia = tendenciaAvance(activos);
     const tarjeta = (titulo, valor, detalle, alerta, destino) => `<button class="kpi ${alerta ? "alerta" : ""}" data-kpi="${destino}" title="Ver detalle">
       <span class="kpi-t">${titulo}</span><span class="kpi-v">${valor}</span><span class="kpi-d">${detalle}</span></button>`;
+
     el.innerHTML = `
-      <h1>Inicio</h1>
+      <h1>Dashboard del portafolio</h1>
       ${barraFiltros()}
-      <div class="card pendientes"><h2>Pendientes</h2><div class="pend-grid">
-        ${bloque("Seguimientos por reportar", segPend, ({ p, e }) => `<li class="clic" data-pid="${esc(p.ID_Proyecto)}"><div>${pill(e.estado)} <b>${esc(p.Nombre)}</b>
-          <div class="sub">${esc(nombreUsuario(p.PM))} · ${e.faltan < 0 ? `${-e.faltan} día(s) de retraso` : `vence el ${fecha(e.proximo)}`}</div></div>
-          ${R.puedeEditar(S.usuario, p, "seguimiento") ? `<button class="btn chico primario" data-reportar="${esc(p.ID_Proyecto)}">Reportar</button>` : ""}</li>`, "Todos los proyectos están al día.")}
-        ${bloque("Compromisos vencidos o por vencer", compPend, ({ c, e }) => `<li class="clic" data-pid="${esc(c.ID_Proyecto)}"><div>${pill(e)} ${esc(c.Compromiso)}
-          <div class="sub">${esc((proyecto(c.ID_Proyecto) || {}).Nombre)} · ${esc(c.Responsable)} · ${fecha(c.Fecha_Compromiso)}</div></div></li>`, "No hay compromisos vencidos.")}
-        ${bloque("Hitos atrasados", hitosAtr, (h) => `<li class="clic" data-pid="${esc(h.ID_Proyecto)}"><div>${pill("Atrasado")} ${esc(h.Hito)}
-          <div class="sub">${esc((proyecto(h.ID_Proyecto) || {}).Nombre)} · plan ${fecha(h.Fecha_Plan)}</div></div></li>`, "No hay hitos atrasados.")}
-      </div></div>
       <div class="kpis">
         ${tarjeta("Proyectos activos", k.activos, `de ${k.total} en la selección`, false, "activos")}
-        ${tarjeta("Avance real vs planeado", `${pct(k.avanceReal)} <small>/ ${pct(k.avancePlan)}</small>`, "promedio de proyectos activos", k.avanceReal + 5 < k.avancePlan, "activos")}
-        ${tarjeta("Proyectos en rojo", k.rojos, "activos con semáforo rojo", k.rojos > 0, "rojos")}
-        ${tarjeta("Presupuesto ejecutado", pct(k.pctEjecutado), `${cop(k.ejecutado)} de ${cop(k.presupuesto)}`, false, "activos")}
+        ${tarjeta("Avance real promedio", pct(k.avanceReal), `plan ${pct(k.avancePlan)} · ${desv > 0 ? "+" : ""}${desv} pts`, desv < -5, "activos")}
+        ${tarjeta("Proyectos en rojo", k.rojos, `${Math.round((k.rojos / Math.max(1, k.activos)) * 100)}% de los activos`, k.rojos > 0, "rojos")}
+        ${tarjeta("Presupuesto ejecutado", pct(k.pctEjecutado), `${cop(k.ejecutado)} de ${cop(k.presupuesto)}`, k.pctEjecutado > 100, "activos")}
         ${tarjeta("Seguimientos al día", pct(k.pctAlDia), "activos sin reporte vencido", k.pctAlDia < 80, "seguimiento")}
       </div>
+
+      <div class="card"><div class="titulo-fila"><h2>Salud del portafolio</h2><span class="sub">${activos.length} proyecto(s) activos por semáforo · clic para ver</span></div>${activos.length ? salud : vacio("No hay proyectos activos en la selección.")}</div>
+
+      <div class="card"><div class="titulo-fila"><h2>Avance real vs planeado</h2>
+          <span class="leyenda"><span><i class="lg-real"></i>Avance real</span><span><i class="lg-tick"></i>Planeado</span></span></div>
+        <p class="sub">Ordenado del más atrasado al más adelantado. Clic en un proyecto para abrir su ficha.</p>
+        ${activos.length ? `<div class="balas">${balas}</div>` : vacio("No hay proyectos activos en la selección.")}</div>
+
       <div class="grid2">
-        <div class="card"><h2>Semáforo de proyectos activos</h2><div class="grafico-caja"><canvas id="g-sem"></canvas></div></div>
-        <div class="card"><h2>Proyectos por estado</h2><div class="grafico-caja"><canvas id="g-est"></canvas></div></div>
+        <div class="card"><h2>Tendencia del avance promedio</h2><p class="sub">Últimas 12 semanas, según el último reporte de cada proyecto activo.</p>
+          ${tendencia.some((t) => t.valor !== null) ? `<div class="grafico-tend"><canvas id="g-tend"></canvas></div>` : vacio("Aún no hay seguimientos para mostrar la tendencia.")}</div>
+        <div class="card"><div class="titulo-fila"><h2>Presupuesto ejecutado</h2>
+            <span class="leyenda"><span><i class="lg-real"></i>Ejecutado</span><span><i class="lg-tick"></i>Avance real</span></span></div>
+          <p class="sub">Si la barra supera la marca, se está gastando más rápido de lo que se avanza.</p>
+          ${pres.length ? `<div class="balas compacta">${presHTML}</div>` : vacio("Ningún proyecto activo tiene presupuesto registrado.")}</div>
       </div>
-      <div class="card"><h2>Avance real vs planeado por proyecto activo</h2>${activos.length ? `<div class="grafico-alto" style="height:${Math.max(160, activos.length * 34 + 60)}px"><canvas id="g-av"></canvas></div>` : vacio("No hay proyectos activos en la selección.")}</div>`;
+
+      <div class="grid3">
+        <div class="card"><h2>Activos por fase</h2>${barrasH(porFase)}</div>
+        <div class="card"><h2>Activos por PM</h2>${barrasH(porPM)}</div>
+        <div class="card"><h2>Activos por área</h2>${barrasH(porArea)}</div>
+      </div>
+      <div class="card"><h2>Portafolio por estado</h2>${barrasH(porEstado, { color: COLORES.azulClaro })}</div>`;
+
     enlazarFiltros();
-    el.querySelectorAll("[data-reportar]").forEach((b) => b.addEventListener("click", () => formSeguimiento(proyecto(b.dataset.reportar))));
-    el.querySelectorAll("[data-ir]").forEach((b) => b.addEventListener("click", () => ir(b.dataset.ir)));
     el.querySelectorAll("[data-kpi]").forEach((b) => b.addEventListener("click", () => {
       const d = b.dataset.kpi;
       if (d === "seguimiento") return ir("seguimiento");
@@ -309,15 +370,15 @@
       S.filtrosLista.semaforo = d === "rojos" ? "Rojo" : "";
       ir("proyectos");
     }));
-    const sems = ["Verde", "Amarillo", "Rojo"];
-    const opcBarras = { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } };
-    grafico($("#g-sem"), { type: "bar", data: { labels: sems, datasets: [{ data: sems.map((s) => activos.filter((p) => p.Semaforo === s).length), backgroundColor: sems.map((s) => COLORES[s]), borderRadius: 4 }] }, options: opcBarras });
-    const estados = S.cat.Estado || [];
-    grafico($("#g-est"), { type: "bar", data: { labels: estados, datasets: [{ data: estados.map((s) => ps.filter((p) => p.Estado === s).length), backgroundColor: COLORES.azul, borderRadius: 4 }] }, options: opcBarras });
-    grafico($("#g-av"), { type: "bar", data: { labels: activos.map((p) => p.Nombre), datasets: [
-      { label: "Real", data: activos.map((p) => Number(p.Avance_Real) || 0), backgroundColor: COLORES.azul, borderRadius: 3 },
-      { label: "Planeado", data: activos.map((p) => Number(p.Avance_Planeado) || 0), backgroundColor: COLORES.azulClaro, borderRadius: 3 }] },
-      options: { indexAxis: "y", maintainAspectRatio: false, scales: { x: { min: 0, max: 100, ticks: { callback: (v) => v + "%" } } } } });
+    el.querySelectorAll("[data-sem]").forEach((b) => b.addEventListener("click", () => {
+      S.filtros.estado = "Activo"; S.filtrosLista.semaforo = b.dataset.sem; ir("proyectos");
+    }));
+    const datos = tendencia.map((t) => t.valor);
+    grafico($("#g-tend"), { type: "line",
+      data: { labels: tendencia.map((t) => t.semana.slice(5)), datasets: [{ label: "Avance promedio", data: datos, borderColor: COLORES.azul, backgroundColor: COLORES.azul, borderWidth: 2, pointRadius: 4, pointHoverRadius: 6, spanGaps: true, tension: 0.25 }] },
+      options: { maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `Avance promedio ${c.parsed.y}% (${tendencia[c.dataIndex].n} proyecto(s))` } } },
+        scales: { y: { min: 0, max: 100, ticks: { callback: (v) => v + "%" }, grid: { color: "#eef1f5" } }, x: { grid: { display: false } } } } });
   }
 
   // ---------- Avances de la semana ----------
