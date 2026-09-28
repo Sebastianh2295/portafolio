@@ -179,6 +179,11 @@ button.kpi:hover { border-color: var(--azul); }
 .comp-cab { font-size: 12px; color: var(--texto2); margin-top: 6px; }
 .comp-fila { margin: 6px 0; }
 #b-add-comp { margin-top: 4px; }
+.enlace-ext { color: var(--azul); text-decoration: none; font-weight: bold; white-space: nowrap; }
+.enlace-ext:hover { text-decoration: underline; }
+.acciones .enlace-ext { border: 1px solid var(--linea); border-radius: var(--radio); padding: 7px 12px; font-weight: normal; background: #fff; }
+.historial td { min-width: 110px; }
+.historial td:nth-child(3), .historial td:nth-child(5) { min-width: 220px; }
 
 /* Panel lateral angosto de Excel y celulares */
 @media (max-width: 760px) {

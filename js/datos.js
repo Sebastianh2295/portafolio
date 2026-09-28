@@ -11,7 +11,12 @@
     Compromisos: ["ID_Compromiso", "ID_Proyecto", "ID_Seguimiento", "Compromiso", "Responsable", "Fecha_Compromiso", "Estado", "Fecha_Cierre", "Registrado_Por"],
   };
   const TABLAS = Object.keys(ESTRUCTURA);
-  const COLS_FECHA = ["Fecha_Inicio", "Fecha_Fin_Plan", "Actualizado_El", "Fecha_Plan", "Fecha_Real", "Fecha_Corte", "Fecha_Compromiso", "Fecha_Cierre"];
+  // Columnas agregadas en versiones posteriores: si faltan en el Excel, se crean al final de la tabla.
+  const COLUMNAS_NUEVAS = {
+    Proyectos: ["URL_Repositorio", "URL_Documentos"],
+    Seguimientos: ["Fecha_Acta", "URL_Acta"],
+  };
+  const COLS_FECHA = ["Fecha_Inicio", "Fecha_Fin_Plan", "Actualizado_El", "Fecha_Plan", "Fecha_Real", "Fecha_Corte", "Fecha_Compromiso", "Fecha_Cierre", "Fecha_Acta"];
 
   // Excel puede convertir "2026-09-28" en número de serie; aquí se devuelve a texto ISO.
   const serialAISO = (v) => new Date(Math.round((v - 25569) * 86400000)).toISOString().slice(0, 10);
@@ -40,14 +45,25 @@
     await ctx.sync();
   }
 
+  async function crearColumnasFaltantes(ctx) {
+    const cabeceras = Object.keys(COLUMNAS_NUEVAS).map((n) => ({ n, h: ctx.workbook.tables.getItem(n).getHeaderRowRange().load("values") }));
+    await ctx.sync();
+    let cambios = false;
+    for (const { n, h } of cabeceras) {
+      const existentes = h.values[0];
+      for (const col of COLUMNAS_NUEVAS[n]) if (!existentes.includes(col)) { ctx.workbook.tables.getItem(n).columns.add(null, null, col); cambios = true; }
+    }
+    if (cambios) await ctx.sync();
+  }
+
   const OpsExcel = {
     async leerTodo() {
       return Excel.run(async (ctx) => {
         const lista = ctx.workbook.tables.load("items/name");
         await ctx.sync();
         let existentes = lista.items.map((t) => t.name);
-        try { await crearTablasFaltantes(ctx, existentes); existentes = TABLAS; }
-        catch (e) { /* usuario sin permiso de edición: se leen solo las tablas que existan */ }
+        try { await crearTablasFaltantes(ctx, existentes); existentes = TABLAS; await crearColumnasFaltantes(ctx); }
+        catch (e) { /* usuario sin permiso de edición: se lee lo que exista */ }
         const cargas = TABLAS.filter((n) => existentes.includes(n)).map((n) => {
           const t = ctx.workbook.tables.getItem(n);
           return { n, h: t.getHeaderRowRange().load("values"), b: t.getDataBodyRange().load("values") };

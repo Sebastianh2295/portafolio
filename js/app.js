@@ -53,6 +53,8 @@
   const fecha = (iso) => { const s = String(iso || ""); return /^\d{4}-\d{2}-\d{2}$/.test(s) ? `${s.slice(8, 10)}/${s.slice(5, 7)}/${s.slice(0, 4)}` : s || "—"; };
   const lc = (s) => String(s || "").trim().toLowerCase();
   const app = () => $("#app");
+  const esURL = (u) => /^https?:\/\/\S+$/i.test(String(u || "").trim());
+  const enlace = (url, texto) => (esURL(url) ? `<a class="enlace-ext" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(texto)} ↗</a>` : "");
 
   function leerLocal(k, def) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : def; } catch (e) { return def; } }
   function guardarLocal(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* sin almacenamiento */ } }
@@ -334,7 +336,7 @@
       const p = proyecto(s.ID_Proyecto) || {};
       const comps = S.datos.Compromisos.filter((c) => c.ID_Seguimiento === s.ID_Seguimiento);
       return `<tr class="clic" data-pid="${esc(s.ID_Proyecto)}">
-        <td><b>${esc(p.Nombre)}</b><div class="sub">${esc(nombreUsuario(p.PM))} · ${fecha(s.Fecha_Corte)}</div></td>
+        <td><b>${esc(p.Nombre)}</b><div class="sub">${esc(nombreUsuario(p.PM))} · ${fecha(s.Fecha_Corte)}</div>${enlace(s.URL_Acta, "Acta")}</td>
         <td>${pct(s.Avance_Real)}<div class="${v > 0 ? "sube" : v < 0 ? "baja" : "sub"}">${v === null ? "primer reporte" : (v > 0 ? "+" : "") + v + " pts"}</div></td>
         <td>${chipSemaforo(s.Semaforo)}</td><td>${esc(s.Logros)}</td><td class="opc">${esc(s.Proximos_Pasos)}</td>
         <td class="${s.Bloqueos ? "bloqueo" : ""}">${esc(s.Bloqueos || "—")}</td>
@@ -457,6 +459,7 @@
       <button class="btn enlace" id="b-volver">← Volver a proyectos</button>
       <div class="titulo-fila"><div><h1>${esc(p.Nombre)}</h1><div class="sub">${esc(p.ID_Proyecto)} · ${esc(p.Cliente_Area)} · PM ${esc(nombreUsuario(p.PM))}</div></div>
         <div class="acciones">
+          ${enlace(p.URL_Repositorio, "Repositorio")}${enlace(p.URL_Documentos, "Documentos")}
           ${puedeP("seguimiento") && p.Estado === "Activo" ? `<button class="btn primario" id="b-seg">Registrar seguimiento</button>` : ""}
           ${puedeP("editarProyecto") ? `<button class="btn" id="b-editar">Editar proyecto</button>` : ""}
         </div></div>
@@ -468,15 +471,23 @@
         ${dato("Presupuesto", cop(p.Presupuesto))}${dato("Ejecutado", cop(p.Ejecutado))}
         ${dato("Metodología", esc(p.Metodologia))}${dato("Prioridad", esc(p.Prioridad))}
         ${dato("Frecuencia", esc(p.Frecuencia_Seguimiento))}${dato("Seguimiento", `${pill(e.estado)} <span class="sub">próximo ${fecha(e.proximo)}</span>`)}
+        ${dato("Repositorio", enlace(p.URL_Repositorio, "Abrir") || `<span class="sub">Sin registrar</span>`)}${dato("Documentos", enlace(p.URL_Documentos, "Abrir") || `<span class="sub">Sin registrar</span>`)}
         <div class="dato ancho"><div class="dato-k">Comentario de estado</div><div class="dato-v">${esc(p.Comentario_Estado || "—")}</div></div>
       </div>
       <div class="card"><h2>Curva de avance</h2>${segs.length ? `<div class="grafico-alto"><canvas id="g-curva"></canvas></div>` : vacio("Aún no hay seguimientos. La curva aparece con el primer reporte.")}</div>
       <div class="card"><h2>Compromisos <span class="contador">${comps.filter((x) => x.e !== "Cumplido").length} abiertos</span></h2>
         <p class="sub">Se registran al reportar un seguimiento.</p>${comps.length ? tablaCompromisos(comps, false) : vacio("Sin compromisos registrados.")}</div>
-      <div class="card"><h2>Historial de seguimientos</h2><div class="tabla-scroll"><table>
-        <thead><tr><th>Corte</th><th>Avance</th><th>Semáforo</th><th>Logros</th><th class="opc">Próximos pasos</th><th>Bloqueos</th><th class="opc">Reportó</th></tr></thead>
-        <tbody>${segs.slice().reverse().map((s) => `<tr><td>${fecha(s.Fecha_Corte)}<div class="sub">${esc(s.Semana)}</div></td><td>${pct(s.Avance_Real)}</td><td>${chipSemaforo(s.Semaforo)}</td>
-          <td>${esc(s.Logros)}</td><td class="opc">${esc(s.Proximos_Pasos)}</td><td>${esc(s.Bloqueos || "—")}</td><td class="opc">${esc(nombreUsuario(s.Reportado_Por))}</td></tr>`).join("") || `<tr><td colspan="7">${vacio("Sin seguimientos.")}</td></tr>`}</tbody></table></div></div>
+      <div class="card"><h2>Historial de sesiones de seguimiento</h2>
+        <p class="sub">Cada fila es una sesión: su avance, lo que pasó, los compromisos que se acordaron y el acta.</p><div class="tabla-scroll"><table class="historial">
+        <thead><tr><th>Sesión</th><th>Avance</th><th>Logros y próximos pasos</th><th>Bloqueos</th><th>Compromisos acordados</th><th>Acta</th></tr></thead>
+        <tbody>${segs.slice().reverse().map((s) => {
+          const acordados = S.datos.Compromisos.filter((c) => c.ID_Seguimiento === s.ID_Seguimiento);
+          return `<tr><td><b>${fecha(s.Fecha_Corte)}</b><div class="sub">${esc(s.Semana)} · ${esc(nombreUsuario(s.Reportado_Por))}</div></td>
+          <td>${pct(s.Avance_Real)}<div>${chipSemaforo(s.Semaforo)}</div></td>
+          <td>${esc(s.Logros)}<div class="sub">Sigue: ${esc(s.Proximos_Pasos || "—")}</div></td><td>${esc(s.Bloqueos || "—")}</td>
+          <td>${acordados.length ? `<ul class="mini">${acordados.map((c) => `<li>${esc(c.Compromiso)} <span class="sub">${esc(c.Responsable)} · ${fecha(c.Fecha_Compromiso)}</span> ${pill(R.estadoCompromiso(c))}</li>`).join("")}</ul>` : `<span class="sub">Sin compromisos</span>`}</td>
+          <td>${s.Fecha_Acta ? fecha(s.Fecha_Acta) : `<span class="sub">Sin fecha</span>`}<div>${enlace(s.URL_Acta, "Ver acta") || `<span class="sub">Sin enlace</span>`}</div></td></tr>`;
+        }).join("") || `<tr><td colspan="6">${vacio("Sin seguimientos.")}</td></tr>`}</tbody></table></div></div>
       <div class="card"><div class="titulo-fila"><h2>Hitos</h2>${puedeP("hitos") ? `<button class="btn" id="b-hito">+ Hito</button>` : ""}</div><div class="tabla-scroll"><table>
         <thead><tr><th>Hito</th><th>Fecha plan</th><th>Fecha real</th><th>Estado</th><th></th></tr></thead>
         <tbody>${hitos.map((h) => { const est = h.Estado !== "Cumplido" && h.Fecha_Plan < hoy ? "Atrasado" : h.Estado; return `<tr><td>${esc(h.Hito)}</td><td>${fecha(h.Fecha_Plan)}</td><td>${h.Fecha_Real ? fecha(h.Fecha_Real) : "—"}</td><td>${pill(est)}</td>
@@ -734,6 +745,7 @@
         if (c.tipo === "number" && v !== "" && (Number.isNaN(v) || (c.min !== undefined && v < c.min) || (c.max !== undefined && v > c.max)))
           err(c.k, c.max !== undefined ? `Debe estar entre ${c.min} y ${c.max}.` : `Debe ser mayor o igual a ${c.min}.`);
         if (c.tipo === "email" && v && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) err(c.k, "Correo no válido.");
+        if (c.tipo === "url" && v && !esURL(v)) err(c.k, "Escribe la dirección completa, empezando por https://");
       });
       let extraDatos = null;
       if (ok && validarExtra) { const msg = validarExtra(fd); if (msg) { ok = false; $("#m-error").textContent = msg; } }
@@ -772,7 +784,10 @@
       { seccion: "4. Presupuesto", ayuda: "en pesos colombianos, sin puntos" },
       { k: "Presupuesto", label: "Presupuesto (COP)", tipo: "number", min: 0, def: 0 },
       { k: "Ejecutado", label: "Ejecutado (COP)", tipo: "number", min: 0, def: 0 },
-      { seccion: "5. Comentario" },
+      { seccion: "5. Enlaces", ayuda: "opcionales; pega la dirección completa" },
+      { k: "URL_Repositorio", label: "URL del repositorio", tipo: "url", placeholder: "https://github.com/… o https://dev.azure.com/…" },
+      { k: "URL_Documentos", label: "URL de documentos", tipo: "url", placeholder: "https://…sharepoint.com/…" },
+      { seccion: "6. Comentario" },
       { k: "Comentario_Estado", label: "Comentario de estado", tipo: "textarea", placeholder: "Novedad principal del proyecto" },
     ];
     const valores = p ? { ...p } : { PM: pmFijo ? u.Correo : "" };
@@ -805,6 +820,9 @@
       { k: "Logros", label: "Logros del periodo", tipo: "textarea", req: true, placeholder: "Qué se terminó o avanzó" },
       { k: "Proximos_Pasos", label: "Próximos pasos", tipo: "textarea", req: true, placeholder: "Qué sigue hasta el próximo reporte" },
       { k: "Bloqueos", label: "Bloqueos", tipo: "textarea", placeholder: "Qué frena el avance y quién debe actuar (déjalo vacío si no hay)" },
+      { seccion: "3. Acta de la sesión" },
+      { k: "Fecha_Acta", label: "Fecha del acta", tipo: "date", req: true, def: R.hoyISO() },
+      { k: "URL_Acta", label: "URL del acta", tipo: "url", placeholder: "https://…sharepoint.com/…/acta.docx", ayuda: "Opcional: enlace al acta en SharePoint o Teams." },
     ];
     const contexto = `<div class="contexto">
       <div><span class="sub">Último reporte</span><b>${ult ? `${fecha(ult.Fecha_Corte)} · ${pct(ult.Avance_Real)} · ${esc(ult.Semaforo)}` : "Es el primer reporte"}</b></div>
@@ -817,10 +835,10 @@
       <button type="button" class="btn chico c-quitar" aria-label="Quitar compromiso">✕</button></div>`;
     const despues = `
       <div class="sugerencia" id="sug-sem" aria-live="polite"></div>
-      ${abiertos.length ? `<div class="form-seccion">3. Compromisos anteriores<span class="sub"> · marca los que ya se cumplieron</span></div>
+      ${abiertos.length ? `<div class="form-seccion">4. Compromisos anteriores<span class="sub"> · marca los que ya se cumplieron</span></div>
         <div class="comp-previos">${abiertos.map((c) => `<label class="check"><input type="checkbox" value="${esc(c.ID_Compromiso)}"> <span>${esc(c.Compromiso)}
           <span class="sub">${esc(c.Responsable)} · ${fecha(c.Fecha_Compromiso)}</span> ${R.estadoCompromiso(c) === "Vencido" ? pill("Vencido") : ""}</span></label>`).join("")}</div>` : ""}
-      <div class="form-seccion">${abiertos.length ? "4" : "3"}. Compromisos nuevos<span class="sub"> · acuerdos que quedaron en este seguimiento (opcional)</span></div>
+      <div class="form-seccion">${abiertos.length ? "5" : "4"}. Compromisos nuevos<span class="sub"> · acuerdos que quedaron en este seguimiento (opcional)</span></div>
       <div class="comp-cab"><span>Compromiso</span><span>Responsable</span><span>Fecha límite</span><span></span></div>
       <div id="comp-nuevos">${filaComp()}</div>
       <button type="button" class="btn chico" id="b-add-comp">+ Agregar otro compromiso</button>`;
@@ -871,7 +889,7 @@
       const fila = {
         ID_Seguimiento: idSeg, ID_Proyecto: p.ID_Proyecto, Fecha_Corte: fd.Fecha_Corte, Semana: R.semanaISO(fd.Fecha_Corte),
         Avance_Real: fd.Avance_Real, Semaforo: fd.Semaforo, Logros: fd.Logros, Proximos_Pasos: fd.Proximos_Pasos,
-        Bloqueos: fd.Bloqueos, Reportado_Por: S.usuario.Correo,
+        Bloqueos: fd.Bloqueos, Reportado_Por: S.usuario.Correo, Fecha_Acta: fd.Fecha_Acta, URL_Acta: fd.URL_Acta,
       };
       const comps = extra.nuevos.map((c, i) => ({
         ID_Compromiso: R.siguienteIdHijo("CMP", S.datos.Compromisos, "ID_Compromiso", p.ID_Proyecto, i),
