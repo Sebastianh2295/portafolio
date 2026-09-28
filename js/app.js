@@ -35,7 +35,8 @@
       "Usa «+ Nueva iniciativa» para registrar un proyecto.",
       "Haz clic en un proyecto para ver su ficha, registrar seguimiento, hitos, riesgos y compromisos."],
     ficha: ["Todo el proyecto en una página: datos, curva de avance, compromisos, seguimientos, hitos y riesgos.",
-      "«Registrar seguimiento» es la acción periódica del PM: avance, logros, próximos pasos, bloqueos y compromisos."],
+      "«Registrar seguimiento» es la acción periódica del PM: avance, logros, próximos pasos, bloqueos y compromisos.",
+      "Con «+ Compromiso» agregas uno sin sesión; ábrelo para comentar su avance hasta cerrarlo."],
     cronograma: ["Línea de tiempo de los proyectos activos y en pausa.",
       "La barra oscura es el avance real; los rombos son hitos. La línea dorada es hoy."],
     riesgos: ["Mapa de calor de riesgos abiertos por probabilidad e impacto.",
@@ -453,25 +454,100 @@
     enlazarCompromisos(el);
   }
 
+  // ---------- Compromisos y su hilo de comentarios ----------
+  const comentariosDe = (id) => (S.datos.Comentarios || []).filter((x) => x.ID_Compromiso === id).sort((a, b) => (String(a.Fecha_Hora) < String(b.Fecha_Hora) ? -1 : 1));
+  const ahora = () => { const d = new Date(); const p = (n) => String(n).padStart(2, "0"); return `${R.hoyISO()} ${p(d.getHours())}:${p(d.getMinutes())}`; };
+  const fechaHora = (v) => { const s = String(v || ""); return s.length >= 16 ? `${fecha(s.slice(0, 10))} ${s.slice(11, 16)}` : fecha(s); };
+  function nuevoComentario(c, texto) {
+    const lista = S.datos.Comentarios || [];
+    const max = lista.filter((x) => x.ID_Compromiso === c.ID_Compromiso).reduce((m, x) => Math.max(m, parseInt(String(x.ID_Comentario).split("-").pop(), 10) || 0), 0);
+    return { ID_Comentario: `COM-${String(c.ID_Compromiso).replace(/^CMP-/, "")}-${max + 1}`, ID_Compromiso: c.ID_Compromiso, ID_Proyecto: c.ID_Proyecto, Fecha_Hora: ahora(), Autor: S.usuario.Correo, Texto: texto };
+  }
+  const origen = (c) => {
+    if (!c.ID_Seguimiento) return "Registrado en el proyecto";
+    const s = S.datos.Seguimientos.find((x) => x.ID_Seguimiento === c.ID_Seguimiento);
+    return s ? `Sesión del ${fecha(s.Fecha_Corte)}` : "Sesión";
+  };
+
   function tablaCompromisos(items, conProyecto) {
     if (!items.length) return vacio("No hay compromisos abiertos.");
     return `<div class="tabla-scroll"><table>
-      <thead><tr>${conProyecto ? "<th>Proyecto</th>" : ""}<th>Compromiso</th><th>Responsable</th><th>Fecha</th><th>Estado</th><th></th></tr></thead>
+      <thead><tr>${conProyecto ? "<th>Proyecto</th>" : ""}<th>Compromiso</th><th>Responsable</th><th>Fecha</th><th>Estado</th><th class="opc">Último comentario</th><th></th></tr></thead>
       <tbody>${items.map(({ c, e }) => {
         const p = proyecto(c.ID_Proyecto) || {};
+        const coms = comentariosDe(c.ID_Compromiso);
+        const ult = coms[coms.length - 1];
         return `<tr ${conProyecto ? `class="clic" data-pid="${esc(c.ID_Proyecto)}"` : ""}>${conProyecto ? `<td><b>${esc(p.Nombre)}</b></td>` : ""}
-          <td>${esc(c.Compromiso)}</td><td>${esc(c.Responsable)}</td><td>${fecha(c.Fecha_Compromiso)}</td>
+          <td>${esc(c.Compromiso)}<div class="sub">${esc(origen(c))}</div></td><td>${esc(c.Responsable)}</td><td>${fecha(c.Fecha_Compromiso)}</td>
           <td>${pill(e)}${e === "Cumplido" && c.Fecha_Cierre ? `<div class="sub">${fecha(c.Fecha_Cierre)}</div>` : ""}</td>
-          <td class="derecha nowrap">${R.puedeEditar(S.usuario, p, "compromisos") ? `${e !== "Cumplido" ? `<button class="btn chico" data-cumplir="${esc(c.ID_Compromiso)}">Cumplido</button> ` : ""}<button class="btn chico" data-edit-comp="${esc(c.ID_Compromiso)}">Editar</button>` : ""}</td></tr>`;
+          <td class="opc">${ult ? `<span class="ult-com">${esc(ult.Texto)}</span><div class="sub">${esc(nombreUsuario(ult.Autor))} · ${fechaHora(ult.Fecha_Hora)}</div>` : `<span class="sub">Sin comentarios</span>`}</td>
+          <td class="derecha nowrap"><button class="btn chico ${coms.length ? "" : "primario-suave"}" data-abrir-comp="${esc(c.ID_Compromiso)}">${coms.length ? `Comentarios (${coms.length})` : "Abrir"}</button>
+            ${R.puedeEditar(S.usuario, p, "compromisos") && e !== "Cumplido" ? `<button class="btn chico" data-cumplir="${esc(c.ID_Compromiso)}">Cumplido</button>` : ""}</td></tr>`;
       }).join("")}</tbody></table></div>`;
   }
   function enlazarCompromisos(el) {
-    el.querySelectorAll("[data-edit-comp]").forEach((b) => b.addEventListener("click", () => formCompromiso(S.datos.Compromisos.find((x) => x.ID_Compromiso === b.dataset.editComp))));
+    el.querySelectorAll("[data-abrir-comp]").forEach((b) => b.addEventListener("click", () => detalleCompromiso(b.dataset.abrirComp)));
     el.querySelectorAll("[data-cumplir]").forEach((b) => b.addEventListener("click", () => {
       const c = S.datos.Compromisos.find((x) => x.ID_Compromiso === b.dataset.cumplir);
       confirmar("Marcar compromiso como cumplido", `«${c.Compromiso}» (${c.Responsable}) quedará cerrado con fecha de hoy.`, "Marcar cumplido",
-        () => guardar(() => S.api.actualizarPorId("Compromisos", "ID_Compromiso", c.ID_Compromiso, { Estado: "Cumplido", Fecha_Cierre: R.hoyISO() }), "Compromiso cerrado"), "primario");
+        () => guardar(async () => {
+          await S.api.actualizarPorId("Compromisos", "ID_Compromiso", c.ID_Compromiso, { Estado: "Cumplido", Fecha_Cierre: R.hoyISO() });
+          await S.api.agregarFila("Comentarios", nuevoComentario(c, "Marcado como cumplido."));
+        }, "Compromiso cerrado"), "primario");
     }));
+  }
+
+  // Ficha del compromiso: datos, hilo de comentarios y acciones (comentar, cerrar, reabrir, editar).
+  function detalleCompromiso(id) {
+    const c = S.datos.Compromisos.find((x) => x.ID_Compromiso === id);
+    if (!c) return;
+    const p = proyecto(c.ID_Proyecto) || {};
+    const puede = R.puedeEditar(S.usuario, p, "compromisos");
+    const e = R.estadoCompromiso(c);
+    const coms = comentariosDe(id);
+    cerrarModal();
+    const m = document.createElement("div");
+    m.id = "modal";
+    m.innerHTML = `<div class="modal-caja" role="dialog" aria-modal="true" aria-label="Compromiso">
+      <div class="titulo-fila"><div><h2>${esc(c.Compromiso)}</h2><div class="sub">${esc(p.Nombre)} · ${esc(origen(c))}</div></div><button class="btn enlace" id="d-cerrar" aria-label="Cerrar">✕</button></div>
+      <div class="contexto">
+        <div><span class="sub">Estado</span><b>${pill(e)}</b></div>
+        <div><span class="sub">Responsable</span><b>${esc(c.Responsable || "—")}</b></div>
+        <div><span class="sub">Fecha límite</span><b>${fecha(c.Fecha_Compromiso)}</b></div>
+        ${c.Fecha_Cierre ? `<div><span class="sub">Cerrado el</span><b>${fecha(c.Fecha_Cierre)}</b></div>` : ""}
+      </div>
+      <div class="form-seccion">Seguimiento del compromiso <span class="contador">${coms.length}</span></div>
+      <div class="hilo">${coms.map((x) => `<div class="com"><div class="com-cab"><b>${esc(nombreUsuario(x.Autor))}</b><span class="sub">${fechaHora(x.Fecha_Hora)}</span></div><div class="com-texto">${esc(x.Texto)}</div></div>`).join("") || `<div class="vacio">Aún no hay comentarios. Escribe el primero: avances, dudas o bloqueos de este compromiso.</div>`}</div>
+      ${puede ? `<textarea id="d-texto" rows="3" placeholder="Escribe un comentario: qué se avanzó, qué falta, quién debe actuar…"></textarea>
+        <div class="error-campo" id="d-error" role="alert"></div>
+        <div class="acciones derecha">
+          <button class="btn peligro-suave" id="d-editar">Editar compromiso</button>
+          ${e === "Cumplido" ? `<button class="btn" id="d-reabrir">Reabrir</button>` : `<button class="btn" id="d-comentar-cerrar">Comentar y cerrar</button>`}
+          <button class="btn primario" id="d-comentar">Comentar</button></div>` : `<p class="sub">Solo el PM del proyecto, la PMO o el Admin pueden comentar.</p>`}
+    </div>`;
+    document.body.appendChild(m);
+    $("#d-cerrar").addEventListener("click", cerrarModal);
+    m.addEventListener("keydown", (ev) => { if (ev.key === "Escape") cerrarModal(); });
+    const h = $(".hilo"); h.scrollTop = h.scrollHeight;
+    if (!puede) return;
+    const txt = $("#d-texto");
+    txt.focus();
+    txt.addEventListener("input", () => { $("#d-error").textContent = ""; });
+    const accion = async (texto, cambios, exito) => {
+      await guardar(async () => {
+        if (cambios) await S.api.actualizarPorId("Compromisos", "ID_Compromiso", id, cambios);
+        await S.api.agregarFila("Comentarios", nuevoComentario(c, texto));
+      }, exito);
+      detalleCompromiso(id);   // se vuelve a abrir para seguir la conversación
+    };
+    $("#d-comentar").addEventListener("click", () => {
+      const t = txt.value.trim();
+      if (!t) { $("#d-error").textContent = "Escribe el comentario."; return; }
+      accion(t, null, "Comentario agregado");
+    });
+    if ($("#d-comentar-cerrar")) $("#d-comentar-cerrar").addEventListener("click", () => accion(txt.value.trim() || "Compromiso cerrado.", { Estado: "Cumplido", Fecha_Cierre: R.hoyISO() }, "Compromiso cerrado"));
+    if ($("#d-reabrir")) $("#d-reabrir").addEventListener("click", () => accion(txt.value.trim() || "Compromiso reabierto.", { Estado: "Pendiente", Fecha_Cierre: "" }, "Compromiso reabierto"));
+    $("#d-editar").addEventListener("click", () => formCompromiso(c));
   }
 
   // ---------- Proyectos ----------
@@ -538,8 +614,8 @@
         <div class="dato ancho"><div class="dato-k">Comentario de estado</div><div class="dato-v">${esc(p.Comentario_Estado || "—")}</div></div>
       </div>
       <div class="card"><h2>Curva de avance</h2>${segs.length ? `<div class="grafico-alto"><canvas id="g-curva"></canvas></div>` : vacio("Aún no hay seguimientos. La curva aparece con el primer reporte.")}</div>
-      <div class="card"><h2>Compromisos <span class="contador">${comps.filter((x) => x.e !== "Cumplido").length} abiertos</span></h2>
-        <p class="sub">Se registran al reportar un seguimiento.</p>${comps.length ? tablaCompromisos(comps, false) : vacio("Sin compromisos registrados.")}</div>
+      <div class="card"><div class="titulo-fila"><h2>Compromisos <span class="contador">${comps.filter((x) => x.e !== "Cumplido").length} abiertos</span></h2>${puedeP("compromisos") ? `<button class="btn" id="b-comp">+ Compromiso</button>` : ""}</div>
+        <p class="sub">Se agregan aquí o al reportar un seguimiento. Abre uno para comentar su avance hasta cerrarlo.</p>${comps.length ? tablaCompromisos(comps, false) : vacio("Sin compromisos registrados.")}</div>
       <div class="card"><h2>Historial de sesiones de seguimiento</h2>
         <p class="sub">Cada fila es una sesión: su avance, lo que pasó, los compromisos que se acordaron y el acta.</p><div class="tabla-scroll"><table class="historial">
         <thead><tr><th>Sesión</th><th>Avance</th><th>Logros y próximos pasos</th><th>Bloqueos</th><th>Compromisos acordados</th><th>Acta</th></tr></thead>
@@ -565,6 +641,7 @@
     if ($("#b-seg")) $("#b-seg").addEventListener("click", () => formSeguimiento(p));
     if ($("#b-editar")) $("#b-editar").addEventListener("click", () => formProyecto(p));
     if ($("#b-hito")) $("#b-hito").addEventListener("click", () => formHito(p));
+    if ($("#b-comp")) $("#b-comp").addEventListener("click", () => formCompromiso(null, p));
     if ($("#b-riesgo")) $("#b-riesgo").addEventListener("click", () => formRiesgo(p));
     el.querySelectorAll("[data-hito]").forEach((b) => b.addEventListener("click", () => formHito(p, hitos.find((h) => h.ID_Hito === b.dataset.hito))));
     el.querySelectorAll("[data-riesgo]").forEach((b) => b.addEventListener("click", () => formRiesgo(p, riesgos.find((r) => r.ID_Riesgo === b.dataset.riesgo))));
@@ -1101,7 +1178,13 @@
           ...(fd.Bloqueos || fd.Logros ? { Comentario_Estado: fd.Bloqueos ? `Bloqueo: ${fd.Bloqueos}` : fd.Logros } : {}), ...sello(),
         });
         if (comps.length) await S.api.agregarFilas("Compromisos", comps);
-        if (extra.cerrados.length) await S.api.actualizarVarios("Compromisos", "ID_Compromiso", extra.cerrados.map((id) => ({ id, cambios: { Estado: "Cumplido", Fecha_Cierre: fd.Fecha_Corte } })));
+        if (extra.cerrados.length) {
+          await S.api.actualizarVarios("Compromisos", "ID_Compromiso", extra.cerrados.map((id) => ({ id, cambios: { Estado: "Cumplido", Fecha_Cierre: fd.Fecha_Corte } })));
+          const cerradosC = S.datos.Compromisos.filter((c) => extra.cerrados.includes(c.ID_Compromiso));
+          const nuevosCom = [];
+          cerradosC.forEach((c) => { const nc = nuevoComentario(c, `Cerrado en la sesión de seguimiento del ${fecha(fd.Fecha_Corte)}.`); nuevosCom.push(nc); });
+          if (nuevosCom.length) await S.api.agregarFilas("Comentarios", nuevosCom);
+        }
         if (actaElegida) await subirActa(idSeg, actaElegida.bytes, actaElegida.nombre);
       }, `Seguimiento registrado${comps.length ? ` con ${comps.length} compromiso(s)` : ""}${actaElegida ? " y acta guardada" : ""}`);
     }, (fd) => (fd.Fecha_Corte && fd.Fecha_Corte > R.hoyISO() ? "La fecha de corte no puede ser futura." : ""), { antes: cargaActa + contexto, despues, init, recoger });
@@ -1178,6 +1261,7 @@
     const segs = S.datos.Seguimientos.filter((s) => s.ID_Proyecto === pid);
     for (const s of segs.filter((x) => x.Acta_Archivo)) await S.api.borrarArchivo(s.ID_Seguimiento);
     const borrar = (tabla, col, filas) => (filas.length ? S.api.eliminarFilas(tabla, col, filas.map((f) => f[col])) : null);
+    await borrar("Comentarios", "ID_Comentario", (S.datos.Comentarios || []).filter((x) => x.ID_Proyecto === pid));
     await borrar("Compromisos", "ID_Compromiso", S.datos.Compromisos.filter((c) => c.ID_Proyecto === pid));
     await borrar("Seguimientos", "ID_Seguimiento", segs);
     await borrar("Hitos", "ID_Hito", S.datos.Hitos.filter((h) => h.ID_Proyecto === pid));
@@ -1185,19 +1269,41 @@
     await S.api.eliminarFilas("Proyectos", "ID_Proyecto", [pid]);
   }
 
-  function formCompromiso(c) {
+  function formCompromiso(c, pNuevo) {
+    const nuevo = !c;
     const campos = [
-      { k: "Compromiso", label: "Compromiso", tipo: "textarea" },
+      { k: "Compromiso", label: "Compromiso", tipo: "textarea", placeholder: "Qué se hará" },
       { k: "Responsable", label: "Responsable" },
       { k: "Fecha_Compromiso", label: "Fecha límite", tipo: "date" },
-      { k: "Estado", label: "Estado", tipo: "select", opciones: S.cat.Estado_Compromiso, def: "Pendiente" },
-      { k: "Fecha_Cierre", label: "Fecha de cierre", tipo: "date", ayuda: "Se llena sola al marcarlo cumplido; se borra si lo reabres." },
+      ...(nuevo ? [{ k: "Comentario", label: "Comentario inicial (opcional)", tipo: "textarea", placeholder: "Contexto o primer avance" }] : [
+        { k: "Estado", label: "Estado", tipo: "select", opciones: S.cat.Estado_Compromiso, def: "Pendiente" },
+        { k: "Fecha_Cierre", label: "Fecha de cierre", tipo: "date", ayuda: "Se llena sola al marcarlo cumplido; se borra si lo reabres." }]),
     ];
+    if (nuevo) {
+      modal(`Nuevo compromiso · ${pNuevo.Nombre}`, campos, {}, (fd) => {
+        const fila = { ID_Compromiso: R.siguienteIdHijo("CMP", S.datos.Compromisos, "ID_Compromiso", pNuevo.ID_Proyecto), ID_Proyecto: pNuevo.ID_Proyecto, ID_Seguimiento: "",
+          Compromiso: fd.Compromiso || "(sin descripción)", Responsable: fd.Responsable, Fecha_Compromiso: fd.Fecha_Compromiso, Estado: "Pendiente", Fecha_Cierre: "", Registrado_Por: S.usuario.Correo };
+        guardar(async () => {
+          await S.api.agregarFila("Compromisos", fila);
+          if (fd.Comentario) await S.api.agregarFila("Comentarios", nuevoComentario(fila, fd.Comentario));
+        }, "Compromiso agregado");
+      });
+      return;
+    }
+    const coms = comentariosDe(c.ID_Compromiso);
     modal("Editar compromiso", campos, c, (fd) => {
       if (fd.Estado === "Cumplido" && !fd.Fecha_Cierre) fd.Fecha_Cierre = R.hoyISO();
       if (fd.Estado !== "Cumplido") fd.Fecha_Cierre = "";
-      guardar(() => S.api.actualizarPorId("Compromisos", "ID_Compromiso", c.ID_Compromiso, fd), "Compromiso actualizado");
-    }, null, { eliminar: { texto: "Eliminar compromiso", mensaje: `Se borrará «${c.Compromiso}».`, accion: () => guardar(() => S.api.eliminarFilas("Compromisos", "ID_Compromiso", [c.ID_Compromiso]), "Compromiso eliminado") } });
+      const cambioEstado = fd.Estado !== c.Estado;
+      guardar(async () => {
+        await S.api.actualizarPorId("Compromisos", "ID_Compromiso", c.ID_Compromiso, fd);
+        if (cambioEstado) await S.api.agregarFila("Comentarios", nuevoComentario(c, fd.Estado === "Cumplido" ? "Marcado como cumplido." : "Compromiso reabierto."));
+      }, "Compromiso actualizado");
+    }, null, { eliminar: { texto: "Eliminar compromiso", mensaje: `Se borrará «${c.Compromiso}»${coms.length ? ` con sus ${coms.length} comentario(s)` : ""}.`,
+      accion: () => guardar(async () => {
+        if (coms.length) await S.api.eliminarFilas("Comentarios", "ID_Comentario", coms.map((x) => x.ID_Comentario));
+        await S.api.eliminarFilas("Compromisos", "ID_Compromiso", [c.ID_Compromiso]);
+      }, "Compromiso eliminado") } });
   }
 
   function formEditarSeguimiento(s) {
@@ -1263,6 +1369,9 @@
         mensaje: `Se borrará la sesión${comps.length ? `, sus ${comps.length} compromiso(s)` : ""}${s.Acta_Archivo ? " y el acta guardada" : ""}. No se puede deshacer.`,
         accion: () => guardar(async () => {
           if (s.Acta_Archivo) await S.api.borrarArchivo(s.ID_Seguimiento);
+          const idsC = new Set(comps.map((c) => c.ID_Compromiso));
+          const comsS = (S.datos.Comentarios || []).filter((x) => idsC.has(x.ID_Compromiso));
+          if (comsS.length) await S.api.eliminarFilas("Comentarios", "ID_Comentario", comsS.map((x) => x.ID_Comentario));
           if (comps.length) await S.api.eliminarFilas("Compromisos", "ID_Compromiso", comps.map((c) => c.ID_Compromiso));
           await S.api.eliminarFilas("Seguimientos", "ID_Seguimiento", [s.ID_Seguimiento]);
         }, "Sesión eliminada") },
