@@ -127,6 +127,59 @@ tr.clic:hover td { background: #dbe9fa; }
 .spinner { width: 34px; height: 34px; border: 3px solid var(--suave); border-top-color: var(--azul); border-radius: 50%; animation: giro 0.8s linear infinite; }
 @keyframes giro { to { transform: rotate(360deg); } }
 
+/* ---- v3: filtros, ayudas, pendientes, formularios guiados ---- */
+.barra-filtros { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: flex-end; background: #fff; border: 1px solid #e3e8ef; border-radius: 10px; padding: 10px 14px; margin-bottom: 14px; }
+.filtro { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--texto2); min-width: 150px; }
+.filtro select, .filtro input { min-width: 150px; width: 100%; }
+.filtro.crece { flex: 1; min-width: 200px; }
+.filtro-info { display: flex; align-items: center; gap: 10px; margin-left: auto; font-size: 12px; color: var(--texto2); padding-bottom: 8px; }
+.filtros .filtro { flex-direction: column; align-items: stretch; }
+.ayuda { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; background: var(--suave); border: 1px solid #cfe0f5; border-left: 4px solid var(--azul-claro); border-radius: 0; padding: 10px 14px; margin-bottom: 14px; font-size: 13px; }
+.ayuda ul { margin: 4px 0 0; padding-left: 18px; }
+.ayuda li { margin: 2px 0; }
+.contador { display: inline-block; min-width: 22px; padding: 0 7px; border-radius: 11px; background: var(--suave); color: var(--azul); font-size: 12px; text-align: center; font-weight: normal; }
+.pend-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.pend-bloque h3 { font-size: 14px; margin: 0 0 8px; color: var(--texto); }
+.pend-lista { list-style: none; margin: 0; padding: 0; }
+.pend-lista li { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 7px 0; border-bottom: 1px solid #edf0f5; }
+.pend-lista li:hover { background: #f4f8fd; }
+button.kpi { font: inherit; text-align: left; cursor: pointer; display: flex; flex-direction: column; color: inherit; }
+button.kpi:hover { border-color: var(--azul); }
+.kpi.estatico { display: flex; flex-direction: column; }
+.kpis-3 { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.grafico-caja, .grafico-alto { position: relative; height: 220px; width: 100%; }
+.aviso { background: #fff4d6; color: #7a5b00; border: 1px solid #f1dc9c; border-radius: var(--radio); padding: 9px 12px; margin-bottom: 14px; }
+.aviso.rojo { background: #fbe3e0; color: #8e2a1f; border-color: #f2c1bb; }
+.leyenda { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--texto2); margin-bottom: 10px; }
+.leyenda span { display: inline-flex; align-items: center; gap: 6px; }
+.leyenda i { display: inline-block; }
+.lg-real { width: 18px; height: 8px; background: var(--azul); border-radius: 3px; }
+.lg-plan { width: 18px; height: 8px; background: var(--azul-claro); border-radius: 3px; }
+.lg-hito { width: 9px; height: 9px; transform: rotate(45deg); }
+.lg-hoy { width: 2px; height: 14px; background: var(--dorado); }
+.mini { margin: 0; padding-left: 16px; }
+.pasos-login { margin: 6px 0 10px; padding-left: 18px; color: var(--texto2); font-size: 13px; }
+.pill.pendiente { background: #eef3fa; color: var(--azul); }
+.pill.cumplido { background: #e3f3ea; color: #1e5e3a; }
+.pill.atrasado { background: #fbe3e0; color: #8e2a1f; }
+.pill.rol { background: var(--suave); color: var(--azul); }
+/* Formularios */
+.form-seccion { grid-column: 1 / -1; font-weight: bold; color: var(--azul); border-bottom: 1px solid #e3e8ef; padding: 8px 0 4px; margin-top: 4px; }
+.form-grid label .etq { color: var(--texto); }
+.req { color: var(--rojo); }
+.nota-req { margin-right: auto; }
+.checks { display: flex; flex-wrap: wrap; gap: 8px 18px; padding: 4px 0; }
+.check { display: inline-flex; align-items: flex-start; gap: 6px; cursor: pointer; font-size: 13px; }
+.check input { width: auto; margin-top: 3px; }
+.contexto { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; background: var(--suave); border-radius: var(--radio); padding: 10px 12px; margin-bottom: 8px; }
+.contexto div { display: flex; flex-direction: column; font-size: 13px; }
+.sugerencia { margin: 10px 0 2px; font-size: 13px; min-height: 18px; }
+.comp-previos { display: flex; flex-direction: column; gap: 6px; padding: 6px 0; }
+.comp-cab, .comp-fila { display: grid; grid-template-columns: 2fr 1fr 150px 34px; gap: 8px; align-items: center; }
+.comp-cab { font-size: 12px; color: var(--texto2); margin-top: 6px; }
+.comp-fila { margin: 6px 0; }
+#b-add-comp { margin-top: 4px; }
+
 /* Panel lateral angosto de Excel y celulares */
 @media (max-width: 760px) {
   .layout { flex-direction: column; }
@@ -137,4 +190,14 @@ tr.clic:hover td { background: #dbe9fa; }
   #vista { padding: 12px; }
   .barra { padding: 8px 12px; }
   .g-fila { grid-template-columns: 140px minmax(420px, 1fr); }
+  .opc { display: none; }
+  .barra .quien { width: 100%; order: -1; margin-left: 0; }
+  .barra-filtros { padding: 8px 10px; }
+  .filtro, .filtro select { min-width: 0; flex: 1 1 130px; }
+  .filtro-info { margin-left: 0; width: 100%; padding-bottom: 0; }
+  .comp-cab { display: none; }
+  .comp-fila { grid-template-columns: 1fr 1fr; }
+  .comp-fila .c-texto { grid-column: 1 / -1; }
+  .modal-caja { padding: 14px; }
+  #modal { padding: 10px 6px; }
 }
