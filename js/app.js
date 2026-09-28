@@ -714,12 +714,12 @@
     };
     const cuerpo = campos.map((c) => (c.seccion
       ? `<div class="form-seccion">${esc(c.seccion)}${c.ayuda ? `<span class="sub"> · ${esc(c.ayuda)}</span>` : ""}</div>`
-      : `<label class="${c.tipo === "textarea" || c.tipo === "checks" || c.ancho ? "ancho" : ""}"><span class="etq">${esc(c.label)}${c.req ? ' <span class="req" aria-hidden="true">*</span>' : ""}</span>${control(c)}${c.ayuda ? `<span class="sub">${esc(c.ayuda)}</span>` : ""}<span class="error-campo" data-e="${c.k}"></span></label>`)).join("");
+      : `<label class="${c.tipo === "textarea" || c.tipo === "checks" || c.ancho ? "ancho" : ""}"><span class="etq">${esc(c.label)}</span>${control(c)}${c.ayuda ? `<span class="sub">${esc(c.ayuda)}</span>` : ""}<span class="error-campo" data-e="${c.k}"></span></label>`)).join("");
     m.innerHTML = `<div class="modal-caja" role="dialog" aria-modal="true" aria-label="${esc(titulo)}">
       <div class="titulo-fila"><h2>${esc(titulo)}</h2><button class="btn enlace" id="m-cerrar" aria-label="Cerrar">✕</button></div>
       <form id="m-form" novalidate>${extra.antes || ""}<div class="form-grid">${cuerpo}</div>${extra.despues || ""}
       <div class="error-campo" id="m-error" role="alert"></div>
-      <div class="acciones derecha"><span class="sub nota-req">* obligatorio</span><button type="button" class="btn" id="m-cancelar">Cancelar</button><button type="submit" class="btn primario">Guardar</button></div></form></div>`;
+      <div class="acciones derecha"><button type="button" class="btn" id="m-cancelar">Cancelar</button><button type="submit" class="btn primario">Guardar</button></div></form></div>`;
     document.body.appendChild(m);
     $("#m-cerrar").addEventListener("click", cerrarModal);
     $("#m-cancelar").addEventListener("click", cerrarModal);
@@ -741,7 +741,6 @@
       const err = (k, msg) => { ok = false; const e = m.querySelector(`[data-e="${k}"]`); if (e) e.textContent = msg; };
       campos.filter((c) => !c.seccion).forEach((c) => {
         const v = fd[c.k];
-        if (c.req && (v === "" || v === null)) return err(c.k, c.tipo === "checks" ? "Elige al menos una opción." : "Campo obligatorio.");
         if (c.tipo === "number" && v !== "" && (Number.isNaN(v) || (c.min !== undefined && v < c.min) || (c.max !== undefined && v > c.max)))
           err(c.k, c.max !== undefined ? `Debe estar entre ${c.min} y ${c.max}.` : `Debe ser mayor o igual a ${c.min}.`);
         if (c.tipo === "email" && v && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) err(c.k, "Correo no válido.");
@@ -765,22 +764,22 @@
     const frecuenciaLibre = R.puede(u, "editarFrecuencia");
     const campos = [
       { seccion: "1. Datos generales" },
-      { k: "Nombre", label: "Nombre de la iniciativa", req: true, placeholder: "Ej.: Migración del ERP", ancho: true },
-      { k: "Cliente_Area", label: "Cliente / área", tipo: "select", opciones: S.cat.Cliente_Area, req: true },
-      { k: "PM", label: "PM responsable", tipo: "select", opciones: pms, req: true, bloqueado: pmFijo,
+      { k: "Nombre", label: "Nombre de la iniciativa", placeholder: "Ej.: Migración del ERP", ancho: true },
+      { k: "Cliente_Area", label: "Cliente / área", tipo: "select", opciones: S.cat.Cliente_Area },
+      { k: "PM", label: "PM responsable", tipo: "select", opciones: pms, bloqueado: pmFijo,
         ayuda: pmFijo ? "Quedas como PM de esta iniciativa." : "Solo aparecen usuarios con rol PM. El PM verá este proyecto." },
-      { k: "Metodologia", label: "Metodología", tipo: "select", opciones: S.cat.Metodologia, req: true },
-      { k: "Prioridad", label: "Prioridad", tipo: "select", opciones: S.cat.Prioridad, req: true, def: "Media" },
+      { k: "Metodologia", label: "Metodología", tipo: "select", opciones: S.cat.Metodologia },
+      { k: "Prioridad", label: "Prioridad", tipo: "select", opciones: S.cat.Prioridad, def: "Media" },
       { seccion: "2. Estado" },
-      { k: "Fase", label: "Fase", tipo: "select", opciones: S.cat.Fase, req: true, def: "Inicio" },
-      { k: "Estado", label: "Estado", tipo: "select", opciones: S.cat.Estado, req: true, def: "Activo" },
-      { k: "Semaforo", label: "Semáforo", tipo: "select", opciones: S.cat.Semaforo, req: true, def: "Verde" },
-      { k: "Frecuencia_Seguimiento", label: "Frecuencia de seguimiento", tipo: "select", opciones: S.cat.Frecuencia_Seguimiento, req: true, def: "Semanal",
+      { k: "Fase", label: "Fase", tipo: "select", opciones: S.cat.Fase, def: "Inicio" },
+      { k: "Estado", label: "Estado", tipo: "select", opciones: S.cat.Estado, def: "Activo" },
+      { k: "Semaforo", label: "Semáforo", tipo: "select", opciones: S.cat.Semaforo, def: "Verde" },
+      { k: "Frecuencia_Seguimiento", label: "Frecuencia de seguimiento", tipo: "select", opciones: S.cat.Frecuencia_Seguimiento, def: "Semanal",
         bloqueado: !frecuenciaLibre, ayuda: frecuenciaLibre ? "Cada cuánto debe reportar el PM." : "La define la PMO." },
       { seccion: "3. Fechas y avance" },
-      { k: "Fecha_Inicio", label: "Fecha de inicio", tipo: "date", req: true, def: R.hoyISO() },
-      { k: "Fecha_Fin_Plan", label: "Fecha fin planeada", tipo: "date", req: true },
-      { k: "Avance_Planeado", label: "Avance planeado a hoy (%)", tipo: "number", min: 0, max: 100, req: true, def: 0, ayuda: "Lo que debería llevar según el plan." },
+      { k: "Fecha_Inicio", label: "Fecha de inicio", tipo: "date", def: R.hoyISO() },
+      { k: "Fecha_Fin_Plan", label: "Fecha fin planeada", tipo: "date" },
+      { k: "Avance_Planeado", label: "Avance planeado a hoy (%)", tipo: "number", min: 0, max: 100, def: 0, ayuda: "Lo que debería llevar según el plan." },
       { seccion: "4. Presupuesto", ayuda: "en pesos colombianos, sin puntos" },
       { k: "Presupuesto", label: "Presupuesto (COP)", tipo: "number", min: 0, def: 0 },
       { k: "Ejecutado", label: "Ejecutado (COP)", tipo: "number", min: 0, def: 0 },
@@ -795,14 +794,15 @@
       if (pmFijo) fd.PM = nuevo ? u.Correo : p.PM;
       if (!frecuenciaLibre) fd.Frecuencia_Seguimiento = nuevo ? "Semanal" : p.Frecuencia_Seguimiento;
       if (nuevo) {
-        const fila = { ...fd, ID_Proyecto: R.siguienteIdProyecto(S.datos.Proyectos), Avance_Real: 0, ...sello() };
+        const id = R.siguienteIdProyecto(S.datos.Proyectos);
+        const fila = { ...fd, Nombre: fd.Nombre || `Iniciativa ${id}`, ID_Proyecto: id, Avance_Real: 0, ...sello() };
         S.pid = fila.ID_Proyecto;
         S.vista = "ficha";
         guardar(() => S.api.agregarFila("Proyectos", fila), `Iniciativa ${fila.ID_Proyecto} registrada`);
       } else {
         guardar(() => S.api.actualizarPorId("Proyectos", "ID_Proyecto", p.ID_Proyecto, { ...fd, ...sello() }));
       }
-    }, (fd) => (fd.Fecha_Fin_Plan < fd.Fecha_Inicio ? "La fecha fin no puede ser anterior a la fecha de inicio." : ""));
+    }, (fd) => (fd.Fecha_Inicio && fd.Fecha_Fin_Plan && fd.Fecha_Fin_Plan < fd.Fecha_Inicio ? "La fecha fin no puede ser anterior a la fecha de inicio." : ""));
   }
 
   function formSeguimiento(p) {
@@ -812,16 +812,16 @@
       .sort((a, b) => (a.Fecha_Compromiso < b.Fecha_Compromiso ? -1 : 1));
     const campos = [
       { seccion: "1. Avance" },
-      { k: "Fecha_Corte", label: "Fecha de corte", tipo: "date", req: true, def: R.hoyISO() },
-      { k: "Avance_Real", label: "Avance real (%)", tipo: "number", min: 0, max: 100, req: true, def: p.Avance_Real },
-      { k: "Avance_Planeado", label: "Avance planeado a la fecha (%)", tipo: "number", min: 0, max: 100, req: true, def: p.Avance_Planeado, ayuda: "Lo que debería llevar según el plan." },
-      { k: "Semaforo", label: "Semáforo", tipo: "select", opciones: S.cat.Semaforo, req: true, def: p.Semaforo },
+      { k: "Fecha_Corte", label: "Fecha de corte", tipo: "date", def: R.hoyISO() },
+      { k: "Avance_Real", label: "Avance real (%)", tipo: "number", min: 0, max: 100, def: p.Avance_Real },
+      { k: "Avance_Planeado", label: "Avance planeado a la fecha (%)", tipo: "number", min: 0, max: 100, def: p.Avance_Planeado, ayuda: "Lo que debería llevar según el plan." },
+      { k: "Semaforo", label: "Semáforo", tipo: "select", opciones: S.cat.Semaforo, def: p.Semaforo },
       { seccion: "2. Qué pasó en el periodo" },
-      { k: "Logros", label: "Logros del periodo", tipo: "textarea", req: true, placeholder: "Qué se terminó o avanzó" },
-      { k: "Proximos_Pasos", label: "Próximos pasos", tipo: "textarea", req: true, placeholder: "Qué sigue hasta el próximo reporte" },
+      { k: "Logros", label: "Logros del periodo", tipo: "textarea", placeholder: "Qué se terminó o avanzó" },
+      { k: "Proximos_Pasos", label: "Próximos pasos", tipo: "textarea", placeholder: "Qué sigue hasta el próximo reporte" },
       { k: "Bloqueos", label: "Bloqueos", tipo: "textarea", placeholder: "Qué frena el avance y quién debe actuar (déjalo vacío si no hay)" },
       { seccion: "3. Acta de la sesión" },
-      { k: "Fecha_Acta", label: "Fecha del acta", tipo: "date", req: true, def: R.hoyISO() },
+      { k: "Fecha_Acta", label: "Fecha del acta", tipo: "date", def: R.hoyISO() },
       { k: "URL_Acta", label: "URL del acta", tipo: "url", placeholder: "https://…sharepoint.com/…/acta.docx", ayuda: "Opcional: enlace al acta en SharePoint o Teams." },
     ];
     const contexto = `<div class="contexto">
@@ -877,14 +877,14 @@
       for (const f of m.querySelectorAll(".comp-fila")) {
         const t = f.querySelector(".c-texto").value.trim(), r = f.querySelector(".c-resp").value.trim(), d = f.querySelector(".c-fecha").value;
         if (!t && !r && !d) continue;
-        if (!t || !r || !d) return { error: "Cada compromiso nuevo necesita descripción, responsable y fecha límite." };
-        if (d < fd.Fecha_Corte) return { error: `La fecha del compromiso «${t}» no puede ser anterior a la fecha de corte.` };
-        nuevos.push({ Compromiso: t, Responsable: r, Fecha_Compromiso: d });
+        if (d && fd.Fecha_Corte && d < fd.Fecha_Corte) return { error: `La fecha del compromiso «${t || "sin descripción"}» no puede ser anterior a la fecha de corte.` };
+        nuevos.push({ Compromiso: t || "(sin descripción)", Responsable: r, Fecha_Compromiso: d });
       }
       const cerrados = [...m.querySelectorAll(".comp-previos input:checked")].map((i) => i.value);
       return { datos: { nuevos, cerrados } };
     };
     modal(`Seguimiento · ${p.Nombre}`, campos, {}, (fd, extra) => {
+      if (!fd.Fecha_Corte) fd.Fecha_Corte = R.hoyISO();
       const idSeg = R.siguienteIdHijo("SEG", S.datos.Seguimientos, "ID_Seguimiento", p.ID_Proyecto);
       const fila = {
         ID_Seguimiento: idSeg, ID_Proyecto: p.ID_Proyecto, Fecha_Corte: fd.Fecha_Corte, Semana: R.semanaISO(fd.Fecha_Corte),
@@ -898,21 +898,23 @@
       guardar(async () => {
         await S.api.agregarFila("Seguimientos", fila);
         await S.api.actualizarPorId("Proyectos", "ID_Proyecto", p.ID_Proyecto, {
-          Avance_Real: fd.Avance_Real, Avance_Planeado: fd.Avance_Planeado, Semaforo: fd.Semaforo,
-          Comentario_Estado: fd.Bloqueos ? `Bloqueo: ${fd.Bloqueos}` : fd.Logros, ...sello(),
+          ...(fd.Avance_Real !== "" ? { Avance_Real: fd.Avance_Real } : {}),
+          ...(fd.Avance_Planeado !== "" ? { Avance_Planeado: fd.Avance_Planeado } : {}),
+          ...(fd.Semaforo ? { Semaforo: fd.Semaforo } : {}),
+          ...(fd.Bloqueos || fd.Logros ? { Comentario_Estado: fd.Bloqueos ? `Bloqueo: ${fd.Bloqueos}` : fd.Logros } : {}), ...sello(),
         });
         if (comps.length) await S.api.agregarFilas("Compromisos", comps);
         if (extra.cerrados.length) await S.api.actualizarVarios("Compromisos", "ID_Compromiso", extra.cerrados.map((id) => ({ id, cambios: { Estado: "Cumplido", Fecha_Cierre: fd.Fecha_Corte } })));
       }, `Seguimiento registrado${comps.length ? ` con ${comps.length} compromiso(s)` : ""}`);
-    }, (fd) => (fd.Fecha_Corte > R.hoyISO() ? "La fecha de corte no puede ser futura." : ""), { antes: contexto, despues, init, recoger });
+    }, (fd) => (fd.Fecha_Corte && fd.Fecha_Corte > R.hoyISO() ? "La fecha de corte no puede ser futura." : ""), { antes: contexto, despues, init, recoger });
   }
 
   function formHito(p, h) {
     const campos = [
-      { k: "Hito", label: "Hito", req: true, placeholder: "Ej.: Salida a producción", ancho: true },
-      { k: "Fecha_Plan", label: "Fecha planeada", tipo: "date", req: true },
+      { k: "Hito", label: "Hito", placeholder: "Ej.: Salida a producción", ancho: true },
+      { k: "Fecha_Plan", label: "Fecha planeada", tipo: "date" },
       { k: "Fecha_Real", label: "Fecha real", tipo: "date", ayuda: "Solo si ya se cumplió; el hito queda como Cumplido." },
-      { k: "Estado", label: "Estado", tipo: "select", opciones: S.cat.Estado_Hito, req: true, def: "Pendiente" },
+      { k: "Estado", label: "Estado", tipo: "select", opciones: S.cat.Estado_Hito, def: "Pendiente" },
     ];
     modal(h ? "Editar hito" : `Nuevo hito · ${p.Nombre}`, campos, h || {}, (fd) => {
       if (fd.Fecha_Real) fd.Estado = "Cumplido";
@@ -925,19 +927,19 @@
     const esc5 = [[1, "1 · Muy baja"], [2, "2 · Baja"], [3, "3 · Media"], [4, "4 · Alta"], [5, "5 · Muy alta"]];
     const campos = [
       { seccion: "1. Riesgo" },
-      { k: "Tipo", label: "Tipo", tipo: "select", opciones: S.cat.Tipo_Riesgo, req: true, def: "Amenaza" },
-      { k: "Estado", label: "Estado", tipo: "select", opciones: S.cat.Estado_Riesgo, req: true, def: "Abierto" },
-      { k: "Responsable", label: "Responsable", req: true, def: S.usuario.Nombre || S.usuario.Correo },
-      { k: "Descripcion", label: "Descripción del riesgo", tipo: "textarea", req: true, placeholder: "Si ocurre X, entonces Y" },
+      { k: "Tipo", label: "Tipo", tipo: "select", opciones: S.cat.Tipo_Riesgo, def: "Amenaza" },
+      { k: "Estado", label: "Estado", tipo: "select", opciones: S.cat.Estado_Riesgo, def: "Abierto" },
+      { k: "Responsable", label: "Responsable", def: S.usuario.Nombre || S.usuario.Correo },
+      { k: "Descripcion", label: "Descripción del riesgo", tipo: "textarea", placeholder: "Si ocurre X, entonces Y" },
       { seccion: "2. Antes de mitigar (inherente)" },
-      { k: "Probabilidad_Inherente", label: "Probabilidad", tipo: "select", opciones: esc5, req: true },
-      { k: "Impacto_Inherente", label: "Impacto", tipo: "select", opciones: esc5, req: true },
+      { k: "Probabilidad_Inherente", label: "Probabilidad", tipo: "select", opciones: esc5 },
+      { k: "Impacto_Inherente", label: "Impacto", tipo: "select", opciones: esc5 },
       { seccion: "3. Planes" },
-      { k: "Plan_Mitigacion", label: "Plan de mitigación", tipo: "textarea", req: true, placeholder: "Qué hacemos para que no ocurra o afecte menos" },
+      { k: "Plan_Mitigacion", label: "Plan de mitigación", tipo: "textarea", placeholder: "Qué hacemos para que no ocurra o afecte menos" },
       { k: "Plan_Contingencia", label: "Plan de contingencia", tipo: "textarea", placeholder: "Qué hacemos si ocurre" },
       { seccion: "4. Después de mitigar (residual)" },
-      { k: "Probabilidad_Residual", label: "Probabilidad", tipo: "select", opciones: esc5, req: true },
-      { k: "Impacto_Residual", label: "Impacto", tipo: "select", opciones: esc5, req: true },
+      { k: "Probabilidad_Residual", label: "Probabilidad", tipo: "select", opciones: esc5 },
+      { k: "Impacto_Residual", label: "Impacto", tipo: "select", opciones: esc5 },
     ];
     modal(r ? "Editar riesgo" : `Nuevo riesgo · ${p.Nombre}`, campos, r || {}, (fd) => {
       ["Probabilidad_Inherente", "Impacto_Inherente", "Probabilidad_Residual", "Impacto_Residual"].forEach((k) => { fd[k] = Number(fd[k]); });
@@ -950,19 +952,20 @@
 
   function formUsuario(uEdit) {
     const campos = [
-      { k: "Correo", label: "Correo corporativo", tipo: "email", req: true, bloqueado: !!uEdit, placeholder: "nombre@empresa.com" },
-      { k: "Nombre", label: "Nombre", req: true, placeholder: "Como aparecerá en la app" },
-      { k: "Rol", label: "Roles", tipo: "checks", opciones: R.ROLES, req: true, ayuda: "Puedes marcar varios; los permisos se suman." },
+      { k: "Correo", label: "Correo corporativo", tipo: "email", bloqueado: !!uEdit, placeholder: "nombre@empresa.com" },
+      { k: "Nombre", label: "Nombre", placeholder: "Como aparecerá en la app" },
+      { k: "Rol", label: "Roles", tipo: "checks", opciones: R.ROLES, ayuda: "Puedes marcar varios; los permisos se suman." },
       { k: "Proyectos", label: "Proyectos que puede consultar (rol Lector)", def: "Todos", ancho: true,
         ayuda: "IDs separados por coma (PRY-0001, PRY-0004) o Todos. Los proyectos de un PM salen de la tabla Proyectos." },
-      { k: "Activo", label: "Activo", tipo: "select", opciones: ["Sí", "No"], req: true, def: "Sí" },
+      { k: "Activo", label: "Activo", tipo: "select", opciones: ["Sí", "No"], def: "Sí" },
     ];
     modal(uEdit ? "Editar usuario" : "Nuevo usuario", campos, uEdit || {}, (fd) => {
       if (uEdit) { fd.Correo = uEdit.Correo; guardar(() => S.api.actualizarPorId("Usuarios", "Correo", uEdit.Correo, fd)); }
       else guardar(() => S.api.agregarFila("Usuarios", fd), "Usuario creado");
     }, (fd) => {
+      if (!uEdit && !fd.Correo) return "Escribe el correo: es con lo que el usuario entra a la app.";
       if (!uEdit && S.datos.Usuarios.some((x) => lc(x.Correo) === lc(fd.Correo))) return "Ese correo ya existe.";
-      if (uEdit && lc(uEdit.Correo) === lc(S.usuario.Correo) && (!fd.Rol.split(", ").includes("Admin") || fd.Activo !== "Sí")) return "No puedes quitarte el rol Admin ni desactivarte a ti mismo.";
+      if (uEdit && lc(uEdit.Correo) === lc(S.usuario.Correo) && (!String(fd.Rol).split(", ").includes("Admin") || fd.Activo !== "Sí")) return "No puedes quitarte el rol Admin ni desactivarte a ti mismo.";
       const ids = new Set(S.datos.Proyectos.map((p) => p.ID_Proyecto));
       const malos = String(fd.Proyectos || "").split(",").map((s) => s.trim()).filter((s) => s && s !== "Todos" && !ids.has(s));
       if (malos.length) return `Estos proyectos no existen: ${malos.join(", ")}.`;
