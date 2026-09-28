@@ -173,6 +173,24 @@
       });
     },
 
+    // Borra todas las filas cuyo colId esté en ids (de abajo hacia arriba para no mover índices).
+    async eliminarFilas(tabla, colId, ids) {
+      return Excel.run(async (ctx) => {
+        const t = ctx.workbook.tables.getItem(tabla);
+        const col = t.columns.getItem(colId).getDataBodyRange().load("values");
+        await ctx.sync();
+        const buscar = new Set(ids.map(String));
+        const indices = col.values.map((r, i) => (buscar.has(String(r[0])) ? i : -1)).filter((i) => i >= 0).sort((a, b) => b - a);
+        let quedan = col.values.length;
+        for (const i of indices) {
+          if (quedan === 1) { const r = t.getDataBodyRange().getRow(0); r.load("columnCount"); await ctx.sync(); r.values = [Array(r.columnCount).fill("")]; }
+          else { t.rows.getItemAt(i).delete(); quedan -= 1; }
+        }
+        await ctx.sync();
+        return indices.length;
+      });
+    },
+
     // Borra la fila cuyas columnas coinciden con todos los criterios ({ Lista: "Fase", Valor: "Cierre" }).
     async eliminarFila(tabla, criterios) {
       return Excel.run(async (ctx) => {
@@ -210,6 +228,12 @@
       async agregarFila(tabla, obj) { return api.agregarFilas(tabla, [obj]); },
       async actualizarVarios(tabla, colId, lista) { lista.forEach(({ id, cambios }) => Object.assign(buscar(tabla, colId, id), copia(cambios))); return true; },
       async actualizarPorId(tabla, colId, id, cambios) { return api.actualizarVarios(tabla, colId, [{ id, cambios }]); },
+      async eliminarFilas(tabla, colId, ids) {
+        const buscar = new Set(ids.map(String));
+        const antes = db[tabla].length;
+        db[tabla] = db[tabla].filter((r) => !buscar.has(String(r[colId])));
+        return antes - db[tabla].length;
+      },
       async eliminarFila(tabla, criterios) {
         const i = db[tabla].findIndex((r) => Object.entries(criterios).every(([k, v]) => String(r[k]) === String(v)));
         if (i < 0) throw new Error(`No se encontró el registro en ${tabla}.`);
@@ -220,7 +244,7 @@
     return api;
   }
 
-  const OPERACIONES = ["leerTodo", "agregarFila", "agregarFilas", "actualizarPorId", "actualizarVarios", "eliminarFila", "guardarParte", "borrarArchivo", "leerParte"];
+  const OPERACIONES = ["leerTodo", "agregarFila", "agregarFilas", "actualizarPorId", "actualizarVarios", "eliminarFila", "eliminarFilas", "guardarParte", "borrarArchivo", "leerParte"];
 
   async function puente() {
     let seq = 0;

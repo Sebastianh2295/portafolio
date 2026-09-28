@@ -188,6 +188,10 @@ button.kpi:hover { border-color: var(--azul); }
 .acta-estado:empty { display: none; }
 .acta-estado.ok { color: #1e5e3a; }
 .acta-estado.error { color: var(--rojo); }
+.btn.peligro-suave { color: var(--rojo); border-color: #f2c1bb; margin-right: auto; }
+.btn.peligro-suave:hover { background: #fbe3e0; }
+.nowrap { white-space: nowrap; }
+.enlace-edicion { margin-top: 6px; }
 .celda-acta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 .modal-caja.visor { max-width: 960px; }
 .visor-paginas { background: #e9edf3; padding: 10px; border-radius: var(--radio); max-height: 75vh; overflow: auto; }

@@ -401,10 +401,11 @@
         return `<tr ${conProyecto ? `class="clic" data-pid="${esc(c.ID_Proyecto)}"` : ""}>${conProyecto ? `<td><b>${esc(p.Nombre)}</b></td>` : ""}
           <td>${esc(c.Compromiso)}</td><td>${esc(c.Responsable)}</td><td>${fecha(c.Fecha_Compromiso)}</td>
           <td>${pill(e)}${e === "Cumplido" && c.Fecha_Cierre ? `<div class="sub">${fecha(c.Fecha_Cierre)}</div>` : ""}</td>
-          <td class="derecha">${e !== "Cumplido" && R.puedeEditar(S.usuario, p, "compromisos") ? `<button class="btn chico" data-cumplir="${esc(c.ID_Compromiso)}">Cumplido</button>` : ""}</td></tr>`;
+          <td class="derecha nowrap">${R.puedeEditar(S.usuario, p, "compromisos") ? `${e !== "Cumplido" ? `<button class="btn chico" data-cumplir="${esc(c.ID_Compromiso)}">Cumplido</button> ` : ""}<button class="btn chico" data-edit-comp="${esc(c.ID_Compromiso)}">Editar</button>` : ""}</td></tr>`;
       }).join("")}</tbody></table></div>`;
   }
   function enlazarCompromisos(el) {
+    el.querySelectorAll("[data-edit-comp]").forEach((b) => b.addEventListener("click", () => formCompromiso(S.datos.Compromisos.find((x) => x.ID_Compromiso === b.dataset.editComp))));
     el.querySelectorAll("[data-cumplir]").forEach((b) => b.addEventListener("click", () => {
       const c = S.datos.Compromisos.find((x) => x.ID_Compromiso === b.dataset.cumplir);
       confirmar("Marcar compromiso como cumplido", `«${c.Compromiso}» (${c.Responsable}) quedará cerrado con fecha de hoy.`, "Marcar cumplido",
@@ -487,7 +488,8 @@
           <td>${pct(s.Avance_Real)}<div>${chipSemaforo(s.Semaforo)}</div></td>
           <td>${esc(s.Logros)}<div class="sub">Sigue: ${esc(s.Proximos_Pasos || "—")}</div></td><td>${esc(s.Bloqueos || "—")}</td>
           <td>${acordados.length ? `<ul class="mini">${acordados.map((c) => `<li>${esc(c.Compromiso)} <span class="sub">${esc(c.Responsable)} · ${fecha(c.Fecha_Compromiso)}</span> ${pill(R.estadoCompromiso(c))}</li>`).join("")}</ul>` : `<span class="sub">Sin compromisos</span>`}</td>
-          <td>${s.Fecha_Acta ? fecha(s.Fecha_Acta) : `<span class="sub">Sin fecha</span>`}<div class="celda-acta">${celdaActa(s, puedeP("seguimiento"))}</div></td></tr>`;
+          <td>${s.Fecha_Acta ? fecha(s.Fecha_Acta) : `<span class="sub">Sin fecha</span>`}<div class="celda-acta">${celdaActa(s, puedeP("seguimiento"))}</div>
+            ${puedeP("seguimiento") ? `<button class="btn chico enlace-edicion" data-edit-seg="${esc(s.ID_Seguimiento)}">Editar sesión</button>` : ""}</td></tr>`;
         }).join("") || `<tr><td colspan="6">${vacio("Sin seguimientos.")}</td></tr>`}</tbody></table></div></div>
       <div class="card"><div class="titulo-fila"><h2>Hitos</h2>${puedeP("hitos") ? `<button class="btn" id="b-hito">+ Hito</button>` : ""}</div><div class="tabla-scroll"><table>
         <thead><tr><th>Hito</th><th>Fecha plan</th><th>Fecha real</th><th>Estado</th><th></th></tr></thead>
@@ -506,6 +508,7 @@
     el.querySelectorAll("[data-hito]").forEach((b) => b.addEventListener("click", () => formHito(p, hitos.find((h) => h.ID_Hito === b.dataset.hito))));
     el.querySelectorAll("[data-riesgo]").forEach((b) => b.addEventListener("click", () => formRiesgo(p, riesgos.find((r) => r.ID_Riesgo === b.dataset.riesgo))));
     enlazarCompromisos(el);
+    el.querySelectorAll("[data-edit-seg]").forEach((b) => b.addEventListener("click", () => formEditarSeguimiento(segs.find((s) => s.ID_Seguimiento === b.dataset.editSeg))));
     if (segs.length) grafico($("#g-curva"), { type: "line", data: { labels: segs.map((s) => fecha(s.Fecha_Corte)), datasets: [
       { label: "Avance real", data: segs.map((s) => Number(s.Avance_Real) || 0), borderColor: COLORES.azul, backgroundColor: COLORES.azul, tension: 0.2 }] },
       options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { min: 0, max: 100, ticks: { callback: (v) => v + "%" } } } } });
@@ -609,7 +612,7 @@
             <h2>${esc(c.t)}</h2>
             <table><thead><tr><th>Valor</th><th>Proyectos que lo usan</th><th></th></tr></thead>
               <tbody>${valores.map((v) => `<tr><td>${esc(v)}</td><td>${enUso(c.campo, v)}</td>
-                <td class="derecha"><button class="btn chico" data-quitar="${esc(c.lista)}" data-valor="${esc(v)}">Quitar</button></td></tr>`).join("") || `<tr><td colspan="3">${vacio("Sin valores.")}</td></tr>`}</tbody></table>
+                <td class="derecha nowrap"><button class="btn chico" data-renombrar="${esc(c.lista)}" data-valor="${esc(v)}">Renombrar</button> <button class="btn chico" data-quitar="${esc(c.lista)}" data-valor="${esc(v)}">Quitar</button></td></tr>`).join("") || `<tr><td colspan="3">${vacio("Sin valores.")}</td></tr>`}</tbody></table>
             <form class="cat-agregar" data-lista="${esc(c.lista)}" novalidate>
               <input name="valor" placeholder="Nuevo valor" aria-label="Nuevo valor para ${esc(c.t)}">
               <button class="btn primario" type="submit">Agregar</button>
@@ -636,6 +639,24 @@
         guardar(() => S.api.agregarFila("Catalogos", { Lista: lista, Valor: valor }), `«${valor}» agregado`);
       });
     });
+    el.querySelectorAll("[data-renombrar]").forEach((b) => b.addEventListener("click", () => {
+      const lista = b.dataset.renombrar, valor = b.dataset.valor;
+      const c = CATALOGOS_EDITABLES.find((x) => x.lista === lista);
+      const usan = S.datos.Proyectos.filter((p) => String(p[c.campo]) === valor);
+      modal(`Renombrar «${valor}»`, [{ k: "Nuevo", label: "Nuevo nombre", def: valor, ancho: true,
+        ayuda: usan.length ? `También se actualizarán los ${usan.length} proyecto(s) que lo usan.` : "Ningún proyecto usa este valor." }], {}, (fd) => {
+        guardar(async () => {
+          await S.api.eliminarFila("Catalogos", { Lista: lista, Valor: valor });
+          await S.api.agregarFila("Catalogos", { Lista: lista, Valor: fd.Nuevo });
+          if (usan.length) await S.api.actualizarVarios("Proyectos", "ID_Proyecto", usan.map((p) => ({ id: p.ID_Proyecto, cambios: { [c.campo]: fd.Nuevo } })));
+        }, `«${valor}» ahora es «${fd.Nuevo}»`);
+      }, (fd) => {
+        if (!fd.Nuevo) return "Escribe el nuevo nombre.";
+        if (fd.Nuevo === valor) return "Es el mismo nombre.";
+        if ((S.cat[lista] || []).some((v) => lc(v) === lc(fd.Nuevo) && v !== valor)) return "Ese valor ya existe en la lista.";
+        return "";
+      });
+    }));
     el.querySelectorAll("[data-quitar]").forEach((b) => b.addEventListener("click", () => {
       const lista = b.dataset.quitar, valor = b.dataset.valor;
       const c = CATALOGOS_EDITABLES.find((x) => x.lista === lista);
@@ -799,10 +820,11 @@
       <div class="titulo-fila"><h2>${esc(titulo)}</h2><button class="btn enlace" id="m-cerrar" aria-label="Cerrar">✕</button></div>
       <form id="m-form" novalidate>${extra.antes || ""}<div class="form-grid">${cuerpo}</div>${extra.despues || ""}
       <div class="error-campo" id="m-error" role="alert"></div>
-      <div class="acciones derecha"><button type="button" class="btn" id="m-cancelar">Cancelar</button><button type="submit" class="btn primario">Guardar</button></div></form></div>`;
+      <div class="acciones derecha">${extra.eliminar ? `<button type="button" class="btn peligro-suave" id="m-eliminar">${esc(extra.eliminar.texto)}</button>` : ""}<button type="button" class="btn" id="m-cancelar">Cancelar</button><button type="submit" class="btn primario">Guardar</button></div></form></div>`;
     document.body.appendChild(m);
     $("#m-cerrar").addEventListener("click", cerrarModal);
     $("#m-cancelar").addEventListener("click", cerrarModal);
+    if (extra.eliminar) $("#m-eliminar").addEventListener("click", () => confirmar(extra.eliminar.titulo || extra.eliminar.texto, extra.eliminar.mensaje, "Eliminar", extra.eliminar.accion));
     m.addEventListener("keydown", (e) => { if (e.key === "Escape") cerrarModal(); });
     m.querySelectorAll("input,select,textarea").forEach((i) => i.addEventListener("input", () => {
       const e = i.name && m.querySelector(`[data-e="${i.name}"]`); if (e) e.textContent = ""; $("#m-error").textContent = "";
@@ -882,7 +904,10 @@
       } else {
         guardar(() => S.api.actualizarPorId("Proyectos", "ID_Proyecto", p.ID_Proyecto, { ...fd, ...sello() }));
       }
-    }, (fd) => (fd.Fecha_Inicio && fd.Fecha_Fin_Plan && fd.Fecha_Fin_Plan < fd.Fecha_Inicio ? "La fecha fin no puede ser anterior a la fecha de inicio." : ""));
+    }, (fd) => (fd.Fecha_Inicio && fd.Fecha_Fin_Plan && fd.Fecha_Fin_Plan < fd.Fecha_Inicio ? "La fecha fin no puede ser anterior a la fecha de inicio." : ""),
+    !nuevo && R.puede(u, "verTodo") ? { eliminar: { texto: "Eliminar proyecto", titulo: `Eliminar ${p.ID_Proyecto}`,
+      mensaje: `Se borrará «${p.Nombre}» con todos sus seguimientos, compromisos, hitos, riesgos y actas. No se puede deshacer. Si solo terminó, mejor cambia su estado a Cerrado o Cancelado.`,
+      accion: () => { S.vista = "proyectos"; guardar(() => eliminarProyecto(p.ID_Proyecto), `Proyecto ${p.ID_Proyecto} eliminado`); } } } : {});
   }
 
   function formSeguimiento(p) {
@@ -1032,7 +1057,7 @@
       if (fd.Fecha_Real) fd.Estado = "Cumplido";
       if (h) guardar(() => S.api.actualizarPorId("Hitos", "ID_Hito", h.ID_Hito, fd));
       else guardar(() => S.api.agregarFila("Hitos", { ID_Hito: R.siguienteIdHijo("HIT", S.datos.Hitos, "ID_Hito", p.ID_Proyecto), ID_Proyecto: p.ID_Proyecto, ...fd }), "Hito agregado");
-    });
+    }, null, h ? { eliminar: { texto: "Eliminar hito", mensaje: `Se borrará el hito «${h.Hito}».`, accion: () => guardar(() => S.api.eliminarFilas("Hitos", "ID_Hito", [h.ID_Hito]), "Hito eliminado") } } : {});
   }
 
   function formRiesgo(p, r) {
@@ -1059,7 +1084,7 @@
       fd.Calificacion_Residual = R.calificacion(fd.Probabilidad_Residual, fd.Impacto_Residual);
       if (r) guardar(() => S.api.actualizarPorId("Riesgos", "ID_Riesgo", r.ID_Riesgo, fd));
       else guardar(() => S.api.agregarFila("Riesgos", { ID_Riesgo: R.siguienteIdHijo("RSG", S.datos.Riesgos, "ID_Riesgo", p.ID_Proyecto), ID_Proyecto: p.ID_Proyecto, ...fd }), "Riesgo agregado");
-    });
+    }, null, r ? { eliminar: { texto: "Eliminar riesgo", mensaje: `Se borrará el riesgo «${r.Descripcion}».`, accion: () => guardar(() => S.api.eliminarFilas("Riesgos", "ID_Riesgo", [r.ID_Riesgo]), "Riesgo eliminado") } } : {});
   }
 
   function formUsuario(uEdit) {
@@ -1082,6 +1107,104 @@
       const malos = String(fd.Proyectos || "").split(",").map((s) => s.trim()).filter((s) => s && s !== "Todos" && !ids.has(s));
       if (malos.length) return `Estos proyectos no existen: ${malos.join(", ")}.`;
       return "";
+    }, uEdit && lc(uEdit.Correo) !== lc(S.usuario.Correo) ? { eliminar: { texto: "Eliminar usuario",
+      mensaje: `${uEdit.Nombre || uEdit.Correo} ya no podrá entrar. Sus proyectos y registros se conservan. Si es temporal, mejor márcalo como inactivo.`,
+      accion: () => guardar(() => S.api.eliminarFilas("Usuarios", "Correo", [uEdit.Correo]), "Usuario eliminado") } } : {});
+  }
+
+  // ---------- Editar y eliminar registros ----------
+  async function eliminarProyecto(pid) {
+    const segs = S.datos.Seguimientos.filter((s) => s.ID_Proyecto === pid);
+    for (const s of segs.filter((x) => x.Acta_Archivo)) await S.api.borrarArchivo(s.ID_Seguimiento);
+    const borrar = (tabla, col, filas) => (filas.length ? S.api.eliminarFilas(tabla, col, filas.map((f) => f[col])) : null);
+    await borrar("Compromisos", "ID_Compromiso", S.datos.Compromisos.filter((c) => c.ID_Proyecto === pid));
+    await borrar("Seguimientos", "ID_Seguimiento", segs);
+    await borrar("Hitos", "ID_Hito", S.datos.Hitos.filter((h) => h.ID_Proyecto === pid));
+    await borrar("Riesgos", "ID_Riesgo", S.datos.Riesgos.filter((r) => r.ID_Proyecto === pid));
+    await S.api.eliminarFilas("Proyectos", "ID_Proyecto", [pid]);
+  }
+
+  function formCompromiso(c) {
+    const campos = [
+      { k: "Compromiso", label: "Compromiso", tipo: "textarea" },
+      { k: "Responsable", label: "Responsable" },
+      { k: "Fecha_Compromiso", label: "Fecha límite", tipo: "date" },
+      { k: "Estado", label: "Estado", tipo: "select", opciones: S.cat.Estado_Compromiso, def: "Pendiente" },
+      { k: "Fecha_Cierre", label: "Fecha de cierre", tipo: "date", ayuda: "Se llena sola al marcarlo cumplido; se borra si lo reabres." },
+    ];
+    modal("Editar compromiso", campos, c, (fd) => {
+      if (fd.Estado === "Cumplido" && !fd.Fecha_Cierre) fd.Fecha_Cierre = R.hoyISO();
+      if (fd.Estado !== "Cumplido") fd.Fecha_Cierre = "";
+      guardar(() => S.api.actualizarPorId("Compromisos", "ID_Compromiso", c.ID_Compromiso, fd), "Compromiso actualizado");
+    }, null, { eliminar: { texto: "Eliminar compromiso", mensaje: `Se borrará «${c.Compromiso}».`, accion: () => guardar(() => S.api.eliminarFilas("Compromisos", "ID_Compromiso", [c.ID_Compromiso]), "Compromiso eliminado") } });
+  }
+
+  function formEditarSeguimiento(s) {
+    const p = proyecto(s.ID_Proyecto);
+    const segs = R.seguimientosDe(s.ID_Proyecto, S.datos.Seguimientos);
+    const esUltimo = segs.length && segs[segs.length - 1].ID_Seguimiento === s.ID_Seguimiento;
+    const comps = S.datos.Compromisos.filter((c) => c.ID_Seguimiento === s.ID_Seguimiento);
+    const campos = [
+      { seccion: "1. Avance" },
+      { k: "Fecha_Corte", label: "Fecha de corte", tipo: "date" },
+      { k: "Avance_Real", label: "Avance real (%)", tipo: "number", min: 0, max: 100 },
+      { k: "Semaforo", label: "Semáforo", tipo: "select", opciones: S.cat.Semaforo },
+      { seccion: "2. Qué pasó en el periodo" },
+      { k: "Logros", label: "Logros del periodo", tipo: "textarea" },
+      { k: "Proximos_Pasos", label: "Próximos pasos", tipo: "textarea" },
+      { k: "Bloqueos", label: "Bloqueos", tipo: "textarea" },
+      { seccion: "3. Acta de la sesión" },
+      { k: "Fecha_Acta", label: "Fecha del acta", tipo: "date" },
+      { k: "URL_Acta", label: "Enlace al acta (opcional)", tipo: "url", placeholder: "https://…" },
+    ];
+    const bloqueActa = `<div class="carga-acta">
+      <div><b>Archivo del acta</b><div class="sub" id="acta-actual">${s.Acta_Archivo ? `Guardada: ${esc(s.Acta_Archivo)}` : "Esta sesión no tiene acta guardada."}</div></div>
+      <div class="acciones">${s.Acta_Archivo ? `<button type="button" class="btn" id="b-ver-acta">Ver</button><button type="button" class="btn" id="b-quitar-acta">Quitar</button>` : ""}
+        <button type="button" class="btn primario" id="b-reemplazar-acta">${s.Acta_Archivo ? "Reemplazar PDF" : "Subir PDF"}</button></div>
+      <div id="acta-estado" class="acta-estado" aria-live="polite"></div></div>`;
+    const despues = `<p class="sub">${comps.length ? `Esta sesión tiene ${comps.length} compromiso(s); edítalos en la tabla «Compromisos» de la ficha.` : "Esta sesión no tiene compromisos."}${esUltimo ? " Es la última sesión: al guardar también se actualiza el avance y el semáforo del proyecto." : ""}</p>`;
+    let accionActa = null;   // null = sin cambio · { tipo: "subir", bytes, nombre } · { tipo: "quitar" }
+    const init = (m) => {
+      const est = $("#acta-estado");
+      if ($("#b-ver-acta")) $("#b-ver-acta").addEventListener("click", () => { const volver = () => formEditarSeguimiento(s); verActa(s.ID_Seguimiento, s.Acta_Archivo).then(() => { const c = $("#v-cerrar"); if (c) c.addEventListener("click", volver, { once: true }); }); });
+      if ($("#b-quitar-acta")) $("#b-quitar-acta").addEventListener("click", () => { accionActa = { tipo: "quitar" }; est.className = "acta-estado error"; est.textContent = "El acta se quitará al guardar."; });
+      $("#b-reemplazar-acta").addEventListener("click", () => elegirPDF(async (archivo) => {
+        if (archivo.size > MAX_ACTA) { est.className = "acta-estado error"; est.textContent = "El acta pesa más de 5 MB."; return; }
+        est.className = "acta-estado"; est.textContent = "Leyendo el acta…";
+        try {
+          const res = await ACTAS.leerActa(archivo);
+          accionActa = { tipo: "subir", bytes: res.datos, nombre: archivo.name };
+          if (res.fecha) m.querySelector("[name=Fecha_Acta]").value = res.fecha;
+          est.className = "acta-estado ok";
+          est.textContent = `${archivo.name} se guardará al dar Guardar.${res.compromisos.length && !comps.length ? ` Trae ${res.compromisos.length} compromiso(s); se agregarán a la sesión.` : ""}`;
+          accionActa.compromisos = !comps.length ? res.compromisos : [];
+        } catch (e) { est.className = "acta-estado error"; est.textContent = "No se pudo leer el PDF: " + e.message; }
+      }));
+    };
+    modal(`Editar sesión del ${fecha(s.Fecha_Corte)} · ${p ? p.Nombre : ""}`, campos, s, (fd) => {
+      if (!fd.Fecha_Corte) fd.Fecha_Corte = s.Fecha_Corte || R.hoyISO();
+      fd.Semana = R.semanaISO(fd.Fecha_Corte);
+      const accion = accionActa;
+      guardar(async () => {
+        const cambios = { ...fd };
+        if (accion && accion.tipo === "quitar") { await S.api.borrarArchivo(s.ID_Seguimiento); cambios.Acta_Archivo = ""; }
+        if (accion && accion.tipo === "subir") { await subirActa(s.ID_Seguimiento, accion.bytes, accion.nombre); cambios.Acta_Archivo = accion.nombre; }
+        await S.api.actualizarPorId("Seguimientos", "ID_Seguimiento", s.ID_Seguimiento, cambios);
+        if (accion && accion.compromisos && accion.compromisos.length) await S.api.agregarFilas("Compromisos", accion.compromisos.map((c, i) => ({
+          ID_Compromiso: R.siguienteIdHijo("CMP", S.datos.Compromisos, "ID_Compromiso", s.ID_Proyecto, i), ID_Proyecto: s.ID_Proyecto, ID_Seguimiento: s.ID_Seguimiento,
+          Compromiso: c.Compromiso, Responsable: c.Responsable, Fecha_Compromiso: c.Fecha_Compromiso, Estado: "Pendiente", Fecha_Cierre: "", Registrado_Por: S.usuario.Correo })));
+        if (esUltimo && p) await S.api.actualizarPorId("Proyectos", "ID_Proyecto", p.ID_Proyecto, {
+          ...(fd.Avance_Real !== "" ? { Avance_Real: fd.Avance_Real } : {}), ...(fd.Semaforo ? { Semaforo: fd.Semaforo } : {}), ...sello() });
+      }, "Sesión actualizada");
+    }, (fd) => (fd.Fecha_Corte && fd.Fecha_Corte > R.hoyISO() ? "La fecha de corte no puede ser futura." : ""), {
+      antes: bloqueActa, despues, init,
+      eliminar: { texto: "Eliminar sesión", titulo: `Eliminar la sesión del ${fecha(s.Fecha_Corte)}`,
+        mensaje: `Se borrará la sesión${comps.length ? `, sus ${comps.length} compromiso(s)` : ""}${s.Acta_Archivo ? " y el acta guardada" : ""}. No se puede deshacer.`,
+        accion: () => guardar(async () => {
+          if (s.Acta_Archivo) await S.api.borrarArchivo(s.ID_Seguimiento);
+          if (comps.length) await S.api.eliminarFilas("Compromisos", "ID_Compromiso", comps.map((c) => c.ID_Compromiso));
+          await S.api.eliminarFilas("Seguimientos", "ID_Seguimiento", [s.ID_Seguimiento]);
+        }, "Sesión eliminada") },
     });
   }
 
