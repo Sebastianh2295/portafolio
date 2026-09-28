@@ -13,6 +13,8 @@
     Archivos: ["ID_Archivo", "Parte", "Total", "Nombre", "Tipo", "Datos"],
     // Hilo de comentarios de cada compromiso, hasta cerrarlo.
     Comentarios: ["ID_Comentario", "ID_Compromiso", "ID_Proyecto", "Fecha_Hora", "Autor", "Texto"],
+    // Filtros guardados por cada usuario (y los que Admin/PMO comparten con todos).
+    Filtros: ["ID_Filtro", "Usuario", "Nombre", "PM", "Proyecto", "Estado", "Metodologia", "Semaforo", "Texto", "Predeterminado", "Compartido"],
   };
   const SOLO_BAJO_DEMANDA = ["Archivos"];
   const HOJAS_OCULTAS = ["Archivos"];

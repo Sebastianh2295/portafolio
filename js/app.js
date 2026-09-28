@@ -23,7 +23,7 @@
   // Ayuda corta de cada pantalla: para qué sirve y cómo se usa.
   const AYUDAS = {
     dashboard: ["Estado del portafolio de un vistazo: salud, avance, presupuesto y distribución de los proyectos.",
-      "Usa los filtros de arriba para ver un PM, un proyecto, un estado o una metodología.",
+      "Usa los filtros de arriba para ver un PM, un proyecto, un estado o una metodología. Con «💾 Guardar filtro» los dejas listos para la próxima vez.",
       "Haz clic en un indicador, en un color del semáforo o en un proyecto para ir al detalle."],
     avances: ["Resume lo reportado en la semana elegida: avance, logros, próximos pasos, bloqueos y compromisos.",
       "Abajo aparecen los proyectos semanales que aún no reportan.",
@@ -147,6 +147,7 @@
       if (!R.roles(u).length) { e.textContent = "Tu usuario no tiene un rol asignado. Pide al administrador que te asigne uno."; return; }
       S.usuario = u;
       guardarSesion(u.Correo);
+      filtrosIniciales();
       S.vista = "dashboard";
       render();
     });
@@ -157,6 +158,7 @@
     S.charts.forEach((c) => c.destroy());
     S.charts = [];
     if (!S.usuario) return pantallaLogin();
+    recordarFiltros();
     const menu = VISTAS.filter((v) => !v.permiso || R.puede(S.usuario, v.permiso));
     const activa = S.vista === "ficha" ? "proyectos" : S.vista;
     const etiquetaModo = { demo: "Demostración: los cambios no se guardan", panel: "Conectado a Excel", ventana: "Conectado a Excel" }[S.modo];
@@ -217,7 +219,81 @@
       <button class="btn chico" id="ayuda-ok">Entendido</button></div>`;
   }
 
-  // Barra de filtros común: PM, proyecto, estado y metodología.
+  // ---------- Filtros guardados ----------
+  const FILTRO_VACIO = () => ({ pm: "", proyecto: "", estado: "", metodologia: "" });
+  const LISTA_VACIA = () => ({ texto: "", semaforo: "" });
+  const esMioFiltro = (f) => lc(f.Usuario) === lc(S.usuario.Correo);
+  const filtrosGuardados = () => (S.datos.Filtros || []).filter((f) => esMioFiltro(f) || f.Compartido === "Sí")
+    .sort((a, b) => (esMioFiltro(b) - esMioFiltro(a)) || String(a.Nombre).localeCompare(String(b.Nombre), "es"));
+  const valoresFiltro = (f) => ({
+    filtros: { pm: f.PM || "", proyecto: f.Proyecto || "", estado: f.Estado || "", metodologia: f.Metodologia || "" },
+    lista: { texto: f.Texto || "", semaforo: f.Semaforo || "" },
+  });
+  const iguales = (a, b) => Object.keys(a).every((k) => String(a[k] || "") === String(b[k] || ""));
+  const filtroEnUso = () => filtrosGuardados().find((f) => { const v = valoresFiltro(f); return iguales(v.filtros, S.filtros) && iguales(v.lista, S.filtrosLista); });
+  const hayFiltros = () => Object.values(S.filtros).some(Boolean) || Object.values(S.filtrosLista).some(Boolean);
+  function aplicarFiltro(f) { const v = valoresFiltro(f); S.filtros = v.filtros; S.filtrosLista = v.lista; S.semana = null; }
+  function recordarFiltros() { if (S.usuario) guardarLocal("pmo_filtros_" + lc(S.usuario.Correo), { filtros: S.filtros, lista: S.filtrosLista }); }
+  // Al entrar: el filtro predeterminado del usuario; si no tiene, los últimos filtros que usó en este equipo.
+  function filtrosIniciales() {
+    S.filtros = FILTRO_VACIO(); S.filtrosLista = LISTA_VACIA();
+    if (!S.usuario) return;
+    const pred = (S.datos.Filtros || []).find((f) => esMioFiltro(f) && f.Predeterminado === "Sí");
+    if (pred) return aplicarFiltro(pred);
+    const ult = leerLocal("pmo_filtros_" + lc(S.usuario.Correo), null);
+    if (ult && ult.filtros) { S.filtros = { ...FILTRO_VACIO(), ...ult.filtros }; S.filtrosLista = { ...LISTA_VACIA(), ...(ult.lista || {}) }; }
+  }
+  function describirFiltro(v) {
+    const partes = [];
+    if (v.filtros.pm) partes.push(`PM: ${nombreUsuario(v.filtros.pm)}`);
+    if (v.filtros.proyecto) partes.push(`Proyecto: ${(proyecto(v.filtros.proyecto) || {}).Nombre || v.filtros.proyecto}`);
+    if (v.filtros.estado) partes.push(`Estado: ${v.filtros.estado}`);
+    if (v.filtros.metodologia) partes.push(`Metodología: ${v.filtros.metodologia}`);
+    if (v.lista.semaforo) partes.push(`Semáforo: ${v.lista.semaforo}`);
+    if (v.lista.texto) partes.push(`Búsqueda: «${v.lista.texto}»`);
+    return partes.length ? partes.join(" · ") : "Sin filtros (todo el portafolio)";
+  }
+  // Guardar los filtros actuales (f = null) o editar/eliminar uno guardado.
+  function formFiltro(f) {
+    const u = S.usuario;
+    const nuevo = !f;
+    const v = nuevo ? { filtros: { ...S.filtros }, lista: { ...S.filtrosLista } } : valoresFiltro(f);
+    const campos = [
+      { k: "Nombre", label: "Nombre del filtro", placeholder: "Ej.: Mis proyectos activos ágiles", ancho: true,
+        ayuda: nuevo ? "Si usas el nombre de un filtro tuyo que ya existe, se reemplaza." : "" },
+      { k: "Predeterminado", label: "¿Aplicarlo al entrar?", tipo: "select", opciones: ["Sí", "No"], def: "No",
+        ayuda: "Si dices Sí, la app abre con este filtro puesto." },
+    ];
+    if (R.puede(u, "verTodo")) campos.push({ k: "Compartido", label: "¿Compartir con todos?", tipo: "select", opciones: ["Sí", "No"], def: "No",
+      ayuda: "Los demás usuarios lo verán en su lista (cada uno solo ve sus proyectos)." });
+    const propios = (S.datos.Filtros || []).filter(esMioFiltro);
+    modal(nuevo ? "Guardar filtro" : "Filtro guardado", campos, nuevo ? {} : f, (fd) => guardar(async () => {
+      const nombre = fd.Nombre || "Mi filtro";
+      const existente = nuevo ? propios.find((x) => lc(x.Nombre) === lc(nombre)) : f;
+      const fila = {
+        Nombre: nombre, Predeterminado: fd.Predeterminado || "No", Compartido: fd.Compartido || (existente && existente.Compartido) || "No",
+        PM: v.filtros.pm, Proyecto: v.filtros.proyecto, Estado: v.filtros.estado, Metodologia: v.filtros.metodologia, Semaforo: v.lista.semaforo, Texto: v.lista.texto,
+      };
+      let id;
+      if (existente) { id = existente.ID_Filtro; await S.api.actualizarPorId("Filtros", "ID_Filtro", id, fila); }
+      else {
+        const max = (S.datos.Filtros || []).reduce((m, x) => Math.max(m, parseInt(String(x.ID_Filtro).slice(4), 10) || 0), 0);
+        id = `FIL-${String(max + 1).padStart(4, "0")}`;
+        await S.api.agregarFila("Filtros", { ID_Filtro: id, Usuario: u.Correo, ...fila });
+      }
+      // Solo un predeterminado por usuario.
+      if (fila.Predeterminado === "Sí") {
+        const otros = propios.filter((x) => x.ID_Filtro !== id && x.Predeterminado === "Sí").map((x) => ({ id: x.ID_Filtro, cambios: { Predeterminado: "No" } }));
+        if (otros.length) await S.api.actualizarVarios("Filtros", "ID_Filtro", otros);
+      }
+    }, nuevo ? "Filtro guardado" : "Filtro actualizado"), null, {
+      antes: `<div class="resumen-filtro"><b>Criterios:</b> ${esc(describirFiltro(v))}</div>`,
+      eliminar: nuevo ? null : { texto: "Eliminar filtro", mensaje: `Se eliminará el filtro «${f.Nombre}». Los datos no se tocan.`,
+        accion: () => guardar(() => S.api.eliminarFilas("Filtros", "ID_Filtro", [f.ID_Filtro]), "Filtro eliminado") },
+    });
+  }
+
+  // Barra de filtros común: PM, proyecto, estado y metodología, más los filtros guardados.
   function barraFiltros() {
     const F = S.filtros;
     const todos = visibles();
@@ -226,20 +302,40 @@
     const proys = todos.map((p) => [p.ID_Proyecto, p.Nombre]).sort(ordenar);
     const sel = (id, etiqueta, opciones, valor, todosTxt) => `<label class="filtro"><span>${etiqueta}</span><select id="${id}">
       <option value="">${todosTxt}</option>${opciones.map(([v, t]) => `<option value="${esc(v)}" ${v === valor ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></label>`;
-    const activos = Object.values(F).filter(Boolean).length;
+    const activos = hayFiltros();
+    const guardados = filtrosGuardados();
+    const enUso = filtroEnUso();
+    const etiquetaF = (f) => `${f.Predeterminado === "Sí" && esMioFiltro(f) ? "★ " : ""}${f.Nombre}${esMioFiltro(f) ? "" : " (compartido)"}`;
+    const editable = enUso && (esMioFiltro(enUso) || R.tieneRol(S.usuario, "Admin"));
     return `<div class="barra-filtros" role="search" aria-label="Filtros">
+      ${guardados.length ? `<label class="filtro guardados"><span>Mis filtros guardados</span><select id="fg-guardado">
+        <option value="">${enUso ? "— Ninguno —" : activos ? "— Filtro sin guardar —" : "— Elegir —"}</option>
+        ${guardados.map((f) => `<option value="${esc(f.ID_Filtro)}" ${enUso && enUso.ID_Filtro === f.ID_Filtro ? "selected" : ""}>${esc(etiquetaF(f))}</option>`).join("")}</select></label>` : ""}
       ${pms.length > 1 ? sel("fg-pm", "PM", pms, F.pm, "Todos") : ""}
       ${sel("fg-proy", "Proyecto", proys, F.proyecto, "Todos")}
       ${sel("fg-est", "Estado", (S.cat.Estado || []).map((v) => [v, v]), F.estado, "Todos")}
       ${sel("fg-met", "Metodología", (S.cat.Metodologia || []).map((v) => [v, v]), F.metodologia, "Todas")}
-      <div class="filtro-info"><span>${filtrados().length} de ${todos.length} proyecto(s)</span>${activos ? `<button class="btn enlace" id="fg-limpiar">Limpiar filtros</button>` : ""}</div>
+      <div class="filtro-info"><span>${filtrados().length} de ${todos.length} proyecto(s)</span>
+        ${activos && !enUso ? `<button class="btn chico" id="fg-guardar" title="Guarda esta combinación para usarla con un clic">💾 Guardar filtro</button>` : ""}
+        ${editable ? `<button class="btn enlace" id="fg-editar">Editar filtro</button>` : ""}
+        ${activos ? `<button class="btn enlace" id="fg-limpiar">Limpiar filtros</button>` : ""}</div>
     </div>`;
   }
   function enlazarFiltros() {
     const set = (k) => (e) => { S.filtros[k] = e.target.value; S.semana = null; render(); };
     [["fg-pm", "pm"], ["fg-proy", "proyecto"], ["fg-est", "estado"], ["fg-met", "metodologia"]].forEach(([id, k]) => { const el = $("#" + id); if (el) el.addEventListener("change", set(k)); });
     const l = $("#fg-limpiar");
-    if (l) l.addEventListener("click", () => { S.filtros = { pm: "", proyecto: "", estado: "", metodologia: "" }; S.filtrosLista = { texto: "", semaforo: "" }; render(); });
+    if (l) l.addEventListener("click", () => { S.filtros = FILTRO_VACIO(); S.filtrosLista = LISTA_VACIA(); render(); });
+    const g = $("#fg-guardado");
+    if (g) g.addEventListener("change", (e) => {
+      const f = filtrosGuardados().find((x) => x.ID_Filtro === e.target.value);
+      if (f) aplicarFiltro(f); else { S.filtros = FILTRO_VACIO(); S.filtrosLista = LISTA_VACIA(); }
+      render();
+    });
+    const b = $("#fg-guardar");
+    if (b) b.addEventListener("click", () => formFiltro(null));
+    const ed = $("#fg-editar");
+    if (ed) ed.addEventListener("click", () => formFiltro(filtroEnUso()));
   }
 
   const chipSemaforo = (s) => (s ? `<span class="dot" style="background:${COLORES[s] || "#999"}" aria-hidden="true"></span>${esc(s)}` : "—");
@@ -1391,6 +1487,7 @@
       await recargar();
       const correo = leerSesion();
       S.usuario = S.datos.Usuarios.find((x) => lc(x.Correo) === lc(correo) && x.Activo === "Sí") || null;
+      filtrosIniciales();
       render();
     } catch (e) {
       app().innerHTML = `<div class="login"><div class="login-caja"><h2>No se pudo leer el Excel</h2><p>${esc(e.message)}</p>

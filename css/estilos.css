@@ -132,6 +132,8 @@ tr.clic:hover td { background: #dbe9fa; }
 .filtro { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--texto2); min-width: 150px; }
 .filtro select, .filtro input { min-width: 150px; width: 100%; }
 .filtro.crece { flex: 1; min-width: 200px; }
+.filtro.guardados select { border-color: var(--azul-claro); background: var(--suave); color: var(--azul); font-weight: bold; }
+.resumen-filtro { background: var(--suave); border-radius: var(--radio); padding: 8px 10px; margin-bottom: 12px; font-size: 13px; }
 .filtro-info { display: flex; align-items: center; gap: 10px; margin-left: auto; font-size: 12px; color: var(--texto2); padding-bottom: 8px; }
 .filtros .filtro { flex-direction: column; align-items: stretch; }
 .ayuda { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; background: var(--suave); border: 1px solid #cfe0f5; border-left: 4px solid var(--azul-claro); border-radius: 0; padding: 10px 14px; margin-bottom: 14px; font-size: 13px; }
