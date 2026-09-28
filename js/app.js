@@ -1,5 +1,5 @@
 /* Pantallas de la app: ingreso, menú, módulos, formularios y ayudas. */
-/* global Office, Chart, DATOS, REGLAS */
+/* global Office, Chart, DATOS, REGLAS, ACTAS */
 (function () {
   const R = REGLAS;
   const S = {
@@ -198,6 +198,7 @@
       $(".ayuda").remove();
     });
     enlazarClics(el);
+    enlazarActas(el);
   }
   function ir(vista, pid) { S.vista = vista; if (pid) S.pid = pid; render(); window.scrollTo(0, 0); }
   // Cualquier elemento con data-pid abre la ficha del proyecto.
@@ -336,7 +337,7 @@
       const p = proyecto(s.ID_Proyecto) || {};
       const comps = S.datos.Compromisos.filter((c) => c.ID_Seguimiento === s.ID_Seguimiento);
       return `<tr class="clic" data-pid="${esc(s.ID_Proyecto)}">
-        <td><b>${esc(p.Nombre)}</b><div class="sub">${esc(nombreUsuario(p.PM))} · ${fecha(s.Fecha_Corte)}</div>${enlace(s.URL_Acta, "Acta")}</td>
+        <td><b>${esc(p.Nombre)}</b><div class="sub">${esc(nombreUsuario(p.PM))} · ${fecha(s.Fecha_Corte)}</div>${s.Acta_Archivo || esURL(s.URL_Acta) ? `<div class="celda-acta">${celdaActa(s, false)}</div>` : ""}</td>
         <td>${pct(s.Avance_Real)}<div class="${v > 0 ? "sube" : v < 0 ? "baja" : "sub"}">${v === null ? "primer reporte" : (v > 0 ? "+" : "") + v + " pts"}</div></td>
         <td>${chipSemaforo(s.Semaforo)}</td><td>${esc(s.Logros)}</td><td class="opc">${esc(s.Proximos_Pasos)}</td>
         <td class="${s.Bloqueos ? "bloqueo" : ""}">${esc(s.Bloqueos || "—")}</td>
@@ -486,7 +487,7 @@
           <td>${pct(s.Avance_Real)}<div>${chipSemaforo(s.Semaforo)}</div></td>
           <td>${esc(s.Logros)}<div class="sub">Sigue: ${esc(s.Proximos_Pasos || "—")}</div></td><td>${esc(s.Bloqueos || "—")}</td>
           <td>${acordados.length ? `<ul class="mini">${acordados.map((c) => `<li>${esc(c.Compromiso)} <span class="sub">${esc(c.Responsable)} · ${fecha(c.Fecha_Compromiso)}</span> ${pill(R.estadoCompromiso(c))}</li>`).join("")}</ul>` : `<span class="sub">Sin compromisos</span>`}</td>
-          <td>${s.Fecha_Acta ? fecha(s.Fecha_Acta) : `<span class="sub">Sin fecha</span>`}<div>${enlace(s.URL_Acta, "Ver acta") || `<span class="sub">Sin enlace</span>`}</div></td></tr>`;
+          <td>${s.Fecha_Acta ? fecha(s.Fecha_Acta) : `<span class="sub">Sin fecha</span>`}<div class="celda-acta">${celdaActa(s, puedeP("seguimiento"))}</div></td></tr>`;
         }).join("") || `<tr><td colspan="6">${vacio("Sin seguimientos.")}</td></tr>`}</tbody></table></div></div>
       <div class="card"><div class="titulo-fila"><h2>Hitos</h2>${puedeP("hitos") ? `<button class="btn" id="b-hito">+ Hito</button>` : ""}</div><div class="tabla-scroll"><table>
         <thead><tr><th>Hito</th><th>Fecha plan</th><th>Fecha real</th><th>Estado</th><th></th></tr></thead>
@@ -675,6 +676,85 @@
     el.querySelectorAll("[data-u]").forEach((b) => b.addEventListener("click", () => formUsuario(S.datos.Usuarios.find((u) => u.Correo === b.dataset.u))));
   }
 
+  // ---------- Actas en PDF guardadas en el Excel ----------
+  const MAX_ACTA = 5 * 1024 * 1024;           // 5 MB por acta
+  const TAM_PARTE = 30000;                     // caracteres por celda (límite de Excel: 32.767)
+  async function subirActa(idSeg, bytes, nombre) {
+    const b64 = ACTAS.aBase64(bytes);
+    const total = Math.max(1, Math.ceil(b64.length / TAM_PARTE));
+    await S.api.borrarArchivo(idSeg);
+    for (let i = 0; i < total; i++) {
+      cargando(true, `Guardando el acta en Excel… ${i + 1} de ${total}`);
+      await S.api.guardarParte({ ID_Archivo: idSeg, Parte: i, Total: total, Nombre: nombre, Tipo: "application/pdf", Datos: b64.slice(i * TAM_PARTE, (i + 1) * TAM_PARTE) });
+    }
+  }
+  async function verActa(idSeg, nombre) {
+    cerrarModal();
+    const m = document.createElement("div");
+    m.id = "modal";
+    m.innerHTML = `<div class="modal-caja visor" role="dialog" aria-modal="true" aria-label="Acta">
+      <div class="titulo-fila"><h2>${esc(nombre || "Acta")}</h2><div class="acciones"><a class="btn" id="v-descargar" hidden>Descargar</a><button class="btn enlace" id="v-cerrar" aria-label="Cerrar">✕</button></div></div>
+      <div id="v-paginas" class="visor-paginas"><div class="vacio">Abriendo el acta…</div></div></div>`;
+    document.body.appendChild(m);
+    $("#v-cerrar").addEventListener("click", cerrarModal);
+    m.addEventListener("keydown", (e) => { if (e.key === "Escape") cerrarModal(); });
+    try {
+      const primera = await S.api.leerParte(idSeg, 0);
+      let b64 = primera.Datos;
+      for (let i = 1; i < primera.Total; i++) {
+        $("#v-paginas").innerHTML = `<div class="vacio">Abriendo el acta… ${i + 1} de ${primera.Total}</div>`;
+        b64 += (await S.api.leerParte(idSeg, i)).Datos;
+      }
+      const bytes = ACTAS.deBase64(b64);
+      const d = $("#v-descargar");
+      if (d) { d.href = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" })); d.download = nombre || "acta.pdf"; d.hidden = false; }
+      await ACTAS.mostrar(bytes, $("#v-paginas"));
+    } catch (e) {
+      const c = $("#v-paginas");
+      if (c) c.innerHTML = vacio("No se pudo abrir el acta: " + e.message);
+    }
+  }
+  function elegirPDF(alElegir) {
+    const i = document.createElement("input");
+    i.type = "file"; i.accept = "application/pdf,.pdf";
+    i.addEventListener("change", () => { if (i.files[0]) alElegir(i.files[0]); });
+    i.click();
+  }
+  // Adjuntar el acta a una sesión ya registrada; si trae compromisos y la sesión no tiene, ofrece agregarlos.
+  function adjuntarActa(idSeg) {
+    const s = S.datos.Seguimientos.find((x) => x.ID_Seguimiento === idSeg);
+    if (!s) return;
+    elegirPDF(async (archivo) => {
+      if (archivo.size > MAX_ACTA) { toast("El acta pesa más de 5 MB. Guarda una versión más liviana del PDF.", true); return; }
+      cargando(true, "Leyendo el acta…");
+      let res;
+      try { res = await ACTAS.leerActa(archivo); } catch (e) { cargando(false); toast("No se pudo leer el PDF: " + e.message, true); return; }
+      cargando(false);
+      const yaTiene = S.datos.Compromisos.some((c) => c.ID_Seguimiento === idSeg);
+      await guardar(async () => {
+        await subirActa(idSeg, res.datos, archivo.name);
+        await S.api.actualizarPorId("Seguimientos", "ID_Seguimiento", idSeg, { Acta_Archivo: archivo.name, ...(s.Fecha_Acta ? {} : { Fecha_Acta: res.fecha }) });
+      }, "Acta adjuntada");
+      if (!yaTiene && res.compromisos.length) {
+        confirmar("Compromisos encontrados en el acta", `Leí ${res.compromisos.length} compromiso(s) en el acta. ¿Los agrego a esta sesión?`, "Agregar compromisos", () => guardar(() => S.api.agregarFilas("Compromisos",
+          res.compromisos.map((c, i) => ({ ID_Compromiso: R.siguienteIdHijo("CMP", S.datos.Compromisos, "ID_Compromiso", s.ID_Proyecto, i), ID_Proyecto: s.ID_Proyecto, ID_Seguimiento: idSeg,
+            Compromiso: c.Compromiso, Responsable: c.Responsable, Fecha_Compromiso: c.Fecha_Compromiso, Estado: "Pendiente", Fecha_Cierre: "", Registrado_Por: S.usuario.Correo }))),
+        `${res.compromisos.length} compromiso(s) agregados`), "primario");
+      }
+    });
+  }
+  function enlazarActas(el) {
+    el.querySelectorAll("[data-ver-acta]").forEach((b) => b.addEventListener("click", () => verActa(b.dataset.verActa, b.dataset.nombre)));
+    el.querySelectorAll("[data-adjuntar]").forEach((b) => b.addEventListener("click", () => adjuntarActa(b.dataset.adjuntar)));
+  }
+  function celdaActa(s, puedeAdjuntar) {
+    const partes = [];
+    if (s.Acta_Archivo) partes.push(`<button class="btn chico" data-ver-acta="${esc(s.ID_Seguimiento)}" data-nombre="${esc(s.Acta_Archivo)}">Ver acta</button>`);
+    if (esURL(s.URL_Acta)) partes.push(enlace(s.URL_Acta, "Enlace"));
+    if (!s.Acta_Archivo && puedeAdjuntar) partes.push(`<button class="btn chico" data-adjuntar="${esc(s.ID_Seguimiento)}">Adjuntar acta</button>`);
+    return partes.join(" ") || `<span class="sub">Sin acta</span>`;
+  }
+
   // ---------- Ventanas modales ----------
   function cerrarModal() { const m = $("#modal"); if (m) m.remove(); }
   function confirmar(titulo, mensaje, textoBoton, accion, estilo = "peligro") {
@@ -822,16 +902,20 @@
       { k: "Bloqueos", label: "Bloqueos", tipo: "textarea", placeholder: "Qué frena el avance y quién debe actuar (déjalo vacío si no hay)" },
       { seccion: "3. Acta de la sesión" },
       { k: "Fecha_Acta", label: "Fecha del acta", tipo: "date", def: R.hoyISO() },
-      { k: "URL_Acta", label: "URL del acta", tipo: "url", placeholder: "https://…sharepoint.com/…/acta.docx", ayuda: "Opcional: enlace al acta en SharePoint o Teams." },
+      { k: "URL_Acta", label: "Enlace al acta (opcional)", tipo: "url", placeholder: "https://…", ayuda: "Solo si además la tienes en SharePoint o Teams." },
     ];
+    const cargaActa = `<div class="carga-acta">
+      <div><b>¿Tienes el acta en PDF?</b><div class="sub">Súbela: la app lee la fecha y los compromisos, los llena abajo y guarda el acta con la sesión.</div></div>
+      <button type="button" class="btn primario" id="b-acta-pdf">Subir acta (PDF)</button>
+      <div id="acta-estado" class="acta-estado" aria-live="polite"></div></div>`;
     const contexto = `<div class="contexto">
       <div><span class="sub">Último reporte</span><b>${ult ? `${fecha(ult.Fecha_Corte)} · ${pct(ult.Avance_Real)} · ${esc(ult.Semaforo)}` : "Es el primer reporte"}</b></div>
       <div><span class="sub">Plan registrado</span><b>${pct(p.Avance_Planeado)}</b></div>
       <div><span class="sub">Frecuencia</span><b>${esc(p.Frecuencia_Seguimiento)}</b></div></div>`;
-    const filaComp = () => `<div class="comp-fila">
-      <input class="c-texto" placeholder="Compromiso (qué se hará)" aria-label="Compromiso">
-      <input class="c-resp" placeholder="Responsable" aria-label="Responsable">
-      <input class="c-fecha" type="date" aria-label="Fecha límite">
+    const filaComp = (c = {}) => `<div class="comp-fila">
+      <input class="c-texto" placeholder="Compromiso (qué se hará)" aria-label="Compromiso" value="${esc(c.Compromiso || "")}">
+      <input class="c-resp" placeholder="Responsable" aria-label="Responsable" value="${esc(c.Responsable || "")}">
+      <input class="c-fecha" type="date" aria-label="Fecha límite" value="${esc(c.Fecha_Compromiso || "")}" title="${esc(c.Fecha_Texto && !c.Fecha_Compromiso ? `En el acta: ${c.Fecha_Texto}` : "")}">
       <button type="button" class="btn chico c-quitar" aria-label="Quitar compromiso">✕</button></div>`;
     const despues = `
       <div class="sugerencia" id="sug-sem" aria-live="polite"></div>
@@ -871,7 +955,32 @@
       const enlazar = () => cont.querySelectorAll(".c-quitar").forEach((b) => { b.onclick = () => { if (cont.children.length > 1) b.parentElement.remove(); else b.parentElement.querySelectorAll("input").forEach((i) => { i.value = ""; }); }; });
       enlazar();
       $("#b-add-comp").addEventListener("click", () => { cont.insertAdjacentHTML("beforeend", filaComp()); enlazar(); cont.lastElementChild.querySelector("input").focus(); });
+      $("#b-acta-pdf").addEventListener("click", () => elegirPDF(async (archivo) => {
+        const est = $("#acta-estado");
+        if (archivo.size > MAX_ACTA) { est.className = "acta-estado error"; est.textContent = "El acta pesa más de 5 MB. Guarda una versión más liviana del PDF."; return; }
+        est.className = "acta-estado"; est.textContent = "Leyendo el acta…";
+        try {
+          const res = await ACTAS.leerActa(archivo);
+          acta = { bytes: res.datos, nombre: archivo.name };
+          if (res.fecha) {
+            m.querySelector("[name=Fecha_Acta]").value = res.fecha;
+            if (res.fecha <= R.hoyISO()) m.querySelector("[name=Fecha_Corte]").value = res.fecha;
+          }
+          [...cont.querySelectorAll(".comp-fila")].forEach((f) => { if (![...f.querySelectorAll("input")].some((i) => i.value)) f.remove(); });
+          res.compromisos.forEach((c) => cont.insertAdjacentHTML("beforeend", filaComp(c)));
+          if (!cont.children.length) cont.insertAdjacentHTML("beforeend", filaComp());
+          enlazar();
+          const sinFecha = res.compromisos.filter((c) => !c.Fecha_Compromiso).length;
+          est.className = "acta-estado ok";
+          est.innerHTML = `<b>${esc(archivo.name)}</b> se guardará con la sesión. ${res.fecha ? `Fecha del acta: ${fecha(res.fecha)}. ` : "No encontré la fecha del acta. "}` +
+            (res.encontrada ? `Cargué ${res.compromisos.length} compromiso(s) abajo${sinFecha ? ` (${sinFecha} sin fecha en el acta)` : ""}; revísalos antes de guardar.` : "No encontré la tabla «Compromisos de la reunión»; escríbelos abajo si hay.");
+        } catch (e) {
+          acta = null;
+          est.className = "acta-estado error"; est.textContent = "No se pudo leer el PDF: " + e.message;
+        }
+      }));
     };
+    let acta = null;
     const recoger = (m, fd) => {
       const nuevos = [];
       for (const f of m.querySelectorAll(".comp-fila")) {
@@ -890,7 +999,9 @@
         ID_Seguimiento: idSeg, ID_Proyecto: p.ID_Proyecto, Fecha_Corte: fd.Fecha_Corte, Semana: R.semanaISO(fd.Fecha_Corte),
         Avance_Real: fd.Avance_Real, Semaforo: fd.Semaforo, Logros: fd.Logros, Proximos_Pasos: fd.Proximos_Pasos,
         Bloqueos: fd.Bloqueos, Reportado_Por: S.usuario.Correo, Fecha_Acta: fd.Fecha_Acta, URL_Acta: fd.URL_Acta,
+        Acta_Archivo: acta ? acta.nombre : "",
       };
+      const actaElegida = acta;
       const comps = extra.nuevos.map((c, i) => ({
         ID_Compromiso: R.siguienteIdHijo("CMP", S.datos.Compromisos, "ID_Compromiso", p.ID_Proyecto, i),
         ID_Proyecto: p.ID_Proyecto, ID_Seguimiento: idSeg, ...c, Estado: "Pendiente", Fecha_Cierre: "", Registrado_Por: S.usuario.Correo,
@@ -905,8 +1016,9 @@
         });
         if (comps.length) await S.api.agregarFilas("Compromisos", comps);
         if (extra.cerrados.length) await S.api.actualizarVarios("Compromisos", "ID_Compromiso", extra.cerrados.map((id) => ({ id, cambios: { Estado: "Cumplido", Fecha_Cierre: fd.Fecha_Corte } })));
-      }, `Seguimiento registrado${comps.length ? ` con ${comps.length} compromiso(s)` : ""}`);
-    }, (fd) => (fd.Fecha_Corte && fd.Fecha_Corte > R.hoyISO() ? "La fecha de corte no puede ser futura." : ""), { antes: contexto, despues, init, recoger });
+        if (actaElegida) await subirActa(idSeg, actaElegida.bytes, actaElegida.nombre);
+      }, `Seguimiento registrado${comps.length ? ` con ${comps.length} compromiso(s)` : ""}${actaElegida ? " y acta guardada" : ""}`);
+    }, (fd) => (fd.Fecha_Corte && fd.Fecha_Corte > R.hoyISO() ? "La fecha de corte no puede ser futura." : ""), { antes: cargaActa + contexto, despues, init, recoger });
   }
 
   function formHito(p, h) {

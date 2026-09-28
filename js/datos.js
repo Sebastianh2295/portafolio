@@ -9,12 +9,16 @@
   const ESTRUCTURA = {
     Proyectos: null, Hitos: null, Seguimientos: null, Riesgos: null, Usuarios: null, Catalogos: null,
     Compromisos: ["ID_Compromiso", "ID_Proyecto", "ID_Seguimiento", "Compromiso", "Responsable", "Fecha_Compromiso", "Estado", "Fecha_Cierre", "Registrado_Por"],
+    // Archivos (actas en PDF) guardados por partes en una hoja oculta. No se lee con leerTodo por su tamaño.
+    Archivos: ["ID_Archivo", "Parte", "Total", "Nombre", "Tipo", "Datos"],
   };
+  const SOLO_BAJO_DEMANDA = ["Archivos"];
+  const HOJAS_OCULTAS = ["Archivos"];
   const TABLAS = Object.keys(ESTRUCTURA);
   // Columnas agregadas en versiones posteriores: si faltan en el Excel, se crean al final de la tabla.
   const COLUMNAS_NUEVAS = {
     Proyectos: ["URL_Repositorio", "URL_Documentos"],
-    Seguimientos: ["Fecha_Acta", "URL_Acta"],
+    Seguimientos: ["Fecha_Acta", "URL_Acta", "Acta_Archivo"],
   };
   const COLS_FECHA = ["Fecha_Inicio", "Fecha_Fin_Plan", "Actualizado_El", "Fecha_Plan", "Fecha_Real", "Fecha_Corte", "Fecha_Compromiso", "Fecha_Cierre", "Fecha_Acta"];
 
@@ -41,6 +45,7 @@
       rango.values = [cols];
       const t = hoja.tables.add(rango, true);
       t.name = n;
+      if (HOJAS_OCULTAS.includes(n)) hoja.visibility = "Hidden";
     }
     await ctx.sync();
   }
@@ -64,12 +69,12 @@
         let existentes = lista.items.map((t) => t.name);
         try { await crearTablasFaltantes(ctx, existentes); existentes = TABLAS; await crearColumnasFaltantes(ctx); }
         catch (e) { /* usuario sin permiso de edición: se lee lo que exista */ }
-        const cargas = TABLAS.filter((n) => existentes.includes(n)).map((n) => {
+        const cargas = TABLAS.filter((n) => existentes.includes(n) && !SOLO_BAJO_DEMANDA.includes(n)).map((n) => {
           const t = ctx.workbook.tables.getItem(n);
           return { n, h: t.getHeaderRowRange().load("values"), b: t.getDataBodyRange().load("values") };
         });
         await ctx.sync();
-        const res = Object.fromEntries(TABLAS.map((n) => [n, []]));
+        const res = Object.fromEntries(TABLAS.filter((n) => !SOLO_BAJO_DEMANDA.includes(n)).map((n) => [n, []]));
         for (const { n, h, b } of cargas) {
           const cols = h.values[0];
           res[n] = b.values.filter((r) => !vacia(r)).map((r) => Object.fromEntries(cols.map((k, i) => [k, normalizar(k, r[i])])));
@@ -118,6 +123,56 @@
     },
     async actualizarPorId(tabla, colId, id, cambios) { return OpsExcel.actualizarVarios(tabla, colId, [{ id, cambios }]); },
 
+    // ---- Archivos por partes (cada celda de Excel admite hasta 32.767 caracteres) ----
+    async guardarParte(fila) {
+      return Excel.run(async (ctx) => {
+        const t = ctx.workbook.tables.getItem("Archivos");
+        const cuerpo = t.getDataBodyRange().load("rowCount");
+        const h = t.getHeaderRowRange().load("values");
+        await ctx.sync();
+        const valores = [h.values[0].map((k) => (fila[k] === undefined ? "" : fila[k]))];
+        let vacia = false;
+        if (cuerpo.rowCount === 1) { const r0 = cuerpo.getRow(0).load("values"); await ctx.sync(); vacia = r0.values[0].every((c) => c === "" || c === null); }
+        if (vacia) cuerpo.getRow(0).values = valores; else t.rows.add(null, valores);
+        await ctx.sync();
+        return true;
+      });
+    },
+    async _filasArchivo(ctx, id) {
+      const t = ctx.workbook.tables.getItem("Archivos");
+      const ids = t.columns.getItem("ID_Archivo").getDataBodyRange().load("values");
+      const partes = t.columns.getItem("Parte").getDataBodyRange().load("values");
+      await ctx.sync();
+      return { t, filas: ids.values.map((r, i) => ({ i, id: String(r[0]), parte: Number(partes.values[i][0]) })).filter((x) => x.id === String(id)) };
+    },
+    async borrarArchivo(id) {
+      return Excel.run(async (ctx) => {
+        const { t, filas } = await OpsExcel._filasArchivo(ctx, id);
+        if (!filas.length) return true;
+        const total = t.getDataBodyRange().load("rowCount");
+        await ctx.sync();
+        const orden = filas.map((f) => f.i).sort((a, b) => b - a);
+        for (const i of orden) {
+          if (total.rowCount === 1) { const r = t.getDataBodyRange().getRow(0); r.load("columnCount"); await ctx.sync(); r.values = [Array(r.columnCount).fill("")]; }
+          else { t.rows.getItemAt(i).delete(); total.rowCount -= 1; }
+        }
+        await ctx.sync();
+        return true;
+      });
+    },
+    async leerParte(id, parte) {
+      return Excel.run(async (ctx) => {
+        const { t, filas } = await OpsExcel._filasArchivo(ctx, id);
+        const f = filas.find((x) => x.parte === Number(parte));
+        if (!f) throw new Error("No se encontró el acta guardada.");
+        const h = t.getHeaderRowRange().load("values");
+        const r = t.getDataBodyRange().getRow(f.i).load("values");
+        await ctx.sync();
+        const fila = Object.fromEntries(h.values[0].map((k, i) => [k, r.values[0][i]]));
+        return { Datos: String(fila.Datos || ""), Total: Number(fila.Total) || 1, Nombre: fila.Nombre, Tipo: fila.Tipo };
+      });
+    },
+
     // Borra la fila cuyas columnas coinciden con todos los criterios ({ Lista: "Fase", Valor: "Cierre" }).
     async eliminarFila(tabla, criterios) {
       return Excel.run(async (ctx) => {
@@ -145,8 +200,12 @@
       if (!r) throw new Error(`No se encontró ${id} en ${tabla}.`);
       return r;
     };
+    const archivos = {};
     const api = {
       async leerTodo() { return copia(db); },
+      async guardarParte(f) { (archivos[f.ID_Archivo] = archivos[f.ID_Archivo] || [])[f.Parte] = copia(f); return true; },
+      async borrarArchivo(id) { delete archivos[id]; return true; },
+      async leerParte(id, parte) { const f = (archivos[id] || [])[parte]; if (!f) throw new Error("En modo demostración el acta solo existe mientras la página está abierta."); return f; },
       async agregarFilas(tabla, objs) { db[tabla].push(...copia(objs)); return true; },
       async agregarFila(tabla, obj) { return api.agregarFilas(tabla, [obj]); },
       async actualizarVarios(tabla, colId, lista) { lista.forEach(({ id, cambios }) => Object.assign(buscar(tabla, colId, id), copia(cambios))); return true; },
@@ -161,7 +220,7 @@
     return api;
   }
 
-  const OPERACIONES = ["leerTodo", "agregarFila", "agregarFilas", "actualizarPorId", "actualizarVarios", "eliminarFila"];
+  const OPERACIONES = ["leerTodo", "agregarFila", "agregarFilas", "actualizarPorId", "actualizarVarios", "eliminarFila", "guardarParte", "borrarArchivo", "leerParte"];
 
   async function puente() {
     let seq = 0;

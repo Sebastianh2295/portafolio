@@ -183,6 +183,15 @@ button.kpi:hover { border-color: var(--azul); }
 .enlace-ext:hover { text-decoration: underline; }
 .acciones .enlace-ext { border: 1px solid var(--linea); border-radius: var(--radio); padding: 7px 12px; font-weight: normal; background: #fff; }
 .historial td { min-width: 110px; }
+.carga-acta { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; align-items: center; border: 1px dashed var(--azul-claro); background: #f7fbff; border-radius: var(--radio); padding: 10px 12px; margin-bottom: 10px; }
+.acta-estado { grid-column: 1 / -1; font-size: 13px; }
+.acta-estado:empty { display: none; }
+.acta-estado.ok { color: #1e5e3a; }
+.acta-estado.error { color: var(--rojo); }
+.celda-acta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.modal-caja.visor { max-width: 960px; }
+.visor-paginas { background: #e9edf3; padding: 10px; border-radius: var(--radio); max-height: 75vh; overflow: auto; }
+.pagina-pdf { display: block; margin: 0 auto 10px; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.2); max-width: 100%; }
 .historial td:nth-child(3), .historial td:nth-child(5) { min-width: 220px; }
 
 /* Panel lateral angosto de Excel y celulares */
