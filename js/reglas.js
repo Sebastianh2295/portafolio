@@ -76,7 +76,8 @@
     if (!c.Fecha_Compromiso) return "Pendiente";
     const f = difDias(c.Fecha_Compromiso, hoy);
     if (f < 0) return "Vencido";
-    if (f <= DIAS_COMPROMISO_POR_VENCER) return "Por vencer";
+    const aviso = c.Dias_Alerta === "" || c.Dias_Alerta === undefined || c.Dias_Alerta === null || Number.isNaN(Number(c.Dias_Alerta)) ? DIAS_COMPROMISO_POR_VENCER : Number(c.Dias_Alerta);
+    if (f <= aviso) return "Por vencer";
     return "Pendiente";
   }
 
@@ -121,6 +122,6 @@
 
   window.REGLAS = {
     ROLES, DIAS_FRECUENCIA, hoyISO, sumarDias, difDias, semanaISO, roles, tieneRol, puede, puedeEditar, soloPM, esPMde, esMio, visibles,
-    seguimientosDe, estadoSeguimiento, estadoCompromiso, semaforoSugerido, siguienteIdProyecto, siguienteIdHijo, kpis, calificacion, nivelRiesgo,
+    DIAS_COMPROMISO_POR_VENCER, seguimientosDe, estadoSeguimiento, estadoCompromiso, semaforoSugerido, siguienteIdProyecto, siguienteIdHijo, kpis, calificacion, nivelRiesgo,
   };
 })();

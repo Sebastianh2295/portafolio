@@ -30,7 +30,8 @@
       "Haz clic en una fila para abrir el proyecto."],
     seguimiento: ["Controla que cada proyecto reporte según su frecuencia (semanal, quincenal o mensual).",
       "Vencido = ya pasó la fecha sin reporte. Por vencer = faltan 2 días o menos.",
-      "Abajo están los compromisos abiertos; márcalos como cumplidos cuando se cierren."],
+      "Abajo están los compromisos abiertos; márcalos como cumplidos cuando se cierren.",
+      "La campana 🔔 de arriba reúne los compromisos vencidos o por vencer y te deja enviar recordatorios por correo."],
     proyectos: ["Lista de proyectos con buscador y filtros.",
       "Usa «+ Nueva iniciativa» para registrar un proyecto.",
       "Haz clic en un proyecto para ver su ficha, registrar seguimiento, hitos, riesgos y compromisos."],
@@ -185,6 +186,7 @@
           <header class="barra">
             <span class="modo ${S.modo}">${esc(etiquetaModo)}</span><span class="version" title="Versión de la app">v${esc(window.APP_VERSION || "")}</span>
             <span class="quien">${esc(S.usuario.Nombre || S.usuario.Correo)} · <b>${esc(R.roles(S.usuario).join(", "))}</b></span>
+            ${(() => { const a = alertas(); const n = a.vencidos.length + a.pronto.length; return `<button class="btn campana ${a.vencidos.length ? "roja" : n ? "ambar" : ""}" id="b-alertas" title="Compromisos vencidos o por vencer">🔔 <span>${n}</span></button>`; })()}
             <button class="btn" id="b-ayuda" title="Mostrar la ayuda de esta pantalla">? Ayuda</button>
             <button class="btn" id="b-recargar" title="Volver a leer el Excel">Actualizar</button>
             <button class="btn" id="b-salir">Salir</button>
@@ -194,7 +196,14 @@
       </div>`;
     document.querySelectorAll(".nav").forEach((b) => b.addEventListener("click", () => ir(b.dataset.vista)));
     $("#nav-movil").addEventListener("change", (e) => ir(e.target.value));
-    $("#b-salir").addEventListener("click", () => { S.usuario = null; guardarSesion(""); render(); });
+    $("#b-salir").addEventListener("click", () => { S.usuario = null; S.avisoAlertas = false; guardarSesion(""); render(); });
+    $("#b-alertas").addEventListener("click", panelAlertas);
+    if (!S.avisoAlertas) {
+      S.avisoAlertas = true;
+      const a = alertas();
+      const mios = [...a.vencidos, ...a.pronto].filter((x) => x.mio).length;
+      if (a.vencidos.length || a.pronto.length) setTimeout(() => toast(`🔔 ${a.vencidos.length} compromiso(s) vencido(s) y ${a.pronto.length} por vencer${mios ? ` (${mios} a tu cargo)` : ""}. Ábrelos con la campana.`, a.vencidos.length > 0), 300);
+    }
     $("#b-ayuda").addEventListener("click", () => {
       guardarLocal("pmo_ayuda_ocultas", leerLocal("pmo_ayuda_ocultas", []).filter((v) => v !== S.vista));
       render();
@@ -593,6 +602,87 @@
             ${R.puedeEditar(S.usuario, p, "compromisos") && e !== "Cumplido" ? `<button class="btn chico" data-cumplir="${esc(c.ID_Compromiso)}">Cumplido</button>` : ""}</td></tr>`;
       }).join("")}</tbody></table></div>`;
   }
+  // ---------- Alertas de compromisos ----------
+  // A quién escribirle: el correo del compromiso, o el de un usuario/stakeholder con ese nombre, o el texto si ya es un correo.
+  function correoDe(c) {
+    if (c.Correo_Responsable) return c.Correo_Responsable;
+    const r = lc(c.Responsable);
+    if (!r) return "";
+    if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(r)) return c.Responsable.trim();
+    const u = S.datos.Usuarios.find((x) => lc(x.Nombre) === r || lc(x.Correo) === r);
+    if (u) return u.Correo;
+    const st = (S.datos.Stakeholders || []).find((x) => lc(x.Nombre) === r && x.Correo);
+    return st ? st.Correo : "";
+  }
+  const esMioComp = (c) => { const u = S.usuario; return lc(correoDe(c)) === lc(u.Correo) || (u.Nombre && lc(c.Responsable) === lc(u.Nombre)); };
+  function alertas() {
+    const ids = new Set(visibles().map((p) => p.ID_Proyecto));
+    const lista = S.datos.Compromisos.filter((c) => ids.has(c.ID_Proyecto) && c.Estado !== "Cumplido")
+      .map((c) => ({ c, e: R.estadoCompromiso(c), mio: esMioComp(c) }))
+      .sort((a, b) => (b.mio - a.mio) || String(a.c.Fecha_Compromiso || "9999").localeCompare(String(b.c.Fecha_Compromiso || "9999")));
+    return { vencidos: lista.filter((x) => x.e === "Vencido"), pronto: lista.filter((x) => x.e === "Por vencer") };
+  }
+  function correoRecordatorio(items) {
+    const para = [...new Set(items.map((x) => correoDe(x.c)).filter(Boolean))];
+    const uno = items.length === 1 ? items[0].c : null;
+    const asunto = uno ? `Recordatorio: «${uno.Compromiso}» ${R.estadoCompromiso(uno) === "Vencido" ? "está vencido" : `vence el ${fecha(uno.Fecha_Compromiso)}`}` : `Recordatorio: ${items.length} compromisos pendientes`;
+    const cuerpo = `Hola,\n\nTe recuerdo ${items.length === 1 ? "este compromiso" : "estos compromisos"} del portafolio de proyectos:\n\n` +
+      items.map((x) => { const p = proyecto(x.c.ID_Proyecto) || {}; return `• ${x.c.Compromiso}\n  Proyecto: ${p.Nombre || x.c.ID_Proyecto}\n  Fecha límite: ${x.c.Fecha_Compromiso ? fecha(x.c.Fecha_Compromiso) : "sin fecha"} (${R.estadoCompromiso(x.c)})`; }).join("\n\n") +
+      `\n\nPor favor cuéntame cómo va o si necesitas apoyo.\n\nGracias,\n${S.usuario.Nombre || S.usuario.Correo}`;
+    return { para, asunto, cuerpo, href: `mailto:${para.join(";")}?subject=${encodeURIComponent(asunto)}&body=${encodeURIComponent(cuerpo)}` };
+  }
+  // Abre el correo en Outlook y deja constancia en el hilo de cada compromiso.
+  async function enviarRecordatorio(items) {
+    const m = correoRecordatorio(items);
+    const a = document.createElement("a"); a.href = m.href; a.target = "_blank"; a.rel = "noopener"; document.body.appendChild(a); a.click(); a.remove();
+    try {
+      await S.api.agregarFilas("Comentarios", items.map((x) => nuevoComentario(x.c, `Recordatorio enviado por correo${m.para.length ? ` a ${m.para.join(", ")}` : ""}.`)));
+      await recargar();
+    } catch (e) { /* el correo ya se abrió; la constancia es opcional */ }
+    return m;
+  }
+  function panelAlertas() {
+    const a = alertas();
+    const puedeComp = (c) => R.puedeEditar(S.usuario, proyecto(c.ID_Proyecto) || {}, "compromisos");
+    const fila = (x) => { const p = proyecto(x.c.ID_Proyecto) || {}; const correo = correoDe(x.c); return `<li class="alerta-item ${x.e === "Vencido" ? "vencido" : "pronto"}">
+      <div><b>${esc(x.c.Compromiso)}</b>${x.mio ? ` <span class="pill tuyo">A tu cargo</span>` : ""}
+        <div class="sub">${esc(p.Nombre)} · ${esc(x.c.Responsable || "Sin responsable")} · ${x.c.Fecha_Compromiso ? `${x.e === "Vencido" ? "venció" : "vence"} el ${fecha(x.c.Fecha_Compromiso)}` : "sin fecha"}</div></div>
+      <div class="nowrap"><button class="btn chico" data-al-abrir="${esc(x.c.ID_Compromiso)}">Abrir</button>
+        ${puedeComp(x.c) ? `<button class="btn chico" data-al-mail="${esc(x.c.ID_Compromiso)}" ${correo ? `title="Se abrirá un correo a ${esc(correo)}"` : `title="No hay correo del responsable: se abrirá el correo sin destinatario"`}>✉ Recordar</button>` : ""}</div></li>`; };
+    // Recordatorio agrupado por responsable
+    const porResp = {};
+    [...a.vencidos, ...a.pronto].filter((x) => puedeComp(x.c)).forEach((x) => { const k = correoDe(x.c) || x.c.Responsable || "(sin responsable)"; (porResp[k] = porResp[k] || []).push(x); });
+    const grupos = Object.entries(porResp).filter(([, v]) => v.length > 1);
+    cerrarModal();
+    const m = document.createElement("div");
+    m.id = "modal";
+    m.innerHTML = `<div class="modal-caja" role="dialog" aria-modal="true" aria-label="Alertas de compromisos">
+      <div class="titulo-fila"><h2>🔔 Alertas de compromisos</h2><button class="btn enlace" id="al-cerrar" aria-label="Cerrar">✕</button></div>
+      <p class="sub">Compromisos abiertos de tus proyectos que ya vencieron o vencen pronto (cada compromiso define con cuántos días avisar; por defecto ${R.DIAS_COMPROMISO_POR_VENCER}).</p>
+      ${grupos.length ? `<div class="al-grupos"><span class="sub">Un solo correo por responsable:</span> ${grupos.map(([k, v], i) => `<button class="btn chico" data-al-grupo="${i}">✉ ${esc(k.includes("@") ? nombreUsuario(k) : k)} (${v.length})</button>`).join(" ")}</div>` : ""}
+      <div class="form-seccion">Vencidos <span class="contador rojo">${a.vencidos.length}</span></div>
+      ${a.vencidos.length ? `<ul class="alertas">${a.vencidos.map(fila).join("")}</ul>` : vacio("Nada vencido. 👏")}
+      <div class="form-seccion">Por vencer <span class="contador">${a.pronto.length}</span></div>
+      ${a.pronto.length ? `<ul class="alertas">${a.pronto.map(fila).join("")}</ul>` : vacio("Nada por vencer en los próximos días.")}
+      <p class="sub">«✉ Recordar» abre un correo listo en tu Outlook para el responsable y deja constancia en los comentarios del compromiso.</p>
+    </div>`;
+    document.body.appendChild(m);
+    $("#al-cerrar").addEventListener("click", () => { cerrarModal(); render(); });
+    m.addEventListener("keydown", (ev) => { if (ev.key === "Escape") { cerrarModal(); render(); } });
+    const buscar = (id) => [...a.vencidos, ...a.pronto].find((x) => x.c.ID_Compromiso === id);
+    m.querySelectorAll("[data-al-abrir]").forEach((b) => b.addEventListener("click", () => detalleCompromiso(b.dataset.alAbrir)));
+    m.querySelectorAll("[data-al-mail]").forEach((b) => b.addEventListener("click", async () => {
+      const r = await enviarRecordatorio([buscar(b.dataset.alMail)]);
+      b.textContent = "✓ Correo abierto"; b.disabled = true;
+      toast(r.para.length ? `Correo listo para ${r.para.join(", ")}` : "Correo abierto: escribe el destinatario (el compromiso no tiene correo del responsable).");
+    }));
+    m.querySelectorAll("[data-al-grupo]").forEach((b) => b.addEventListener("click", async () => {
+      const r = await enviarRecordatorio(grupos[Number(b.dataset.alGrupo)][1]);
+      b.textContent = "✓ Correo abierto"; b.disabled = true;
+      toast(`Correo listo para ${r.para.join(", ") || "el responsable"}`);
+    }));
+  }
+
   // Sección «Compromisos» de la ficha: filtrar, ordenar y agrupar por sesión.
   function seccionCompromisos(p, comps, segs, puede) {
     const V = S.compVista = S.compVista || { ver: "abiertos", orden: "fecha", agrupar: false };
@@ -683,6 +773,7 @@
         <div class="error-campo" id="d-error" role="alert"></div>
         <div class="acciones derecha">
           <button class="btn peligro-suave" id="d-editar">Editar compromiso</button>
+          ${e !== "Cumplido" ? `<button class="btn" id="d-recordar" title="${esc(correoDe(c) ? `Correo a ${correoDe(c)}` : "Sin correo del responsable")}">✉ Recordar</button>` : ""}
           ${e === "Cumplido" ? `<button class="btn" id="d-reabrir">Reabrir</button>` : `<button class="btn" id="d-comentar-cerrar">Comentar y cerrar</button>`}
           <button class="btn primario" id="d-comentar">Comentar</button></div>` : `<p class="sub">Solo el PM del proyecto, la PMO o el Admin pueden comentar.</p>`}
     </div>`;
@@ -709,6 +800,7 @@
     if ($("#d-comentar-cerrar")) $("#d-comentar-cerrar").addEventListener("click", () => accion(txt.value.trim() || "Compromiso cerrado.", { Estado: "Cumplido", Fecha_Cierre: R.hoyISO() }, "Compromiso cerrado"));
     if ($("#d-reabrir")) $("#d-reabrir").addEventListener("click", () => accion(txt.value.trim() || "Compromiso reabierto.", { Estado: "Pendiente", Fecha_Cierre: "" }, "Compromiso reabierto"));
     $("#d-editar").addEventListener("click", () => formCompromiso(c));
+    if ($("#d-recordar")) $("#d-recordar").addEventListener("click", async () => { await enviarRecordatorio([{ c }]); render(); detalleCompromiso(id); toast("Correo de recordatorio abierto en tu Outlook"); });
   }
 
   // ---------- Proyectos ----------
@@ -1148,7 +1240,8 @@
         return `<select name="${c.k}" ${dis}><option value="">${esc(c.textoVacio || "Seleccione…")}</option>${todas.map((o) => { const [val, txt] = Array.isArray(o) ? o : [o, o]; return `<option value="${esc(val)}" ${String(val) === String(v) ? "selected" : ""}>${esc(txt)}</option>`; }).join("")}</select>`;
       }
       if (c.tipo === "textarea") return `<textarea name="${c.k}" rows="3" placeholder="${esc(c.placeholder || "")}" ${dis}>${esc(v)}</textarea>`;
-      return `<input name="${c.k}" type="${c.tipo || "text"}" value="${esc(v)}" placeholder="${esc(c.placeholder || "")}" ${c.min !== undefined ? `min="${c.min}"` : ""} ${c.max !== undefined ? `max="${c.max}"` : ""} ${dis}>`;
+      const dl = c.sugerencias ? `<datalist id="dl-${c.k}">${c.sugerencias.map((o) => `<option value="${esc(o)}">`).join("")}</datalist>` : "";
+      return dl + `<input name="${c.k}" ${c.sugerencias ? `list="dl-${c.k}" autocomplete="off"` : ""} type="${c.tipo || "text"}" value="${esc(v)}" placeholder="${esc(c.placeholder || "")}" ${c.min !== undefined ? `min="${c.min}"` : ""} ${c.max !== undefined ? `max="${c.max}"` : ""} ${dis}>`;
     };
     const cuerpo = campos.map((c) => (c.seccion
       ? `<div class="form-seccion">${esc(c.seccion)}${c.ayuda ? `<span class="sub"> · ${esc(c.ayuda)}</span>` : ""}</div>`
@@ -1553,12 +1646,22 @@
     const pid = nuevo ? pNuevo.ID_Proyecto : c.ID_Proyecto;
     const sesiones = R.seguimientosDe(pid, S.datos.Seguimientos).slice().reverse()
       .map((s) => [s.ID_Seguimiento, `Sesión del ${fecha(s.Fecha_Corte)}${s.Fecha_Acta && s.Fecha_Acta !== s.Fecha_Corte ? ` (acta ${fecha(s.Fecha_Acta)})` : ""}`]);
+    const gente = [...S.datos.Usuarios.filter((u) => u.Activo === "Sí").map((u) => [u.Nombre || u.Correo, u.Correo]),
+      ...(S.datos.Stakeholders || []).filter((x) => x.ID_Proyecto === pid && x.Nombre).map((x) => [x.Nombre, x.Correo || ""])];
+    const personas = [...new Set(gente.map((g) => g[0]))].sort((a, b) => a.localeCompare(b, "es"));
+    const correoPorNombre = (n) => (gente.find((g) => lc(g[0]) === lc(n) && g[1]) || [])[1] || "";
+    const autollenar = { init: (m) => {
+      const r = m.querySelector('[name="Responsable"]'), co = m.querySelector('[name="Correo_Responsable"]');
+      r.addEventListener("change", () => { const c2 = correoPorNombre(r.value); if (c2 && !co.value) co.value = c2; });
+    } };
     const campos = [
       { k: "Compromiso", label: "Compromiso", tipo: "textarea", placeholder: "Qué se hará" },
       { k: "ID_Seguimiento", label: "¿De qué sesión salió?", tipo: "select", opciones: sesiones, ancho: true, textoVacio: "Sin sesión (solo del proyecto)",
         ayuda: sesiones.length ? "Elige la sesión de seguimiento donde se acordó, o déjalo sin sesión." : "Este proyecto aún no tiene sesiones; quedará atado solo al proyecto." },
-      { k: "Responsable", label: "Responsable" },
+      { k: "Responsable", label: "Responsable", sugerencias: personas, placeholder: "Escribe o elige" },
+      { k: "Correo_Responsable", label: "Correo del responsable", tipo: "email", placeholder: "Se llena solo si la persona está registrada", ayuda: "Para enviarle recordatorios." },
       { k: "Fecha_Compromiso", label: "Fecha límite", tipo: "date" },
+      { k: "Dias_Alerta", label: "Avisar con (días de anticipación)", tipo: "number", min: 0, max: 60, def: R.DIAS_COMPROMISO_POR_VENCER, ayuda: "Desde ese día aparece en «Por vencer» y en la campana 🔔." },
       ...(nuevo ? [{ k: "Comentario", label: "Comentario inicial (opcional)", tipo: "textarea", placeholder: "Contexto o primer avance" }] : [
         { k: "Estado", label: "Estado", tipo: "select", opciones: S.cat.Estado_Compromiso, def: "Pendiente" },
         { k: "Fecha_Cierre", label: "Fecha de cierre", tipo: "date", ayuda: "Se llena sola al marcarlo cumplido; se borra si lo reabres." }]),
@@ -1566,12 +1669,12 @@
     if (nuevo) {
       modal(`Nuevo compromiso · ${pNuevo.Nombre}`, campos, { ID_Seguimiento: segSugerida || "" }, (fd) => {
         const fila = { ID_Compromiso: R.siguienteIdHijo("CMP", S.datos.Compromisos, "ID_Compromiso", pNuevo.ID_Proyecto), ID_Proyecto: pNuevo.ID_Proyecto, ID_Seguimiento: fd.ID_Seguimiento || "",
-          Compromiso: fd.Compromiso || "(sin descripción)", Responsable: fd.Responsable, Fecha_Compromiso: fd.Fecha_Compromiso, Estado: "Pendiente", Fecha_Cierre: "", Registrado_Por: S.usuario.Correo };
+          Compromiso: fd.Compromiso || "(sin descripción)", Responsable: fd.Responsable, Correo_Responsable: fd.Correo_Responsable || correoPorNombre(fd.Responsable), Dias_Alerta: fd.Dias_Alerta === "" ? "" : fd.Dias_Alerta, Fecha_Compromiso: fd.Fecha_Compromiso, Estado: "Pendiente", Fecha_Cierre: "", Registrado_Por: S.usuario.Correo };
         guardar(async () => {
           await S.api.agregarFila("Compromisos", fila);
           if (fd.Comentario) await S.api.agregarFila("Comentarios", nuevoComentario(fila, fd.Comentario));
         }, "Compromiso agregado");
-      });
+      }, null, autollenar);
       return;
     }
     const coms = comentariosDe(c.ID_Compromiso);
@@ -1583,7 +1686,7 @@
         await S.api.actualizarPorId("Compromisos", "ID_Compromiso", c.ID_Compromiso, fd);
         if (cambioEstado) await S.api.agregarFila("Comentarios", nuevoComentario(c, fd.Estado === "Cumplido" ? "Marcado como cumplido." : "Compromiso reabierto."));
       }, "Compromiso actualizado");
-    }, null, { eliminar: { texto: "Eliminar compromiso", mensaje: `Se borrará «${c.Compromiso}»${coms.length ? ` con sus ${coms.length} comentario(s)` : ""}.`,
+    }, null, { ...autollenar, eliminar: { texto: "Eliminar compromiso", mensaje: `Se borrará «${c.Compromiso}»${coms.length ? ` con sus ${coms.length} comentario(s)` : ""}.`,
       accion: () => guardar(async () => {
         if (coms.length) await S.api.eliminarFilas("Comentarios", "ID_Comentario", coms.map((x) => x.ID_Comentario));
         await S.api.eliminarFilas("Compromisos", "ID_Compromiso", [c.ID_Compromiso]);

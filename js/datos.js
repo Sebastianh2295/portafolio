@@ -27,6 +27,7 @@
   const COLUMNAS_NUEVAS = {
     Proyectos: ["URL_Repositorio", "URL_Documentos", "Proveedores"],
     Seguimientos: ["Fecha_Acta", "URL_Acta", "Acta_Archivo"],
+    Compromisos: ["Correo_Responsable", "Dias_Alerta"],
   };
   const COLS_FECHA = ["Fecha_Inicio", "Fecha_Fin_Plan", "Actualizado_El", "Fecha_Plan", "Fecha_Real", "Fecha_Corte", "Fecha_Compromiso", "Fecha_Cierre", "Fecha_Acta"];
 
