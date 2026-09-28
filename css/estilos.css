@@ -191,6 +191,7 @@ button.kpi:hover { border-color: var(--azul); }
 .btn.peligro-suave { color: var(--rojo); border-color: #f2c1bb; margin-right: auto; }
 .btn.peligro-suave:hover { background: #fbe3e0; }
 .nowrap { white-space: nowrap; }
+.version { font-size: 11px; color: var(--texto2); }
 .enlace-edicion { margin-top: 6px; }
 .celda-acta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 .modal-caja.visor { max-width: 960px; }

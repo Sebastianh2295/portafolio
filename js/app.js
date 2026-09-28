@@ -168,7 +168,7 @@
         </aside>
         <main>
           <header class="barra">
-            <span class="modo ${S.modo}">${esc(etiquetaModo)}</span>
+            <span class="modo ${S.modo}">${esc(etiquetaModo)}</span><span class="version" title="Versión de la app">v${esc(window.APP_VERSION || "")}</span>
             <span class="quien">${esc(S.usuario.Nombre || S.usuario.Correo)} · <b>${esc(R.roles(S.usuario).join(", "))}</b></span>
             <button class="btn" id="b-ayuda" title="Mostrar la ayuda de esta pantalla">? Ayuda</button>
             <button class="btn" id="b-recargar" title="Volver a leer el Excel">Actualizar</button>

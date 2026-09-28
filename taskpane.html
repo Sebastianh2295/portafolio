@@ -1,10 +1,26 @@
 <!doctype html>
 <html lang="es">
 <head>
+  <script>
+    /* Actualización automática: si GitHub tiene una versión más nueva que la guardada en caché
+       por Excel, se recarga la página con esa versión. */
+    window.APP_VERSION = "8";
+    (function () {
+      try {
+        fetch("version.json?t=" + Date.now(), { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (j) {
+          if (!j || !j.v || j.v === window.APP_VERSION) return;
+          var u = new URL(location.href);
+          if (u.searchParams.get("v") === j.v) return;
+          u.searchParams.set("v", j.v);
+          location.replace(u.href);
+        }).catch(function () {});
+      } catch (e) { /* sin red: se sigue con la versión actual */ }
+    })();
+  </script>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Portafolio PMO</title>
-  <link rel="stylesheet" href="css/estilos.css?v=7">
+  <link rel="stylesheet" href="css/estilos.css?v=8">
   <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
   <style>
     .pane { padding: 18px; }
@@ -19,8 +35,9 @@
     <button class="btn primario" id="b-abrir" disabled>Abrir Portafolio</button>
     <button class="btn" id="b-panel" disabled>Usar en este panel</button>
     <div id="estado" class="sub">Conectando con Excel…</div>
+    <div class="sub" style="margin-top:14px">Versión <span id="ver"></span></div>
   </div>
-  <script src="js/datos.js?v=7"></script>
+  <script src="js/datos.js?v=8"></script>
   <script>
     /* Este panel es el "puente": la ventana grande no puede leer Excel directamente,
        así que le envía sus pedidos a este panel, que los ejecuta con Office.js y responde. */
@@ -38,7 +55,7 @@
     }
 
     function abrir() {
-      const url = new URL("index.html?modo=ventana", location.href).href;
+      const url = new URL("index.html?modo=ventana&v=" + encodeURIComponent(window.APP_VERSION) + "&t=" + Date.now(), location.href).href;
       Office.context.ui.displayDialogAsync(url, { height: 92, width: 92, displayInIframe: true }, (r) => {
         if (r.status !== Office.AsyncResultStatus.Succeeded) {
           estado("No se pudo abrir la ventana (" + r.error.message + "). Use el botón 'Usar en este panel'.");
@@ -56,12 +73,13 @@
       });
     }
 
+    document.getElementById("ver").textContent = window.APP_VERSION;
     Office.onReady((info) => {
       if (info.host !== Office.HostType.Excel) { estado("Abra este complemento desde Excel."); return; }
       document.getElementById("b-abrir").disabled = false;
       document.getElementById("b-panel").disabled = false;
       document.getElementById("b-abrir").addEventListener("click", abrir);
-      document.getElementById("b-panel").addEventListener("click", () => { location.href = "index.html?modo=panel"; });
+      document.getElementById("b-panel").addEventListener("click", () => { location.href = "index.html?modo=panel&v=" + encodeURIComponent(window.APP_VERSION); });
       estado("Listo.");
     });
   </script>

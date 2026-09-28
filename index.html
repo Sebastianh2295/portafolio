@@ -1,21 +1,38 @@
 <!doctype html>
 <html lang="es">
 <head>
+  <script>
+    /* Actualización automática: si GitHub tiene una versión más nueva que la guardada en caché
+       por Excel, se recarga la página con esa versión. */
+    window.APP_VERSION = "8";
+    (function () {
+      try {
+        fetch("version.json?t=" + Date.now(), { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (j) {
+          if (!j || !j.v || j.v === window.APP_VERSION) return;
+          var u = new URL(location.href);
+          if (u.searchParams.get("v") === j.v) return;
+          u.searchParams.set("v", j.v);
+          location.replace(u.href);
+        }).catch(function () {});
+      } catch (e) { /* sin red: se sigue con la versión actual */ }
+    })();
+  </script>
   <meta charset="utf-8">
+  <meta http-equiv="Cache-Control" content="no-cache">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Portafolio de Proyectos</title>
   <link rel="icon" href="assets/icon-32.png">
-  <link rel="stylesheet" href="css/estilos.css?v=7">
+  <link rel="stylesheet" href="css/estilos.css?v=8">
   <!-- Office.js: conecta la app con el Excel abierto. Fuera de Excel la app entra en modo demostración. -->
   <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
   <div id="app"></div>
-  <script src="js/demo-data.js?v=7"></script>
-  <script src="js/reglas.js?v=7"></script>
-  <script src="js/datos.js?v=7"></script>
-  <script src="js/actas.js?v=7"></script>
-  <script src="js/app.js?v=7"></script>
+  <script src="js/demo-data.js?v=8"></script>
+  <script src="js/reglas.js?v=8"></script>
+  <script src="js/datos.js?v=8"></script>
+  <script src="js/actas.js?v=8"></script>
+  <script src="js/app.js?v=8"></script>
 </body>
 </html>
