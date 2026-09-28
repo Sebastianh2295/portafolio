@@ -34,7 +34,7 @@
     proyectos: ["Lista de proyectos con buscador y filtros.",
       "Usa «+ Nueva iniciativa» para registrar un proyecto.",
       "Haz clic en un proyecto para ver su ficha, registrar seguimiento, hitos, riesgos y compromisos."],
-    ficha: ["Todo el proyecto en una página: datos, curva de avance, compromisos, seguimientos, hitos y riesgos.",
+    ficha: ["Todo el proyecto en una página: datos, stakeholders y proveedores, curva de avance, compromisos, seguimientos, hitos y riesgos.",
       "«Registrar seguimiento» es la acción periódica del PM: avance, logros, próximos pasos, bloqueos y compromisos.",
       "Con «+ Compromiso» agregas uno sin sesión; ábrelo para comentar su avance hasta cerrarlo."],
     cronograma: ["Línea de tiempo de los proyectos activos y en pausa.",
@@ -42,7 +42,8 @@
     riesgos: ["Mapa de calor de riesgos abiertos por probabilidad e impacto.",
       "Cambia entre inherente (antes de mitigar) y residual (después de mitigar)."],
     catalogos: ["Valores de los desplegables de los formularios.",
-      "Agrega o quita valores; los proyectos que ya usan un valor lo conservan."],
+      "Agrega o quita valores; los proyectos que ya usan un valor lo conservan.",
+      "Aquí también configuras los roles de stakeholder (Sponsor, Líder funcional, Product Owner…) y el maestro de proveedores."],
     usuarios: ["Quién entra y qué puede hacer. Un usuario puede tener varios roles.",
       "El PM ve los proyectos donde figura como PM. El Lector ve los proyectos que le asignes aquí."],
   };
@@ -83,10 +84,21 @@
     S.cat = {};
     for (const f of S.datos.Catalogos) (S.cat[f.Lista] = S.cat[f.Lista] || []).push(String(f.Valor));
     S.cat.Estado_Compromiso = ["Pendiente", "Cumplido"];
+    if (!S.cat.Rol_Stakeholder) S.cat.Rol_Stakeholder = ROLES_STK_BASE.slice();
+  }
+  const ROLES_STK_BASE = ["Sponsor", "Líder funcional", "Product Owner"];
+  let sembrado = false;
+  // La primera vez, deja en el Excel los roles de stakeholder base para poder editarlos desde Catálogos.
+  async function sembrarCatalogos() {
+    if (sembrado || S.datos.Catalogos.some((f) => f.Lista === "Rol_Stakeholder")) return;
+    sembrado = true;
+    try { await S.api.agregarFilas("Catalogos", ROLES_STK_BASE.map((v) => ({ Lista: "Rol_Stakeholder", Valor: v }))); S.datos = await S.api.leerTodo(); armarCatalogos(); }
+    catch (e) { /* sin permiso de edición: se usan los valores base en memoria */ }
   }
   async function recargar() {
     S.datos = await S.api.leerTodo();
     armarCatalogos();
+    await sembrarCatalogos();
     if (S.usuario) S.usuario = S.datos.Usuarios.find((x) => lc(x.Correo) === lc(S.usuario.Correo) && x.Activo === "Sí") || null;
   }
   const visibles = () => R.visibles(S.usuario, S.datos.Proyectos);
@@ -709,6 +721,7 @@
         ${dato("Repositorio", enlace(p.URL_Repositorio, "Abrir") || `<span class="sub">Sin registrar</span>`)}${dato("Documentos", enlace(p.URL_Documentos, "Abrir") || `<span class="sub">Sin registrar</span>`)}
         <div class="dato ancho"><div class="dato-k">Comentario de estado</div><div class="dato-v">${esc(p.Comentario_Estado || "—")}</div></div>
       </div>
+      ${cardStakeholders(p, puedeP("editarProyecto"))}
       <div class="card"><h2>Curva de avance</h2>${segs.length ? `<div class="grafico-alto"><canvas id="g-curva"></canvas></div>` : vacio("Aún no hay seguimientos. La curva aparece con el primer reporte.")}</div>
       <div class="card"><div class="titulo-fila"><h2>Compromisos <span class="contador">${comps.filter((x) => x.e !== "Cumplido").length} abiertos</span></h2>${puedeP("compromisos") ? `<button class="btn" id="b-comp">+ Compromiso</button>` : ""}</div>
         <p class="sub">Se agregan aquí o al reportar un seguimiento. Abre uno para comentar su avance hasta cerrarlo.</p>${comps.length ? tablaCompromisos(comps, false) : vacio("Sin compromisos registrados.")}</div>
@@ -739,6 +752,9 @@
     if ($("#b-hito")) $("#b-hito").addEventListener("click", () => formHito(p));
     if ($("#b-comp")) $("#b-comp").addEventListener("click", () => formCompromiso(null, p));
     if ($("#b-riesgo")) $("#b-riesgo").addEventListener("click", () => formRiesgo(p));
+    if ($("#b-stk")) $("#b-stk").addEventListener("click", () => formStakeholder(p));
+    el.querySelectorAll("[data-stk]").forEach((b) => b.addEventListener("click", () => formStakeholder(p, (S.datos.Stakeholders || []).find((x) => x.ID_Stakeholder === b.dataset.stk))));
+    el.querySelectorAll("[data-rol-stk]").forEach((b) => b.addEventListener("click", () => formStakeholder(p, null, b.dataset.rolStk)));
     el.querySelectorAll("[data-hito]").forEach((b) => b.addEventListener("click", () => formHito(p, hitos.find((h) => h.ID_Hito === b.dataset.hito))));
     el.querySelectorAll("[data-riesgo]").forEach((b) => b.addEventListener("click", () => formRiesgo(p, riesgos.find((r) => r.ID_Riesgo === b.dataset.riesgo))));
     enlazarCompromisos(el);
@@ -829,13 +845,16 @@
     { lista: "Metodologia", t: "Metodología", campo: "Metodologia" },
     { lista: "Fase", t: "Fase", campo: "Fase" },
     { lista: "Prioridad", t: "Prioridad", campo: "Prioridad" },
+    { lista: "Rol_Stakeholder", t: "Rol del stakeholder", campo: "Rol", tabla: "Stakeholders", idCol: "ID_Stakeholder" },
   ];
+  const filasCat = (c) => (S.datos[c.tabla || "Proyectos"] || []);
   const CATALOGOS_FIJOS = { Estado: "Estado del proyecto", Semaforo: "Semáforo", Frecuencia_Seguimiento: "Frecuencia de seguimiento",
     Estado_Hito: "Estado del hito", Tipo_Riesgo: "Tipo de riesgo", Estado_Riesgo: "Estado del riesgo", Estado_Compromiso: "Estado del compromiso", Rol: "Rol" };
 
   function vCatalogos(el) {
     if (!R.puede(S.usuario, "catalogos")) { el.innerHTML = vacio("Sin acceso."); return; }
-    const enUso = (campo, valor) => S.datos.Proyectos.filter((p) => String(p[campo]) === String(valor)).length;
+    const enUso = (c, valor) => filasCat(c).filter((p) => String(p[c.campo]) === String(valor)).length;
+    const usosProv = (id) => S.datos.Proyectos.filter((p) => idsLista(p.Proveedores).includes(id)).length;
     el.innerHTML = `
       <h1>Catálogos</h1>
       <p class="sub">Los cambios se guardan en la tabla Catalogos del Excel y aplican para todos los usuarios.</p>
@@ -844,8 +863,8 @@
           const valores = S.cat[c.lista] || [];
           return `<div class="card" data-anchor="cat-${c.lista}">
             <h2>${esc(c.t)}</h2>
-            <table><thead><tr><th>Valor</th><th>Proyectos que lo usan</th><th></th></tr></thead>
-              <tbody>${valores.map((v) => `<tr><td>${esc(v)}</td><td>${enUso(c.campo, v)}</td>
+            <table><thead><tr><th>Valor</th><th>${c.tabla ? "Personas con este rol" : "Proyectos que lo usan"}</th><th></th></tr></thead>
+              <tbody>${valores.map((v) => `<tr><td>${esc(v)}</td><td>${enUso(c, v)}</td>
                 <td class="derecha nowrap"><button class="btn chico" data-renombrar="${esc(c.lista)}" data-valor="${esc(v)}">Renombrar</button> <button class="btn chico" data-quitar="${esc(c.lista)}" data-valor="${esc(v)}">Quitar</button></td></tr>`).join("") || `<tr><td colspan="3">${vacio("Sin valores.")}</td></tr>`}</tbody></table>
             <form class="cat-agregar" data-lista="${esc(c.lista)}" novalidate>
               <input name="valor" placeholder="Nuevo valor" aria-label="Nuevo valor para ${esc(c.t)}">
@@ -855,11 +874,20 @@
           </div>`;
         }).join("")}
       </div>
+      <div class="card" id="cat-proveedores"><div class="titulo-fila"><h2>Proveedores</h2><button class="btn primario" id="b-nuevo-prov">+ Proveedor</button></div>
+        <p class="sub">Se guardan en la tabla Proveedores. Luego los asignas a cada proyecto con «Editar proyecto».</p>
+        <div class="tabla-scroll"><table><thead><tr><th>Proveedor</th><th>Servicio</th><th>Contacto</th><th>Proyectos</th><th>Activo</th><th></th></tr></thead>
+          <tbody>${proveedores().map((x) => `<tr><td><b>${esc(x.Nombre)}</b>${x.NIT ? `<div class="sub">NIT ${esc(x.NIT)}</div>` : ""}</td><td>${esc(x.Servicio || "—")}</td>
+            <td>${esc(x.Contacto || "")}${x.Contacto ? "<br>" : ""}${contacto(x.Correo, x.Telefono)}</td><td>${usosProv(x.ID_Proveedor)}</td><td>${esc(x.Activo || "Sí")}</td>
+            <td class="derecha"><button class="btn chico" data-prov="${esc(x.ID_Proveedor)}">Editar</button></td></tr>`).join("") || `<tr><td colspan="6">${vacio("Aún no hay proveedores. Crea el primero con «+ Proveedor».")}</td></tr>`}</tbody></table></div>
+      </div>
       <div class="card"><h2>Listas fijas</h2>
         <p class="sub">Estas listas controlan reglas de la app (colores, días de seguimiento, permisos), por eso no se editan aquí. Si necesitas cambiarlas, pídelo como una mejora.</p>
         <div class="tabla-scroll"><table><thead><tr><th>Lista</th><th>Valores</th></tr></thead>
           <tbody>${Object.entries(CATALOGOS_FIJOS).map(([k, t]) => `<tr><td>${esc(t)}</td><td>${esc((S.cat[k] || []).join(", "))}</td></tr>`).join("")}</tbody></table></div>
       </div>`;
+    $("#b-nuevo-prov").addEventListener("click", () => formProveedor());
+    el.querySelectorAll("[data-prov]").forEach((b) => b.addEventListener("click", () => formProveedor(proveedor(b.dataset.prov))));
     el.querySelectorAll(".cat-agregar").forEach((f) => {
       const lista = f.dataset.lista;
       const err = el.querySelector(`[data-e-cat="${lista}"]`);
@@ -876,13 +904,15 @@
     el.querySelectorAll("[data-renombrar]").forEach((b) => b.addEventListener("click", () => {
       const lista = b.dataset.renombrar, valor = b.dataset.valor;
       const c = CATALOGOS_EDITABLES.find((x) => x.lista === lista);
-      const usan = S.datos.Proyectos.filter((p) => String(p[c.campo]) === valor);
+      const usan = filasCat(c).filter((p) => String(p[c.campo]) === valor);
+      const que = c.tabla ? "registro(s)" : "proyecto(s)";
       modal(`Renombrar «${valor}»`, [{ k: "Nuevo", label: "Nuevo nombre", def: valor, ancho: true,
-        ayuda: usan.length ? `También se actualizarán los ${usan.length} proyecto(s) que lo usan.` : "Ningún proyecto usa este valor." }], {}, (fd) => {
+        ayuda: usan.length ? `También se actualizará en ${usan.length} ${que} que lo usan.` : "Nadie usa este valor todavía." }], {}, (fd) => {
         guardar(async () => {
           await S.api.eliminarFila("Catalogos", { Lista: lista, Valor: valor });
           await S.api.agregarFila("Catalogos", { Lista: lista, Valor: fd.Nuevo });
-          if (usan.length) await S.api.actualizarVarios("Proyectos", "ID_Proyecto", usan.map((p) => ({ id: p.ID_Proyecto, cambios: { [c.campo]: fd.Nuevo } })));
+          const idCol = c.idCol || "ID_Proyecto";
+          if (usan.length) await S.api.actualizarVarios(c.tabla || "Proyectos", idCol, usan.map((p) => ({ id: p[idCol], cambios: { [c.campo]: fd.Nuevo } })));
         }, `«${valor}» ahora es «${fd.Nuevo}»`);
       }, (fd) => {
         if (!fd.Nuevo) return "Escribe el nuevo nombre.";
@@ -896,9 +926,9 @@
       const c = CATALOGOS_EDITABLES.find((x) => x.lista === lista);
       const err = el.querySelector(`[data-e-cat="${lista}"]`);
       if ((S.cat[lista] || []).length <= 1) { err.textContent = "La lista debe tener al menos un valor."; return; }
-      const n = enUso(c.campo, valor);
+      const n = enUso(c, valor);
       confirmar(`Quitar «${valor}»`,
-        n ? `${n} proyecto(s) usan este valor. Lo conservarán, pero ya no aparecerá como opción en los formularios.` : `«${valor}» dejará de aparecer en ${c.t}.`,
+        n ? `${n} ${c.tabla ? "registro(s)" : "proyecto(s)"} usan este valor. Lo conservarán, pero ya no aparecerá como opción en los formularios.` : `«${valor}» dejará de aparecer en ${c.t}.`,
         "Quitar", () => guardar(() => S.api.eliminarFila("Catalogos", { Lista: lista, Valor: valor }), `«${valor}» quitado`));
     }));
   }
@@ -1036,7 +1066,7 @@
       const dis = c.bloqueado ? "disabled" : "";
       if (c.tipo === "checks") {
         const marcados = String(v).split(/[,;]/).map((x) => x.trim());
-        return `<div class="checks" data-checks="${c.k}">${c.opciones.map((o) => `<label class="check"><input type="checkbox" value="${esc(o)}" ${marcados.includes(o) ? "checked" : ""} ${dis}> ${esc(o)}</label>`).join("")}</div>`;
+        return `<div class="checks" data-checks="${c.k}">${c.opciones.map((o) => { const [val, txt] = Array.isArray(o) ? o : [o, o]; return `<label class="check"><input type="checkbox" value="${esc(val)}" ${marcados.includes(String(val)) ? "checked" : ""} ${dis}> ${esc(txt)}</label>`; }).join("") || `<span class="sub">${esc(c.vacio || "Sin opciones.")}</span>`}</div>`;
       }
       if (c.tipo === "select") {
         const ops = c.opciones || [];
@@ -1092,6 +1122,82 @@
     if (primero) primero.focus();
   }
 
+  // ---------- Stakeholders y proveedores ----------
+  const proveedores = () => (S.datos.Proveedores || []).slice().sort((a, b) => String(a.Nombre).localeCompare(String(b.Nombre), "es"));
+  const proveedor = (id) => (S.datos.Proveedores || []).find((x) => x.ID_Proveedor === id);
+  const idsLista = (v) => String(v || "").split(/[,;]/).map((x) => x.trim()).filter(Boolean);
+  // Activos, más los inactivos que el proyecto ya tenía (para no perderlos al editar).
+  const proveedoresActivos = (actuales) => proveedores().filter((x) => x.Activo !== "No" || idsLista(actuales).includes(x.ID_Proveedor));
+  const stakeholdersDe = (pid) => (S.datos.Stakeholders || []).filter((x) => x.ID_Proyecto === pid);
+  const contacto = (correo, tel) => [correo ? `<a href="mailto:${esc(correo)}">${esc(correo)}</a>` : "", tel ? esc(tel) : ""].filter(Boolean).join("<br>") || "—";
+
+  function cardStakeholders(p, puede) {
+    const roles = S.cat.Rol_Stakeholder || [];
+    const orden = (r) => { const i = roles.indexOf(r); return i < 0 ? 99 : i; };
+    const lista = stakeholdersDe(p.ID_Proyecto).sort((a, b) => orden(a.Rol) - orden(b.Rol) || String(a.Nombre).localeCompare(String(b.Nombre), "es"));
+    const faltan = roles.filter((r) => !lista.some((x) => x.Rol === r));
+    const provs = idsLista(p.Proveedores).map(proveedor).filter(Boolean);
+    return `<div class="card"><div class="titulo-fila"><h2>Stakeholders y proveedores</h2>${puede ? `<button class="btn" id="b-stk">+ Stakeholder</button>` : ""}</div>
+      ${faltan.length ? `<div class="faltan-stk"><span class="sub">Sin asignar:</span> ${faltan.map((r) => puede ? `<button class="btn chico" data-rol-stk="${esc(r)}">+ ${esc(r)}</button>` : `<span class="pill noaplica">${esc(r)}</span>`).join(" ")}</div>` : ""}
+      ${lista.length ? `<div class="tabla-scroll"><table><thead><tr><th>Rol</th><th>Nombre</th><th>Cargo / área</th><th>Empresa</th><th>Contacto</th><th></th></tr></thead>
+        <tbody>${lista.map((x) => `<tr><td><b>${esc(x.Rol)}</b></td><td>${esc(x.Nombre)}</td><td>${esc([x.Cargo, x.Area].filter(Boolean).join(" · ") || "—")}</td>
+          <td>${x.ID_Proveedor ? esc((proveedor(x.ID_Proveedor) || {}).Nombre || x.ID_Proveedor) : "Interno"}</td><td>${contacto(x.Correo, x.Telefono)}</td>
+          <td class="derecha">${puede ? `<button class="btn chico" data-stk="${esc(x.ID_Stakeholder)}">Editar</button>` : ""}</td></tr>`).join("")}</tbody></table></div>` : ""}
+      <div class="provs"><b>Proveedor(es):</b> ${provs.length ? provs.map((x) => `<span class="prov">${esc(x.Nombre)}${x.Servicio ? ` <span class="sub">· ${esc(x.Servicio)}</span>` : ""}${x.Contacto || x.Correo ? ` <span class="sub">· ${esc(x.Contacto || "")} ${x.Correo ? `<a href="mailto:${esc(x.Correo)}">${esc(x.Correo)}</a>` : ""}</span>` : ""}</span>`).join("")
+        : `<span class="sub">Ninguno${puede ? " — asígnalos con «Editar proyecto»." : "."}</span>`}</div></div>`;
+  }
+
+  function formStakeholder(p, x, rolSugerido) {
+    const nuevo = !x;
+    const empresas = [["", "Interno (FSFB)"], ...proveedoresActivos(x && x.ID_Proveedor).map((v) => [v.ID_Proveedor, v.Nombre])];
+    const campos = [
+      { k: "Rol", label: "Rol en el proyecto", tipo: "select", opciones: S.cat.Rol_Stakeholder, ayuda: "Los roles se configuran en Catálogos." },
+      { k: "Nombre", label: "Nombre", placeholder: "Nombre y apellido" },
+      { k: "Cargo", label: "Cargo", placeholder: "Ej.: Director médico" },
+      { k: "Area", label: "Área", tipo: "select", opciones: S.cat.Cliente_Area },
+      { k: "ID_Proveedor", label: "Empresa", tipo: "select", opciones: empresas, ayuda: "Si la persona es del proveedor, elígelo aquí." },
+      { k: "Correo", label: "Correo", tipo: "email", placeholder: "nombre@empresa.com" },
+      { k: "Telefono", label: "Teléfono", placeholder: "Opcional" },
+    ];
+    modal(nuevo ? `Nuevo stakeholder · ${p.Nombre}` : `Editar stakeholder · ${x.Nombre || x.Rol}`, campos, nuevo ? { Rol: rolSugerido || "" } : x, (fd) => {
+      if (nuevo) {
+        const id = R.siguienteIdHijo("STK", S.datos.Stakeholders || [], "ID_Stakeholder", p.ID_Proyecto);
+        guardar(() => S.api.agregarFila("Stakeholders", { ID_Stakeholder: id, ID_Proyecto: p.ID_Proyecto, ...fd }), "Stakeholder agregado");
+      } else guardar(() => S.api.actualizarPorId("Stakeholders", "ID_Stakeholder", x.ID_Stakeholder, fd));
+    }, null, nuevo ? {} : { eliminar: { texto: "Quitar del proyecto", mensaje: `${x.Nombre || "Esta persona"} dejará de aparecer como ${x.Rol || "stakeholder"} de este proyecto.`,
+      accion: () => guardar(() => S.api.eliminarFilas("Stakeholders", "ID_Stakeholder", [x.ID_Stakeholder]), "Stakeholder quitado") } });
+  }
+
+  function formProveedor(x) {
+    const nuevo = !x;
+    const usan = nuevo ? [] : S.datos.Proyectos.filter((p) => idsLista(p.Proveedores).includes(x.ID_Proveedor));
+    const personas = nuevo ? [] : (S.datos.Stakeholders || []).filter((s) => s.ID_Proveedor === x.ID_Proveedor);
+    const campos = [
+      { k: "Nombre", label: "Nombre del proveedor", placeholder: "Razón social o nombre comercial", ancho: true },
+      { k: "NIT", label: "NIT", placeholder: "Opcional" },
+      { k: "Servicio", label: "Servicio / producto", placeholder: "Ej.: Desarrollo, licenciamiento, soporte" },
+      { k: "Contacto", label: "Persona de contacto" },
+      { k: "Correo", label: "Correo", tipo: "email" },
+      { k: "Telefono", label: "Teléfono" },
+      { k: "Activo", label: "¿Activo?", tipo: "select", opciones: ["Sí", "No"], def: "Sí", ayuda: "Si no está activo, deja de aparecer para nuevos proyectos." },
+    ];
+    modal(nuevo ? "Nuevo proveedor" : `Editar ${x.Nombre}`, campos, nuevo ? {} : x, (fd) => {
+      if (nuevo) {
+        const max = (S.datos.Proveedores || []).reduce((m, v) => Math.max(m, parseInt(String(v.ID_Proveedor).slice(4), 10) || 0), 0);
+        guardar(() => S.api.agregarFila("Proveedores", { ID_Proveedor: `PRV-${String(max + 1).padStart(4, "0")}`, ...fd, Nombre: fd.Nombre || "Proveedor sin nombre" }), "Proveedor creado");
+      } else guardar(() => S.api.actualizarPorId("Proveedores", "ID_Proveedor", x.ID_Proveedor, fd));
+    }, (fd) => ((S.datos.Proveedores || []).some((v) => lc(v.Nombre) === lc(fd.Nombre) && (!x || v.ID_Proveedor !== x.ID_Proveedor)) ? "Ya existe un proveedor con ese nombre." : ""),
+    nuevo ? {} : { eliminar: { texto: "Eliminar proveedor",
+      mensaje: usan.length || personas.length
+        ? `Lo usan ${usan.length} proyecto(s) y ${personas.length} stakeholder(s). Se quitará de ellos (los stakeholders quedan como internos). Si solo dejó de trabajar con ustedes, mejor márcalo como inactivo.`
+        : `Se eliminará «${x.Nombre}».`,
+      accion: () => guardar(async () => {
+        if (usan.length) await S.api.actualizarVarios("Proyectos", "ID_Proyecto", usan.map((p) => ({ id: p.ID_Proyecto, cambios: { Proveedores: idsLista(p.Proveedores).filter((i) => i !== x.ID_Proveedor).join(", ") } })));
+        if (personas.length) await S.api.actualizarVarios("Stakeholders", "ID_Stakeholder", personas.map((s) => ({ id: s.ID_Stakeholder, cambios: { ID_Proveedor: "" } })));
+        await S.api.eliminarFilas("Proveedores", "ID_Proveedor", [x.ID_Proveedor]);
+      }, "Proveedor eliminado") } });
+  }
+
   function formProyecto(p) {
     const u = S.usuario;
     const nuevo = !p;
@@ -1119,10 +1225,13 @@
       { seccion: "4. Presupuesto", ayuda: "en pesos colombianos, sin puntos" },
       { k: "Presupuesto", label: "Presupuesto (COP)", tipo: "number", min: 0, def: 0 },
       { k: "Ejecutado", label: "Ejecutado (COP)", tipo: "number", min: 0, def: 0 },
-      { seccion: "5. Enlaces", ayuda: "opcionales; pega la dirección completa" },
+      { seccion: "5. Proveedores", ayuda: "se administran en Catálogos → Proveedores" },
+      { k: "Proveedores", label: "Proveedor(es) del proyecto", tipo: "checks", vacio: "Aún no hay proveedores. Créalos en Catálogos → Proveedores.",
+        opciones: proveedoresActivos(p ? p.Proveedores : "").map((x) => [x.ID_Proveedor, x.Nombre]) },
+      { seccion: "6. Enlaces", ayuda: "opcionales; pega la dirección completa" },
       { k: "URL_Repositorio", label: "URL del repositorio", tipo: "url", placeholder: "https://github.com/… o https://dev.azure.com/…" },
       { k: "URL_Documentos", label: "URL de documentos", tipo: "url", placeholder: "https://…sharepoint.com/…" },
-      { seccion: "6. Comentario" },
+      { seccion: "7. Comentario" },
       { k: "Comentario_Estado", label: "Comentario de estado", tipo: "textarea", placeholder: "Novedad principal del proyecto" },
     ];
     const valores = p ? { ...p } : { PM: pmFijo ? u.Correo : "" };
@@ -1140,7 +1249,7 @@
       }
     }, (fd) => (fd.Fecha_Inicio && fd.Fecha_Fin_Plan && fd.Fecha_Fin_Plan < fd.Fecha_Inicio ? "La fecha fin no puede ser anterior a la fecha de inicio." : ""),
     !nuevo && R.puede(u, "verTodo") ? { eliminar: { texto: "Eliminar proyecto", titulo: `Eliminar ${p.ID_Proyecto}`,
-      mensaje: `Se borrará «${p.Nombre}» con todos sus seguimientos, compromisos, hitos, riesgos y actas. No se puede deshacer. Si solo terminó, mejor cambia su estado a Cerrado o Cancelado.`,
+      mensaje: `Se borrará «${p.Nombre}» con todos sus seguimientos, compromisos, hitos, riesgos, stakeholders y actas. No se puede deshacer. Si solo terminó, mejor cambia su estado a Cerrado o Cancelado.`,
       accion: () => { S.vista = "proyectos"; guardar(() => eliminarProyecto(p.ID_Proyecto), `Proyecto ${p.ID_Proyecto} eliminado`); } } } : {});
   }
 
@@ -1362,6 +1471,7 @@
     await borrar("Seguimientos", "ID_Seguimiento", segs);
     await borrar("Hitos", "ID_Hito", S.datos.Hitos.filter((h) => h.ID_Proyecto === pid));
     await borrar("Riesgos", "ID_Riesgo", S.datos.Riesgos.filter((r) => r.ID_Proyecto === pid));
+    await borrar("Stakeholders", "ID_Stakeholder", (S.datos.Stakeholders || []).filter((x) => x.ID_Proyecto === pid));
     await S.api.eliminarFilas("Proyectos", "ID_Proyecto", [pid]);
   }
 

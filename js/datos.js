@@ -13,6 +13,10 @@
     Archivos: ["ID_Archivo", "Parte", "Total", "Nombre", "Tipo", "Datos"],
     // Hilo de comentarios de cada compromiso, hasta cerrarlo.
     Comentarios: ["ID_Comentario", "ID_Compromiso", "ID_Proyecto", "Fecha_Hora", "Autor", "Texto"],
+    // Personas clave de cada proyecto (Sponsor, Líder funcional, Product Owner…). El rol sale del catálogo Rol_Stakeholder.
+    Stakeholders: ["ID_Stakeholder", "ID_Proyecto", "Rol", "Nombre", "Cargo", "Area", "Correo", "Telefono", "ID_Proveedor"],
+    // Maestro de proveedores; cada proyecto guarda los suyos en Proyectos.Proveedores.
+    Proveedores: ["ID_Proveedor", "Nombre", "NIT", "Servicio", "Contacto", "Correo", "Telefono", "Activo"],
     // Filtros guardados por cada usuario (y los que Admin/PMO comparten con todos).
     Filtros: ["ID_Filtro", "Usuario", "Nombre", "PM", "Proyecto", "Estado", "Metodologia", "Semaforo", "Texto", "Predeterminado", "Compartido"],
   };
@@ -21,7 +25,7 @@
   const TABLAS = Object.keys(ESTRUCTURA);
   // Columnas agregadas en versiones posteriores: si faltan en el Excel, se crean al final de la tabla.
   const COLUMNAS_NUEVAS = {
-    Proyectos: ["URL_Repositorio", "URL_Documentos"],
+    Proyectos: ["URL_Repositorio", "URL_Documentos", "Proveedores"],
     Seguimientos: ["Fecha_Acta", "URL_Acta", "Acta_Archivo"],
   };
   const COLS_FECHA = ["Fecha_Inicio", "Fecha_Fin_Plan", "Actualizado_El", "Fecha_Plan", "Fecha_Real", "Fecha_Corte", "Fecha_Compromiso", "Fecha_Cierre", "Fecha_Acta"];
