@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Portafolio PMO</title>
+  <link rel="stylesheet" href="css/estilos.css">
+  <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+  <style>
+    .pane { padding: 18px; }
+    .pane .btn { width: 100%; margin-top: 10px; }
+    #estado { margin-top: 14px; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="pane">
+    <div class="marca" style="color:var(--azul)"><span class="logo" style="background:var(--azul);color:#fff">P</span> Portafolio PMO</div>
+    <p>Abra el portafolio en una ventana grande. Deje este panel abierto mientras trabaja: es el que guarda en Excel.</p>
+    <button class="btn primario" id="b-abrir" disabled>Abrir Portafolio</button>
+    <button class="btn" id="b-panel" disabled>Usar en este panel</button>
+    <div id="estado" class="sub">Conectando con Excel…</div>
+  </div>
+  <script src="js/datos.js"></script>
+  <script>
+    /* Este panel es el "puente": la ventana grande no puede leer Excel directamente,
+       así que le envía sus pedidos a este panel, que los ejecuta con Office.js y responde. */
+    /* global Office, DATOS */
+    let ventana = null;
+    const estado = (t) => { document.getElementById("estado").textContent = t; };
+
+    function atender(arg) {
+      let m;
+      try { m = JSON.parse(arg.message); } catch (e) { return; }
+      if (!DATOS.OPERACIONES.includes(m.op)) return;
+      DATOS.OpsExcel[m.op](...(m.args || []))
+        .then((result) => ventana.messageChild(JSON.stringify({ id: m.id, ok: true, result })))
+        .catch((e) => ventana.messageChild(JSON.stringify({ id: m.id, ok: false, error: e.message || String(e) })));
+    }
+
+    function abrir() {
+      const url = new URL("index.html?modo=ventana", location.href).href;
+      Office.context.ui.displayDialogAsync(url, { height: 92, width: 92, displayInIframe: true }, (r) => {
+        if (r.status !== Office.AsyncResultStatus.Succeeded) {
+          estado("No se pudo abrir la ventana (" + r.error.message + "). Use el botón 'Usar en este panel'.");
+          return;
+        }
+        ventana = r.value;
+        if (typeof ventana.messageChild !== "function") {
+          estado("Esta versión de Excel no permite la ventana grande. Use 'Usar en este panel'.");
+          ventana.close();
+          return;
+        }
+        ventana.addEventHandler(Office.EventType.DialogMessageReceived, atender);
+        ventana.addEventHandler(Office.EventType.DialogEventReceived, () => { ventana = null; estado("Ventana cerrada."); });
+        estado("Portafolio abierto.");
+      });
+    }
+
+    Office.onReady((info) => {
+      if (info.host !== Office.HostType.Excel) { estado("Abra este complemento desde Excel."); return; }
+      document.getElementById("b-abrir").disabled = false;
+      document.getElementById("b-panel").disabled = false;
+      document.getElementById("b-abrir").addEventListener("click", abrir);
+      document.getElementById("b-panel").addEventListener("click", () => { location.href = "index.html?modo=panel"; });
+      estado("Listo.");
+    });
+  </script>
+</body>
+</html>
