@@ -133,6 +133,19 @@ tr.clic:hover td { background: #dbe9fa; }
 .filtro select, .filtro input { min-width: 150px; width: 100%; }
 .filtro.crece { flex: 1; min-width: 200px; }
 .filtro.guardados select { border-color: var(--azul-claro); background: var(--suave); color: var(--azul); font-weight: bold; }
+.pestanas { display: flex; gap: 2px; border-bottom: 2px solid #dfe6ef; margin: 4px 0 14px; overflow-x: auto; }
+.pestana { background: none; border: 0; border-bottom: 3px solid transparent; margin-bottom: -2px; padding: 9px 14px; font: inherit; color: var(--texto2); cursor: pointer; white-space: nowrap; }
+.pestana:hover { color: var(--azul); }
+.pestana.activa { color: var(--azul); font-weight: bold; border-bottom-color: var(--azul); }
+.contador.rojo { background: #fbe3e0; color: #8e2a1f; }
+.barra-comp { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: flex-end; margin-bottom: 12px; }
+.barra-comp .filtro { min-width: 190px; }
+.barra-comp .seg { flex-wrap: wrap; }
+.barra-comp .seg .btn { white-space: nowrap; }
+.barra-comp .check { display: flex; gap: 6px; align-items: center; padding-bottom: 8px; }
+.barra-comp .check input { width: auto; }
+tr.grupo td { background: #dfeaf7 !important; color: var(--azul); font-weight: bold; }
+.tabla-comp .ult-com { margin-top: 3px; }
 .faltan-stk { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 10px; }
 .provs { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; }
 .prov { background: var(--suave); border-radius: 10px; padding: 3px 10px; }

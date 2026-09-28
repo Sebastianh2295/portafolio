@@ -34,9 +34,9 @@
     proyectos: ["Lista de proyectos con buscador y filtros.",
       "Usa «+ Nueva iniciativa» para registrar un proyecto.",
       "Haz clic en un proyecto para ver su ficha, registrar seguimiento, hitos, riesgos y compromisos."],
-    ficha: ["Todo el proyecto en una página: datos, stakeholders y proveedores, curva de avance, compromisos, seguimientos, hitos y riesgos.",
+    ficha: ["Todo el proyecto organizado en pestañas: Resumen (datos, stakeholders, proveedores y curva), Compromisos, Seguimientos, Hitos y Riesgos.",
       "«Registrar seguimiento» es la acción periódica del PM: avance, logros, próximos pasos, bloqueos y compromisos.",
-      "Con «+ Compromiso» agregas uno sin sesión; ábrelo para comentar su avance hasta cerrarlo."],
+      "En la pestaña Compromisos creas, ordenas y filtras los compromisos; cada uno puede estar atado a una sesión o solo al proyecto. Ábrelo para comentar hasta cerrarlo."],
     cronograma: ["Línea de tiempo de los proyectos activos y en pausa.",
       "La barra oscura es el avance real; los rombos son hitos. La línea dorada es hoy."],
     riesgos: ["Mapa de calor de riesgos abiertos por probabilidad e impacto.",
@@ -593,6 +593,59 @@
             ${R.puedeEditar(S.usuario, p, "compromisos") && e !== "Cumplido" ? `<button class="btn chico" data-cumplir="${esc(c.ID_Compromiso)}">Cumplido</button>` : ""}</td></tr>`;
       }).join("")}</tbody></table></div>`;
   }
+  // Sección «Compromisos» de la ficha: filtrar, ordenar y agrupar por sesión.
+  function seccionCompromisos(p, comps, segs, puede) {
+    const V = S.compVista = S.compVista || { ver: "abiertos", orden: "fecha", agrupar: false };
+    const cuenta = { abiertos: comps.filter((x) => x.e !== "Cumplido").length, vencidos: comps.filter((x) => x.e === "Vencido").length,
+      cumplidos: comps.filter((x) => x.e === "Cumplido").length, todos: comps.length };
+    let lista = comps.filter((x) => V.ver === "todos" || (V.ver === "abiertos" && x.e !== "Cumplido") || (V.ver === "vencidos" && x.e === "Vencido") || (V.ver === "cumplidos" && x.e === "Cumplido"));
+    const ordenE = { Vencido: 0, "Por vencer": 1, Pendiente: 2, Cumplido: 3 };
+    const fSes = (c) => { const s = segs.find((x) => x.ID_Seguimiento === c.ID_Seguimiento); return s ? s.Fecha_Corte : ""; };
+    const porFecha = (a, b) => String(a.c.Fecha_Compromiso || "9999").localeCompare(String(b.c.Fecha_Compromiso || "9999"));
+    const ORDEN = {
+      fecha: porFecha,
+      estado: (a, b) => ordenE[a.e] - ordenE[b.e] || porFecha(a, b),
+      responsable: (a, b) => String(a.c.Responsable || "~").localeCompare(String(b.c.Responsable || "~"), "es") || porFecha(a, b),
+      recientes: (a, b) => String(b.c.ID_Compromiso).localeCompare(String(a.c.ID_Compromiso), "es", { numeric: true }),
+    };
+    lista = lista.slice().sort(ORDEN[V.orden] || porFecha);
+    const seg = (id, t) => `<button class="btn chico ${V.ver === id ? "primario" : ""}" data-cver="${id}">${t} (${cuenta[id]})</button>`;
+    const fila = ({ c, e }) => {
+      const coms = comentariosDe(c.ID_Compromiso);
+      const ult = coms[coms.length - 1];
+      return `<tr><td>${esc(c.Compromiso)}${ult ? `<div class="sub ult-com">💬 ${esc(ult.Texto)}</div>` : ""}</td>
+        <td>${c.ID_Seguimiento ? `Sesión ${fecha(fSes(c))}` : `<span class="sub">Sin sesión</span>`}</td>
+        <td>${esc(c.Responsable || "—")}</td><td class="nowrap">${fecha(c.Fecha_Compromiso)}</td>
+        <td>${pill(e)}${e === "Cumplido" && c.Fecha_Cierre ? `<div class="sub">${fecha(c.Fecha_Cierre)}</div>` : ""}</td>
+        <td class="derecha nowrap"><button class="btn chico ${coms.length ? "" : "primario-suave"}" data-abrir-comp="${esc(c.ID_Compromiso)}">${coms.length ? `Comentarios (${coms.length})` : "Abrir"}</button>
+          ${puede && e !== "Cumplido" ? `<button class="btn chico" data-cumplir="${esc(c.ID_Compromiso)}">Cumplido</button>` : ""}</td></tr>`;
+    };
+    let filas;
+    if (V.agrupar) {
+      const grupos = [...new Set(lista.map((x) => x.c.ID_Seguimiento || ""))]
+        .sort((a, b) => (a === "" ? 1 : b === "" ? -1 : String(fSes({ ID_Seguimiento: b })).localeCompare(String(fSes({ ID_Seguimiento: a })))));
+      filas = grupos.map((g) => {
+        const del = lista.filter((x) => (x.c.ID_Seguimiento || "") === g);
+        return `<tr class="grupo"><td colspan="6">${g ? `Sesión del ${fecha(fSes({ ID_Seguimiento: g }))}` : "Registrados en el proyecto (sin sesión)"} <span class="contador">${del.length}</span></td></tr>${del.map(fila).join("")}`;
+      }).join("");
+    } else filas = lista.map(fila).join("");
+    return `<div class="card"><div class="titulo-fila"><h2>Compromisos del proyecto</h2>${puede ? `<button class="btn primario" id="b-comp">+ Compromiso</button>` : ""}</div>
+      <p class="sub">Un compromiso puede quedar atado a una sesión de seguimiento o solo al proyecto. Ábrelo para comentar su avance hasta cerrarlo.</p>
+      <div class="barra-comp">
+        <div class="seg" role="group" aria-label="Qué compromisos ver">${seg("abiertos", "Abiertos")}${seg("vencidos", "Vencidos")}${seg("cumplidos", "Cumplidos")}${seg("todos", "Todos")}</div>
+        <label class="filtro"><span>Ordenar por</span><select id="c-orden">
+          ${[["fecha", "Fecha límite"], ["estado", "Estado (vencidos primero)"], ["responsable", "Responsable"], ["recientes", "Más recientes"]].map(([v, t]) => `<option value="${v}" ${V.orden === v ? "selected" : ""}>${t}</option>`).join("")}</select></label>
+        <label class="check"><input type="checkbox" id="c-agrupar" ${V.agrupar ? "checked" : ""}> Agrupar por sesión</label>
+      </div>
+      ${lista.length ? `<div class="tabla-scroll"><table class="tabla-comp"><thead><tr><th>Compromiso</th><th>Sesión</th><th>Responsable</th><th>Fecha límite</th><th>Estado</th><th></th></tr></thead>
+        <tbody>${filas}</tbody></table></div>`
+        : vacio(comps.length ? "No hay compromisos en esta vista. Prueba «Todos»." : `Aún no hay compromisos.${puede ? " Crea el primero con «+ Compromiso»." : ""}`)}</div>`;
+  }
+  function enlazarSeccionCompromisos(el) {
+    el.querySelectorAll("[data-cver]").forEach((b) => b.addEventListener("click", () => { S.compVista.ver = b.dataset.cver; render(); }));
+    const o = el.querySelector("#c-orden"); if (o) o.addEventListener("change", () => { S.compVista.orden = o.value; render(); });
+    const g = el.querySelector("#c-agrupar"); if (g) g.addEventListener("change", () => { S.compVista.agrupar = g.checked; render(); });
+  }
   function enlazarCompromisos(el) {
     el.querySelectorAll("[data-abrir-comp]").forEach((b) => b.addEventListener("click", () => detalleCompromiso(b.dataset.abrirComp)));
     el.querySelectorAll("[data-cumplir]").forEach((b) => b.addEventListener("click", () => {
@@ -702,16 +755,17 @@
     const puedeP = (a) => R.puedeEditar(u, p, a);
     const dato = (k, v) => `<div class="dato"><div class="dato-k">${k}</div><div class="dato-v">${v}</div></div>`;
     const hoy = R.hoyISO();
-    el.innerHTML = `
-      <button class="btn enlace" id="b-volver">← Volver a proyectos</button>
-      <div class="titulo-fila"><div><h1>${esc(p.Nombre)}</h1><div class="sub">${esc(p.ID_Proyecto)} · ${esc(p.Cliente_Area)} · PM ${esc(nombreUsuario(p.PM))}</div></div>
-        <div class="acciones">
-          ${enlace(p.URL_Repositorio, "Repositorio")}${enlace(p.URL_Documentos, "Documentos")}
-          ${puedeP("seguimiento") && p.Estado === "Activo" ? `<button class="btn primario" id="b-seg">Registrar seguimiento</button>` : ""}
-          ${puedeP("editarProyecto") ? `<button class="btn" id="b-editar">Editar proyecto</button>` : ""}
-        </div></div>
-      ${p.Estado === "Activo" && e.estado !== "Al día" ? `<div class="aviso ${e.estado === "Vencido" ? "rojo" : ""}">${e.estado === "Vencido" ? `El seguimiento está vencido desde el ${fecha(e.proximo)}.` : `El próximo seguimiento vence el ${fecha(e.proximo)}.`}${puedeP("seguimiento") ? " Usa «Registrar seguimiento»." : ""}</div>` : ""}
-      <div class="card datos">
+
+    // Pestañas de la ficha: cada sección en su propia vista.
+    if (S.fichaPid !== p.ID_Proyecto) { S.fichaPid = p.ID_Proyecto; S.fichaTab = "resumen"; }
+    const abiertosN = comps.filter((x) => x.e !== "Cumplido").length;
+    const vencidosN = comps.filter((x) => x.e === "Vencido").length;
+    const TABS = [["resumen", "Resumen"], ["compromisos", `Compromisos <span class="contador ${vencidosN ? "rojo" : ""}">${abiertosN}</span>`],
+      ["seguimientos", `Seguimientos <span class="contador">${segs.length}</span>`], ["hitos", `Hitos <span class="contador">${hitos.length}</span>`], ["riesgos", `Riesgos <span class="contador">${riesgos.length}</span>`]];
+    const tab = TABS.some((t) => t[0] === S.fichaTab) ? S.fichaTab : "resumen";
+    const pestanas = `<div class="pestanas" role="tablist">${TABS.map(([id, t]) => `<button class="pestana ${id === tab ? "activa" : ""}" role="tab" aria-selected="${id === tab}" data-tab="${id}">${t}</button>`).join("")}</div>`;
+    const cuerpo = {
+      resumen: () => `      <div class="card datos">
         ${dato("Estado", esc(p.Estado))}${dato("Fase", esc(p.Fase))}${dato("Semáforo", chipSemaforo(p.Semaforo))}
         ${dato("Avance real / plan", barraAvance(p.Avance_Real, p.Avance_Planeado))}
         ${dato("Inicio", fecha(p.Fecha_Inicio))}${dato("Fin planeado", fecha(p.Fecha_Fin_Plan))}
@@ -723,9 +777,9 @@
       </div>
       ${cardStakeholders(p, puedeP("editarProyecto"))}
       <div class="card"><h2>Curva de avance</h2>${segs.length ? `<div class="grafico-alto"><canvas id="g-curva"></canvas></div>` : vacio("Aún no hay seguimientos. La curva aparece con el primer reporte.")}</div>
-      <div class="card"><div class="titulo-fila"><h2>Compromisos <span class="contador">${comps.filter((x) => x.e !== "Cumplido").length} abiertos</span></h2>${puedeP("compromisos") ? `<button class="btn" id="b-comp">+ Compromiso</button>` : ""}</div>
-        <p class="sub">Se agregan aquí o al reportar un seguimiento. Abre uno para comentar su avance hasta cerrarlo.</p>${comps.length ? tablaCompromisos(comps, false) : vacio("Sin compromisos registrados.")}</div>
-      <div class="card"><h2>Historial de sesiones de seguimiento</h2>
+`,
+      compromisos: () => seccionCompromisos(p, comps, segs, puedeP("compromisos")),
+      seguimientos: () => `      <div class="card"><div class="titulo-fila"><h2>Historial de sesiones de seguimiento</h2>${puedeP("seguimiento") && p.Estado === "Activo" ? `<button class="btn" id="b-seg2">+ Registrar seguimiento</button>` : ""}</div>
         <p class="sub">Cada fila es una sesión: su avance, lo que pasó, los compromisos que se acordaron y el acta.</p><div class="tabla-scroll"><table class="historial">
         <thead><tr><th>Sesión</th><th>Avance</th><th>Logros y próximos pasos</th><th>Bloqueos</th><th>Compromisos acordados</th><th>Acta</th></tr></thead>
         <tbody>${segs.slice().reverse().map((s) => {
@@ -733,24 +787,43 @@
           return `<tr><td><b>${fecha(s.Fecha_Corte)}</b><div class="sub">${esc(s.Semana)} · ${esc(nombreUsuario(s.Reportado_Por))}</div></td>
           <td>${pct(s.Avance_Real)}<div>${chipSemaforo(s.Semaforo)}</div></td>
           <td>${esc(s.Logros)}<div class="sub">Sigue: ${esc(s.Proximos_Pasos || "—")}</div></td><td>${esc(s.Bloqueos || "—")}</td>
-          <td>${acordados.length ? `<ul class="mini">${acordados.map((c) => `<li>${esc(c.Compromiso)} <span class="sub">${esc(c.Responsable)} · ${fecha(c.Fecha_Compromiso)}</span> ${pill(R.estadoCompromiso(c))}</li>`).join("")}</ul>` : `<span class="sub">Sin compromisos</span>`}</td>
+          <td>${acordados.length ? `<ul class="mini">${acordados.map((c) => `<li><button class="btn enlace" data-abrir-comp="${esc(c.ID_Compromiso)}">${esc(c.Compromiso)}</button> <span class="sub">${esc(c.Responsable)} · ${fecha(c.Fecha_Compromiso)}</span> ${pill(R.estadoCompromiso(c))}</li>`).join("")}</ul>` : `<span class="sub">Sin compromisos</span>`}
+            ${puedeP("compromisos") ? `<div><button class="btn chico" data-comp-seg="${esc(s.ID_Seguimiento)}">+ Compromiso de esta sesión</button></div>` : ""}</td>
           <td>${s.Fecha_Acta ? fecha(s.Fecha_Acta) : `<span class="sub">Sin fecha</span>`}<div class="celda-acta">${celdaActa(s, puedeP("seguimiento"))}</div>
             ${puedeP("seguimiento") ? `<button class="btn chico enlace-edicion" data-edit-seg="${esc(s.ID_Seguimiento)}">Editar sesión</button>` : ""}</td></tr>`;
         }).join("") || `<tr><td colspan="6">${vacio("Sin seguimientos.")}</td></tr>`}</tbody></table></div></div>
-      <div class="card"><div class="titulo-fila"><h2>Hitos</h2>${puedeP("hitos") ? `<button class="btn" id="b-hito">+ Hito</button>` : ""}</div><div class="tabla-scroll"><table>
+`,
+      hitos: () => `      <div class="card"><div class="titulo-fila"><h2>Hitos</h2>${puedeP("hitos") ? `<button class="btn" id="b-hito">+ Hito</button>` : ""}</div><div class="tabla-scroll"><table>
         <thead><tr><th>Hito</th><th>Fecha plan</th><th>Fecha real</th><th>Estado</th><th></th></tr></thead>
         <tbody>${hitos.map((h) => { const est = h.Estado !== "Cumplido" && h.Fecha_Plan < hoy ? "Atrasado" : h.Estado; return `<tr><td>${esc(h.Hito)}</td><td>${fecha(h.Fecha_Plan)}</td><td>${h.Fecha_Real ? fecha(h.Fecha_Real) : "—"}</td><td>${pill(est)}</td>
           <td class="derecha">${puedeP("hitos") ? `<button class="btn chico" data-hito="${esc(h.ID_Hito)}">Editar</button>` : ""}</td></tr>`; }).join("") || `<tr><td colspan="5">${vacio("Sin hitos. Agrega los hitos clave del proyecto con «+ Hito».")}</td></tr>`}</tbody></table></div></div>
-      <div class="card"><div class="titulo-fila"><h2>Riesgos</h2>${puedeP("riesgos") ? `<button class="btn" id="b-riesgo">+ Riesgo</button>` : ""}</div><div class="tabla-scroll"><table>
+`,
+      riesgos: () => `      <div class="card"><div class="titulo-fila"><h2>Riesgos</h2>${puedeP("riesgos") ? `<button class="btn" id="b-riesgo">+ Riesgo</button>` : ""}</div><div class="tabla-scroll"><table>
         <thead><tr><th>Riesgo</th><th class="opc">Tipo</th><th>Estado</th><th>Inherente</th><th>Residual</th><th class="opc">Mitigación</th><th></th></tr></thead>
         <tbody>${riesgos.map((r) => `<tr><td>${esc(r.Descripcion)}</td><td class="opc">${esc(r.Tipo)}</td><td>${esc(r.Estado)}</td>
           <td>${nivel(r.Calificacion_Inherente)}</td><td>${nivel(r.Calificacion_Residual)}</td><td class="opc">${esc(r.Plan_Mitigacion)}</td>
-          <td class="derecha">${puedeP("riesgos") ? `<button class="btn chico" data-riesgo="${esc(r.ID_Riesgo)}">Editar</button>` : ""}</td></tr>`).join("") || `<tr><td colspan="7">${vacio("Sin riesgos registrados.")}</td></tr>`}</tbody></table></div></div>`;
+          <td class="derecha">${puedeP("riesgos") ? `<button class="btn chico" data-riesgo="${esc(r.ID_Riesgo)}">Editar</button>` : ""}</td></tr>`).join("") || `<tr><td colspan="7">${vacio("Sin riesgos registrados.")}</td></tr>`}</tbody></table></div></div>`,
+    }[tab]();
+    el.innerHTML = `
+      <button class="btn enlace" id="b-volver">← Volver a proyectos</button>
+      <div class="titulo-fila"><div><h1>${esc(p.Nombre)}</h1><div class="sub">${esc(p.ID_Proyecto)} · ${esc(p.Cliente_Area)} · PM ${esc(nombreUsuario(p.PM))}</div></div>
+        <div class="acciones">
+          ${enlace(p.URL_Repositorio, "Repositorio")}${enlace(p.URL_Documentos, "Documentos")}
+          ${puedeP("seguimiento") && p.Estado === "Activo" ? `<button class="btn primario" id="b-seg">Registrar seguimiento</button>` : ""}
+          ${puedeP("editarProyecto") ? `<button class="btn" id="b-editar">Editar proyecto</button>` : ""}
+        </div></div>
+      ${p.Estado === "Activo" && e.estado !== "Al día" ? `<div class="aviso ${e.estado === "Vencido" ? "rojo" : ""}">${e.estado === "Vencido" ? `El seguimiento está vencido desde el ${fecha(e.proximo)}.` : `El próximo seguimiento vence el ${fecha(e.proximo)}.`}${puedeP("seguimiento") ? " Usa «Registrar seguimiento»." : ""}</div>` : ""}
+      ${pestanas}
+      ${cuerpo}`
     $("#b-volver").addEventListener("click", () => ir("proyectos"));
     if ($("#b-seg")) $("#b-seg").addEventListener("click", () => formSeguimiento(p));
     if ($("#b-editar")) $("#b-editar").addEventListener("click", () => formProyecto(p));
     if ($("#b-hito")) $("#b-hito").addEventListener("click", () => formHito(p));
     if ($("#b-comp")) $("#b-comp").addEventListener("click", () => formCompromiso(null, p));
+    if ($("#b-seg2")) $("#b-seg2").addEventListener("click", () => formSeguimiento(p));
+    el.querySelectorAll("[data-tab]").forEach((b) => b.addEventListener("click", () => { S.fichaTab = b.dataset.tab; render(); }));
+    el.querySelectorAll("[data-comp-seg]").forEach((b) => b.addEventListener("click", () => formCompromiso(null, p, b.dataset.compSeg)));
+    enlazarSeccionCompromisos(el);
     if ($("#b-riesgo")) $("#b-riesgo").addEventListener("click", () => formRiesgo(p));
     if ($("#b-stk")) $("#b-stk").addEventListener("click", () => formStakeholder(p));
     el.querySelectorAll("[data-stk]").forEach((b) => b.addEventListener("click", () => formStakeholder(p, (S.datos.Stakeholders || []).find((x) => x.ID_Stakeholder === b.dataset.stk))));
@@ -759,7 +832,7 @@
     el.querySelectorAll("[data-riesgo]").forEach((b) => b.addEventListener("click", () => formRiesgo(p, riesgos.find((r) => r.ID_Riesgo === b.dataset.riesgo))));
     enlazarCompromisos(el);
     el.querySelectorAll("[data-edit-seg]").forEach((b) => b.addEventListener("click", () => formEditarSeguimiento(segs.find((s) => s.ID_Seguimiento === b.dataset.editSeg))));
-    if (segs.length) grafico($("#g-curva"), { type: "line", data: { labels: segs.map((s) => fecha(s.Fecha_Corte)), datasets: [
+    if (segs.length && $("#g-curva")) grafico($("#g-curva"), { type: "line", data: { labels: segs.map((s) => fecha(s.Fecha_Corte)), datasets: [
       { label: "Avance real", data: segs.map((s) => Number(s.Avance_Real) || 0), borderColor: COLORES.azul, backgroundColor: COLORES.azul, tension: 0.2 }] },
       options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { min: 0, max: 100, ticks: { callback: (v) => v + "%" } } } } });
   }
@@ -1072,7 +1145,7 @@
         const ops = c.opciones || [];
         const existe = ops.some((o) => String(Array.isArray(o) ? o[0] : o) === String(v));
         const todas = v !== "" && !existe ? [String(v), ...ops] : ops;   // un valor ya quitado del catálogo se conserva
-        return `<select name="${c.k}" ${dis}><option value="">Seleccione…</option>${todas.map((o) => { const [val, txt] = Array.isArray(o) ? o : [o, o]; return `<option value="${esc(val)}" ${String(val) === String(v) ? "selected" : ""}>${esc(txt)}</option>`; }).join("")}</select>`;
+        return `<select name="${c.k}" ${dis}><option value="">${esc(c.textoVacio || "Seleccione…")}</option>${todas.map((o) => { const [val, txt] = Array.isArray(o) ? o : [o, o]; return `<option value="${esc(val)}" ${String(val) === String(v) ? "selected" : ""}>${esc(txt)}</option>`; }).join("")}</select>`;
       }
       if (c.tipo === "textarea") return `<textarea name="${c.k}" rows="3" placeholder="${esc(c.placeholder || "")}" ${dis}>${esc(v)}</textarea>`;
       return `<input name="${c.k}" type="${c.tipo || "text"}" value="${esc(v)}" placeholder="${esc(c.placeholder || "")}" ${c.min !== undefined ? `min="${c.min}"` : ""} ${c.max !== undefined ? `max="${c.max}"` : ""} ${dis}>`;
@@ -1475,10 +1548,15 @@
     await S.api.eliminarFilas("Proyectos", "ID_Proyecto", [pid]);
   }
 
-  function formCompromiso(c, pNuevo) {
+  function formCompromiso(c, pNuevo, segSugerida) {
     const nuevo = !c;
+    const pid = nuevo ? pNuevo.ID_Proyecto : c.ID_Proyecto;
+    const sesiones = R.seguimientosDe(pid, S.datos.Seguimientos).slice().reverse()
+      .map((s) => [s.ID_Seguimiento, `Sesión del ${fecha(s.Fecha_Corte)}${s.Fecha_Acta && s.Fecha_Acta !== s.Fecha_Corte ? ` (acta ${fecha(s.Fecha_Acta)})` : ""}`]);
     const campos = [
       { k: "Compromiso", label: "Compromiso", tipo: "textarea", placeholder: "Qué se hará" },
+      { k: "ID_Seguimiento", label: "¿De qué sesión salió?", tipo: "select", opciones: sesiones, ancho: true, textoVacio: "Sin sesión (solo del proyecto)",
+        ayuda: sesiones.length ? "Elige la sesión de seguimiento donde se acordó, o déjalo sin sesión." : "Este proyecto aún no tiene sesiones; quedará atado solo al proyecto." },
       { k: "Responsable", label: "Responsable" },
       { k: "Fecha_Compromiso", label: "Fecha límite", tipo: "date" },
       ...(nuevo ? [{ k: "Comentario", label: "Comentario inicial (opcional)", tipo: "textarea", placeholder: "Contexto o primer avance" }] : [
@@ -1486,8 +1564,8 @@
         { k: "Fecha_Cierre", label: "Fecha de cierre", tipo: "date", ayuda: "Se llena sola al marcarlo cumplido; se borra si lo reabres." }]),
     ];
     if (nuevo) {
-      modal(`Nuevo compromiso · ${pNuevo.Nombre}`, campos, {}, (fd) => {
-        const fila = { ID_Compromiso: R.siguienteIdHijo("CMP", S.datos.Compromisos, "ID_Compromiso", pNuevo.ID_Proyecto), ID_Proyecto: pNuevo.ID_Proyecto, ID_Seguimiento: "",
+      modal(`Nuevo compromiso · ${pNuevo.Nombre}`, campos, { ID_Seguimiento: segSugerida || "" }, (fd) => {
+        const fila = { ID_Compromiso: R.siguienteIdHijo("CMP", S.datos.Compromisos, "ID_Compromiso", pNuevo.ID_Proyecto), ID_Proyecto: pNuevo.ID_Proyecto, ID_Seguimiento: fd.ID_Seguimiento || "",
           Compromiso: fd.Compromiso || "(sin descripción)", Responsable: fd.Responsable, Fecha_Compromiso: fd.Fecha_Compromiso, Estado: "Pendiente", Fecha_Cierre: "", Registrado_Por: S.usuario.Correo };
         guardar(async () => {
           await S.api.agregarFila("Compromisos", fila);
