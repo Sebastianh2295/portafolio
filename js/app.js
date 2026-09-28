@@ -1413,6 +1413,7 @@
       { seccion: "3. Fechas y avance" },
       { k: "Fecha_Inicio", label: "Fecha de inicio", tipo: "date", def: R.hoyISO() },
       { k: "Fecha_Fin_Plan", label: "Fecha fin planeada", tipo: "date" },
+      { k: "Avance_Real", label: "Avance real (%)", tipo: "number", min: 0, max: 100, def: 0, ayuda: "Lo que lleva hoy. También se actualiza con cada seguimiento." },
       { k: "Avance_Planeado", label: "Avance planeado a hoy (%)", tipo: "number", min: 0, max: 100, def: 0, ayuda: "Lo que debería llevar según el plan." },
       { seccion: "4. Presupuesto", ayuda: "en pesos colombianos, sin puntos" },
       { k: "Presupuesto", label: "Presupuesto (COP)", tipo: "number", min: 0, def: 0 },
@@ -1432,7 +1433,7 @@
       if (!frecuenciaLibre) fd.Frecuencia_Seguimiento = nuevo ? "Semanal" : p.Frecuencia_Seguimiento;
       if (nuevo) {
         const id = R.siguienteIdProyecto(S.datos.Proyectos);
-        const fila = { ...fd, Nombre: fd.Nombre || `Iniciativa ${id}`, ID_Proyecto: id, Avance_Real: 0, ...sello() };
+        const fila = { ...fd, Nombre: fd.Nombre || `Iniciativa ${id}`, ID_Proyecto: id, Avance_Real: fd.Avance_Real === "" ? 0 : fd.Avance_Real, ...sello() };
         S.pid = fila.ID_Proyecto;
         S.vista = "ficha";
         guardar(() => S.api.agregarFila("Proyectos", fila), `Iniciativa ${fila.ID_Proyecto} registrada`);
