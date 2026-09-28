@@ -69,6 +69,9 @@
     t.className = "toast" + (error ? " error" : "");
     t.setAttribute("role", "status");
     t.textContent = msg;
+    // Se apilan hacia arriba para no taparse entre sí.
+    const alto = [...document.querySelectorAll(".toast")].reduce((m, x) => m + x.offsetHeight + 8, 0);
+    t.style.bottom = 16 + alto + "px";
     document.body.appendChild(t);
     setTimeout(() => t.remove(), error ? 7000 : 3000);
   }
@@ -84,13 +87,19 @@
   function armarCatalogos() {
     S.cat = {};
     for (const f of S.datos.Catalogos) (S.cat[f.Lista] = S.cat[f.Lista] || []).push(String(f.Valor));
-    S.cat.Estado_Compromiso = ["Pendiente", "Cumplido"];
+    S.cat.Estado_Compromiso = R.ESTADOS_COMPROMISO.slice();
     if (!S.cat.Rol_Stakeholder) S.cat.Rol_Stakeholder = ROLES_STK_BASE.slice();
   }
   const ROLES_STK_BASE = ["Sponsor", "Líder funcional", "Product Owner"];
   let sembrado = false;
   // La primera vez, deja en el Excel los roles de stakeholder base para poder editarlos desde Catálogos.
   async function sembrarCatalogos() {
+    // Compromisos de versiones anteriores: «Cumplido» pasa a «Cerrado».
+    const viejos = S.datos.Compromisos.filter((c) => c.Estado === "Cumplido");
+    if (viejos.length) {
+      try { await S.api.actualizarVarios("Compromisos", "ID_Compromiso", viejos.map((c) => ({ id: c.ID_Compromiso, cambios: { Estado: "Cerrado" } }))); viejos.forEach((c) => { c.Estado = "Cerrado"; }); }
+      catch (e) { /* sin permiso de edición: la app igual los trata como cerrados */ }
+    }
     if (sembrado || S.datos.Catalogos.some((f) => f.Lista === "Rol_Stakeholder")) return;
     sembrado = true;
     try { await S.api.agregarFilas("Catalogos", ROLES_STK_BASE.map((v) => ({ Lista: "Rol_Stakeholder", Valor: v }))); S.datos = await S.api.leerTodo(); armarCatalogos(); }
@@ -361,6 +370,9 @@
 
   const chipSemaforo = (s) => (s ? `<span class="dot" style="background:${COLORES[s] || "#999"}" aria-hidden="true"></span>${esc(s)}` : "—");
   const pill = (e) => `<span class="pill ${String(e).replace(/\s/g, "").toLowerCase()}">${esc(e)}</span>`;
+  // Compromiso: su estado (Pendiente / En curso / Cerrado) y, si aplica, la alerta de tiempo.
+  const pillComp = (c) => { const e = R.estadoCompromiso(c); return pill(R.estadoBase(c)) + (e === "Vencido" || e === "Por vencer" ? ` ${pill(e)}` : ""); };
+  const ORDEN_COMP = { Vencido: 0, "Por vencer": 1, "En curso": 2, Pendiente: 3, Cerrado: 4 };
   const barraAvance = (real, plan) => `
     <span class="avance" title="Real ${pct(real)} · Planeado ${pct(plan)}" aria-label="Avance real ${pct(real)}, planeado ${pct(plan)}">
       <span class="avance-real" style="width:${Math.min(100, Number(real) || 0)}%"></span>
@@ -545,9 +557,8 @@
     const filas = ps.filter((p) => p.Estado === "Activo").map((p) => ({ p, e: R.estadoSeguimiento(p, S.datos.Seguimientos) }))
       .sort((a, b) => orden[a.e.estado] - orden[b.e.estado] || a.e.faltan - b.e.faltan);
     const cuenta = (e) => filas.filter((f) => f.e.estado === e).length;
-    const ordenC = { Vencido: 0, "Por vencer": 1, Pendiente: 2 };
     const comps = compromisosDe(new Set(ps.map((p) => p.ID_Proyecto))).map((c) => ({ c, e: R.estadoCompromiso(c) }))
-      .filter((x) => x.e !== "Cumplido").sort((a, b) => ordenC[a.e] - ordenC[b.e] || (a.c.Fecha_Compromiso < b.c.Fecha_Compromiso ? -1 : 1));
+      .filter((x) => x.e !== "Cerrado").sort((a, b) => ORDEN_COMP[a.e] - ORDEN_COMP[b.e] || (a.c.Fecha_Compromiso < b.c.Fecha_Compromiso ? -1 : 1));
     el.innerHTML = `
       <h1>Seguimiento y compromisos</h1>
       ${barraFiltros()}
@@ -596,10 +607,10 @@
         const ult = coms[coms.length - 1];
         return `<tr ${conProyecto ? `class="clic" data-pid="${esc(c.ID_Proyecto)}"` : ""}>${conProyecto ? `<td><b>${esc(p.Nombre)}</b></td>` : ""}
           <td>${esc(c.Compromiso)}<div class="sub">${esc(origen(c))}</div></td><td>${esc(c.Responsable)}</td><td>${fecha(c.Fecha_Compromiso)}</td>
-          <td>${pill(e)}${e === "Cumplido" && c.Fecha_Cierre ? `<div class="sub">${fecha(c.Fecha_Cierre)}</div>` : ""}</td>
+          <td>${pillComp(c)}${e === "Cerrado" && c.Fecha_Cierre ? `<div class="sub">${fecha(c.Fecha_Cierre)}</div>` : ""}</td>
           <td class="opc">${ult ? `<span class="ult-com">${esc(ult.Texto)}</span><div class="sub">${esc(nombreUsuario(ult.Autor))} · ${fechaHora(ult.Fecha_Hora)}</div>` : `<span class="sub">Sin comentarios</span>`}</td>
           <td class="derecha nowrap"><button class="btn chico ${coms.length ? "" : "primario-suave"}" data-abrir-comp="${esc(c.ID_Compromiso)}">${coms.length ? `Comentarios (${coms.length})` : "Abrir"}</button>
-            ${R.puedeEditar(S.usuario, p, "compromisos") && e !== "Cumplido" ? `<button class="btn chico" data-cumplir="${esc(c.ID_Compromiso)}">Cumplido</button>` : ""}</td></tr>`;
+            ${R.puedeEditar(S.usuario, p, "compromisos") ? botonesEstado(c) : ""}</td></tr>`;
       }).join("")}</tbody></table></div>`;
   }
   // ---------- Alertas de compromisos ----------
@@ -617,7 +628,7 @@
   const esMioComp = (c) => { const u = S.usuario; return lc(correoDe(c)) === lc(u.Correo) || (u.Nombre && lc(c.Responsable) === lc(u.Nombre)); };
   function alertas() {
     const ids = new Set(visibles().map((p) => p.ID_Proyecto));
-    const lista = S.datos.Compromisos.filter((c) => ids.has(c.ID_Proyecto) && c.Estado !== "Cumplido")
+    const lista = S.datos.Compromisos.filter((c) => ids.has(c.ID_Proyecto) && !R.cerrado(c))
       .map((c) => ({ c, e: R.estadoCompromiso(c), mio: esMioComp(c) }))
       .sort((a, b) => (b.mio - a.mio) || String(a.c.Fecha_Compromiso || "9999").localeCompare(String(b.c.Fecha_Compromiso || "9999")));
     return { vencidos: lista.filter((x) => x.e === "Vencido"), pronto: lista.filter((x) => x.e === "Por vencer") };
@@ -686,10 +697,13 @@
   // Sección «Compromisos» de la ficha: filtrar, ordenar y agrupar por sesión.
   function seccionCompromisos(p, comps, segs, puede) {
     const V = S.compVista = S.compVista || { ver: "abiertos", orden: "fecha", agrupar: false };
-    const cuenta = { abiertos: comps.filter((x) => x.e !== "Cumplido").length, vencidos: comps.filter((x) => x.e === "Vencido").length,
-      cumplidos: comps.filter((x) => x.e === "Cumplido").length, todos: comps.length };
-    let lista = comps.filter((x) => V.ver === "todos" || (V.ver === "abiertos" && x.e !== "Cumplido") || (V.ver === "vencidos" && x.e === "Vencido") || (V.ver === "cumplidos" && x.e === "Cumplido"));
-    const ordenE = { Vencido: 0, "Por vencer": 1, Pendiente: 2, Cumplido: 3 };
+    const FILTROS = {
+      abiertos: (x) => x.e !== "Cerrado", pendientes: (x) => R.estadoBase(x.c) === "Pendiente", encurso: (x) => R.estadoBase(x.c) === "En curso",
+      vencidos: (x) => x.e === "Vencido", cerrados: (x) => x.e === "Cerrado", todos: () => true };
+    if (!FILTROS[V.ver]) V.ver = "abiertos";
+    const cuenta = Object.fromEntries(Object.entries(FILTROS).map(([k, f]) => [k, comps.filter(f).length]));
+    let lista = comps.filter(FILTROS[V.ver]);
+    const ordenE = ORDEN_COMP;
     const fSes = (c) => { const s = segs.find((x) => x.ID_Seguimiento === c.ID_Seguimiento); return s ? s.Fecha_Corte : ""; };
     const porFecha = (a, b) => String(a.c.Fecha_Compromiso || "9999").localeCompare(String(b.c.Fecha_Compromiso || "9999"));
     const ORDEN = {
@@ -706,9 +720,9 @@
       return `<tr><td>${esc(c.Compromiso)}${ult ? `<div class="sub ult-com">💬 ${esc(ult.Texto)}</div>` : ""}</td>
         <td>${c.ID_Seguimiento ? `Sesión ${fecha(fSes(c))}` : `<span class="sub">Sin sesión</span>`}</td>
         <td>${esc(c.Responsable || "—")}</td><td class="nowrap">${fecha(c.Fecha_Compromiso)}</td>
-        <td>${pill(e)}${e === "Cumplido" && c.Fecha_Cierre ? `<div class="sub">${fecha(c.Fecha_Cierre)}</div>` : ""}</td>
+        <td>${pillComp(c)}${e === "Cerrado" && c.Fecha_Cierre ? `<div class="sub">${fecha(c.Fecha_Cierre)}</div>` : ""}</td>
         <td class="derecha nowrap"><button class="btn chico ${coms.length ? "" : "primario-suave"}" data-abrir-comp="${esc(c.ID_Compromiso)}">${coms.length ? `Comentarios (${coms.length})` : "Abrir"}</button>
-          ${puede && e !== "Cumplido" ? `<button class="btn chico" data-cumplir="${esc(c.ID_Compromiso)}">Cumplido</button>` : ""}</td></tr>`;
+          ${puede ? botonesEstado(c) : ""}</td></tr>`;
     };
     let filas;
     if (V.agrupar) {
@@ -722,7 +736,7 @@
     return `<div class="card"><div class="titulo-fila"><h2>Compromisos del proyecto</h2>${puede ? `<button class="btn primario" id="b-comp">+ Compromiso</button>` : ""}</div>
       <p class="sub">Un compromiso puede quedar atado a una sesión de seguimiento o solo al proyecto. Ábrelo para comentar su avance hasta cerrarlo.</p>
       <div class="barra-comp">
-        <div class="seg" role="group" aria-label="Qué compromisos ver">${seg("abiertos", "Abiertos")}${seg("vencidos", "Vencidos")}${seg("cumplidos", "Cumplidos")}${seg("todos", "Todos")}</div>
+        <div class="seg" role="group" aria-label="Qué compromisos ver">${seg("abiertos", "Abiertos")}${seg("pendientes", "Pendientes")}${seg("encurso", "En curso")}${seg("vencidos", "Vencidos")}${seg("cerrados", "Cerrados")}${seg("todos", "Todos")}</div>
         <label class="filtro"><span>Ordenar por</span><select id="c-orden">
           ${[["fecha", "Fecha límite"], ["estado", "Estado (vencidos primero)"], ["responsable", "Responsable"], ["recientes", "Más recientes"]].map(([v, t]) => `<option value="${v}" ${V.orden === v ? "selected" : ""}>${t}</option>`).join("")}</select></label>
         <label class="check"><input type="checkbox" id="c-agrupar" ${V.agrupar ? "checked" : ""}> Agrupar por sesión</label>
@@ -738,14 +752,26 @@
   }
   function enlazarCompromisos(el) {
     el.querySelectorAll("[data-abrir-comp]").forEach((b) => b.addEventListener("click", () => detalleCompromiso(b.dataset.abrirComp)));
-    el.querySelectorAll("[data-cumplir]").forEach((b) => b.addEventListener("click", () => {
-      const c = S.datos.Compromisos.find((x) => x.ID_Compromiso === b.dataset.cumplir);
-      confirmar("Marcar compromiso como cumplido", `«${c.Compromiso}» (${c.Responsable}) quedará cerrado con fecha de hoy.`, "Marcar cumplido",
-        () => guardar(async () => {
-          await S.api.actualizarPorId("Compromisos", "ID_Compromiso", c.ID_Compromiso, { Estado: "Cumplido", Fecha_Cierre: R.hoyISO() });
-          await S.api.agregarFila("Comentarios", nuevoComentario(c, "Marcado como cumplido."));
-        }, "Compromiso cerrado"), "primario");
+    el.querySelectorAll("[data-cestado]").forEach((b) => b.addEventListener("click", () => {
+      const c = S.datos.Compromisos.find((x) => x.ID_Compromiso === b.dataset.cestado);
+      const nuevo = b.dataset.a;
+      if (nuevo === "Cerrado") confirmar("Cerrar compromiso", `«${c.Compromiso}» (${c.Responsable || "sin responsable"}) quedará cerrado con fecha de hoy.`, "Cerrar",
+        () => guardar(() => cambiarEstado(c, "Cerrado"), "Compromiso cerrado"), "primario");
+      else guardar(() => cambiarEstado(c, nuevo), `Compromiso ${nuevo === "En curso" ? "en curso" : "pendiente"}`);
     }));
+  }
+  // Botones rápidos según el estado: Pendiente → «Iniciar», En curso → «Cerrar».
+  function botonesEstado(c) {
+    const b = R.estadoBase(c);
+    if (b === "Pendiente") return `<button class="btn chico" data-cestado="${esc(c.ID_Compromiso)}" data-a="En curso" title="Pasar a En curso">▶ Iniciar</button> <button class="btn chico" data-cestado="${esc(c.ID_Compromiso)}" data-a="Cerrado">✓ Cerrar</button>`;
+    if (b === "En curso") return `<button class="btn chico" data-cestado="${esc(c.ID_Compromiso)}" data-a="Cerrado">✓ Cerrar</button>`;
+    return "";
+  }
+  const TEXTO_ESTADO = { Pendiente: "Compromiso reabierto: queda Pendiente.", "En curso": "Compromiso en curso.", Cerrado: "Compromiso cerrado." };
+  // Cambia el estado, maneja la fecha de cierre y deja constancia en el hilo.
+  async function cambiarEstado(c, nuevo, texto) {
+    await S.api.actualizarPorId("Compromisos", "ID_Compromiso", c.ID_Compromiso, { Estado: nuevo, Fecha_Cierre: nuevo === "Cerrado" ? R.hoyISO() : "" });
+    await S.api.agregarFila("Comentarios", nuevoComentario(c, texto || TEXTO_ESTADO[nuevo]));
   }
 
   // Ficha del compromiso: datos, hilo de comentarios y acciones (comentar, cerrar, reabrir, editar).
@@ -762,7 +788,7 @@
     m.innerHTML = `<div class="modal-caja" role="dialog" aria-modal="true" aria-label="Compromiso">
       <div class="titulo-fila"><div><h2>${esc(c.Compromiso)}</h2><div class="sub">${esc(p.Nombre)} · ${esc(origen(c))}</div></div><button class="btn enlace" id="d-cerrar" aria-label="Cerrar">✕</button></div>
       <div class="contexto">
-        <div><span class="sub">Estado</span><b>${pill(e)}</b></div>
+        <div><span class="sub">Estado</span><b>${pillComp(c)}</b></div>
         <div><span class="sub">Responsable</span><b>${esc(c.Responsable || "—")}</b></div>
         <div><span class="sub">Fecha límite</span><b>${fecha(c.Fecha_Compromiso)}</b></div>
         ${c.Fecha_Cierre ? `<div><span class="sub">Cerrado el</span><b>${fecha(c.Fecha_Cierre)}</b></div>` : ""}
@@ -773,8 +799,8 @@
         <div class="error-campo" id="d-error" role="alert"></div>
         <div class="acciones derecha">
           <button class="btn peligro-suave" id="d-editar">Editar compromiso</button>
-          ${e !== "Cumplido" ? `<button class="btn" id="d-recordar" title="${esc(correoDe(c) ? `Correo a ${correoDe(c)}` : "Sin correo del responsable")}">✉ Recordar</button>` : ""}
-          ${e === "Cumplido" ? `<button class="btn" id="d-reabrir">Reabrir</button>` : `<button class="btn" id="d-comentar-cerrar">Comentar y cerrar</button>`}
+          ${e !== "Cerrado" ? `<button class="btn" id="d-recordar" title="${esc(correoDe(c) ? `Correo a ${correoDe(c)}` : "Sin correo del responsable")}">✉ Recordar</button>` : ""}
+          ${e === "Cerrado" ? `<button class="btn" id="d-reabrir">Reabrir</button>` : `${R.estadoBase(c) === "Pendiente" ? `<button class="btn" id="d-encurso">▶ Pasar a En curso</button>` : ""}<button class="btn" id="d-comentar-cerrar">Comentar y cerrar</button>`}
           <button class="btn primario" id="d-comentar">Comentar</button></div>` : `<p class="sub">Solo el PM del proyecto, la PMO o el Admin pueden comentar.</p>`}
     </div>`;
     document.body.appendChild(m);
@@ -785,10 +811,10 @@
     const txt = $("#d-texto");
     txt.focus();
     txt.addEventListener("input", () => { $("#d-error").textContent = ""; });
-    const accion = async (texto, cambios, exito) => {
+    const accion = async (texto, estado, exito) => {
       await guardar(async () => {
-        if (cambios) await S.api.actualizarPorId("Compromisos", "ID_Compromiso", id, cambios);
-        await S.api.agregarFila("Comentarios", nuevoComentario(c, texto));
+        if (estado) await cambiarEstado(c, estado, texto);
+        else await S.api.agregarFila("Comentarios", nuevoComentario(c, texto));
       }, exito);
       detalleCompromiso(id);   // se vuelve a abrir para seguir la conversación
     };
@@ -797,8 +823,9 @@
       if (!t) { $("#d-error").textContent = "Escribe el comentario."; return; }
       accion(t, null, "Comentario agregado");
     });
-    if ($("#d-comentar-cerrar")) $("#d-comentar-cerrar").addEventListener("click", () => accion(txt.value.trim() || "Compromiso cerrado.", { Estado: "Cumplido", Fecha_Cierre: R.hoyISO() }, "Compromiso cerrado"));
-    if ($("#d-reabrir")) $("#d-reabrir").addEventListener("click", () => accion(txt.value.trim() || "Compromiso reabierto.", { Estado: "Pendiente", Fecha_Cierre: "" }, "Compromiso reabierto"));
+    if ($("#d-comentar-cerrar")) $("#d-comentar-cerrar").addEventListener("click", () => accion(txt.value.trim() || "Compromiso cerrado.", "Cerrado", "Compromiso cerrado"));
+    if ($("#d-encurso")) $("#d-encurso").addEventListener("click", () => accion(txt.value.trim() || "Compromiso en curso.", "En curso", "Compromiso en curso"));
+    if ($("#d-reabrir")) $("#d-reabrir").addEventListener("click", () => accion(txt.value.trim() || "Compromiso reabierto.", "Pendiente", "Compromiso reabierto"));
     $("#d-editar").addEventListener("click", () => formCompromiso(c));
     if ($("#d-recordar")) $("#d-recordar").addEventListener("click", async () => { await enviarRecordatorio([{ c }]); render(); detalleCompromiso(id); toast("Correo de recordatorio abierto en tu Outlook"); });
   }
@@ -840,9 +867,8 @@
     const segs = R.seguimientosDe(p.ID_Proyecto, S.datos.Seguimientos);
     const hitos = S.datos.Hitos.filter((h) => h.ID_Proyecto === p.ID_Proyecto).sort((a, b) => (a.Fecha_Plan < b.Fecha_Plan ? -1 : 1));
     const riesgos = S.datos.Riesgos.filter((r) => r.ID_Proyecto === p.ID_Proyecto);
-    const ordenC = { Vencido: 0, "Por vencer": 1, Pendiente: 2, Cumplido: 3 };
     const comps = S.datos.Compromisos.filter((c) => c.ID_Proyecto === p.ID_Proyecto).map((c) => ({ c, e: R.estadoCompromiso(c) }))
-      .sort((a, b) => ordenC[a.e] - ordenC[b.e] || (a.c.Fecha_Compromiso < b.c.Fecha_Compromiso ? -1 : 1));
+      .sort((a, b) => ORDEN_COMP[a.e] - ORDEN_COMP[b.e] || (a.c.Fecha_Compromiso < b.c.Fecha_Compromiso ? -1 : 1));
     const e = R.estadoSeguimiento(p, S.datos.Seguimientos);
     const puedeP = (a) => R.puedeEditar(u, p, a);
     const dato = (k, v) => `<div class="dato"><div class="dato-k">${k}</div><div class="dato-v">${v}</div></div>`;
@@ -850,7 +876,7 @@
 
     // Pestañas de la ficha: cada sección en su propia vista.
     if (S.fichaPid !== p.ID_Proyecto) { S.fichaPid = p.ID_Proyecto; S.fichaTab = "resumen"; }
-    const abiertosN = comps.filter((x) => x.e !== "Cumplido").length;
+    const abiertosN = comps.filter((x) => x.e !== "Cerrado").length;
     const vencidosN = comps.filter((x) => x.e === "Vencido").length;
     const TABS = [["resumen", "Resumen"], ["compromisos", `Compromisos <span class="contador ${vencidosN ? "rojo" : ""}">${abiertosN}</span>`],
       ["seguimientos", `Seguimientos <span class="contador">${segs.length}</span>`], ["hitos", `Hitos <span class="contador">${hitos.length}</span>`], ["riesgos", `Riesgos <span class="contador">${riesgos.length}</span>`]];
@@ -879,7 +905,7 @@
           return `<tr><td><b>${fecha(s.Fecha_Corte)}</b><div class="sub">${esc(s.Semana)} · ${esc(nombreUsuario(s.Reportado_Por))}</div></td>
           <td>${pct(s.Avance_Real)}<div>${chipSemaforo(s.Semaforo)}</div></td>
           <td>${esc(s.Logros)}<div class="sub">Sigue: ${esc(s.Proximos_Pasos || "—")}</div></td><td>${esc(s.Bloqueos || "—")}</td>
-          <td>${acordados.length ? `<ul class="mini">${acordados.map((c) => `<li><button class="btn enlace" data-abrir-comp="${esc(c.ID_Compromiso)}">${esc(c.Compromiso)}</button> <span class="sub">${esc(c.Responsable)} · ${fecha(c.Fecha_Compromiso)}</span> ${pill(R.estadoCompromiso(c))}</li>`).join("")}</ul>` : `<span class="sub">Sin compromisos</span>`}
+          <td>${acordados.length ? `<ul class="mini">${acordados.map((c) => `<li><button class="btn enlace" data-abrir-comp="${esc(c.ID_Compromiso)}">${esc(c.Compromiso)}</button> <span class="sub">${esc(c.Responsable)} · ${fecha(c.Fecha_Compromiso)}</span> ${pillComp(c)}</li>`).join("")}</ul>` : `<span class="sub">Sin compromisos</span>`}
             ${puedeP("compromisos") ? `<div><button class="btn chico" data-comp-seg="${esc(s.ID_Seguimiento)}">+ Compromiso de esta sesión</button></div>` : ""}</td>
           <td>${s.Fecha_Acta ? fecha(s.Fecha_Acta) : `<span class="sub">Sin fecha</span>`}<div class="celda-acta">${celdaActa(s, puedeP("seguimiento"))}</div>
             ${puedeP("seguimiento") ? `<button class="btn chico enlace-edicion" data-edit-seg="${esc(s.ID_Seguimiento)}">Editar sesión</button>` : ""}</td></tr>`;
@@ -1422,7 +1448,7 @@
   function formSeguimiento(p) {
     const e = R.estadoSeguimiento(p, S.datos.Seguimientos);
     const ult = e.ultimo;
-    const abiertos = S.datos.Compromisos.filter((c) => c.ID_Proyecto === p.ID_Proyecto && c.Estado !== "Cumplido")
+    const abiertos = S.datos.Compromisos.filter((c) => c.ID_Proyecto === p.ID_Proyecto && !R.cerrado(c))
       .sort((a, b) => (a.Fecha_Compromiso < b.Fecha_Compromiso ? -1 : 1));
     const campos = [
       { seccion: "1. Avance" },
@@ -1550,7 +1576,7 @@
         });
         if (comps.length) await S.api.agregarFilas("Compromisos", comps);
         if (extra.cerrados.length) {
-          await S.api.actualizarVarios("Compromisos", "ID_Compromiso", extra.cerrados.map((id) => ({ id, cambios: { Estado: "Cumplido", Fecha_Cierre: fd.Fecha_Corte } })));
+          await S.api.actualizarVarios("Compromisos", "ID_Compromiso", extra.cerrados.map((id) => ({ id, cambios: { Estado: "Cerrado", Fecha_Cierre: fd.Fecha_Corte } })));
           const cerradosC = S.datos.Compromisos.filter((c) => extra.cerrados.includes(c.ID_Compromiso));
           const nuevosCom = [];
           cerradosC.forEach((c) => { const nc = nuevoComentario(c, `Cerrado en la sesión de seguimiento del ${fecha(fd.Fecha_Corte)}.`); nuevosCom.push(nc); });
@@ -1678,13 +1704,13 @@
       return;
     }
     const coms = comentariosDe(c.ID_Compromiso);
-    modal("Editar compromiso", campos, c, (fd) => {
-      if (fd.Estado === "Cumplido" && !fd.Fecha_Cierre) fd.Fecha_Cierre = R.hoyISO();
-      if (fd.Estado !== "Cumplido") fd.Fecha_Cierre = "";
-      const cambioEstado = fd.Estado !== c.Estado;
+    modal("Editar compromiso", campos, { ...c, Estado: R.estadoBase(c) }, (fd) => {
+      if (fd.Estado === "Cerrado" && !fd.Fecha_Cierre) fd.Fecha_Cierre = R.hoyISO();
+      if (fd.Estado !== "Cerrado") fd.Fecha_Cierre = "";
+      const cambioEstado = fd.Estado !== R.estadoBase(c);
       guardar(async () => {
         await S.api.actualizarPorId("Compromisos", "ID_Compromiso", c.ID_Compromiso, fd);
-        if (cambioEstado) await S.api.agregarFila("Comentarios", nuevoComentario(c, fd.Estado === "Cumplido" ? "Marcado como cumplido." : "Compromiso reabierto."));
+        if (cambioEstado) await S.api.agregarFila("Comentarios", nuevoComentario(c, TEXTO_ESTADO[fd.Estado] || `Estado: ${fd.Estado}.`));
       }, "Compromiso actualizado");
     }, null, { ...autollenar, eliminar: { texto: "Eliminar compromiso", mensaje: `Se borrará «${c.Compromiso}»${coms.length ? ` con sus ${coms.length} comentario(s)` : ""}.`,
       accion: () => guardar(async () => {

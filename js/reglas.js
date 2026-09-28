@@ -71,14 +71,20 @@
     return { ultimo, ultimaFecha: ultimo ? ultimo.Fecha_Corte : "", proximo, faltan, estado, en90: lista.filter((s) => s.Fecha_Corte >= hace90).length };
   }
 
+  // Estado registrado: Pendiente → En curso → Cerrado («Cumplido» de versiones anteriores cuenta como Cerrado).
+  const ESTADOS_COMPROMISO = ["Pendiente", "En curso", "Cerrado"];
+  const estadoBase = (c) => (c.Estado === "Cerrado" || c.Estado === "Cumplido" ? "Cerrado" : c.Estado === "En curso" ? "En curso" : "Pendiente");
+  const cerrado = (c) => estadoBase(c) === "Cerrado";
+  // Estado con alerta de tiempo: Cerrado | Vencido | Por vencer | Pendiente | En curso.
   function estadoCompromiso(c, hoy = hoyISO()) {
-    if (c.Estado === "Cumplido") return "Cumplido";
-    if (!c.Fecha_Compromiso) return "Pendiente";
+    const base = estadoBase(c);
+    if (base === "Cerrado") return "Cerrado";
+    if (!c.Fecha_Compromiso) return base;
     const f = difDias(c.Fecha_Compromiso, hoy);
     if (f < 0) return "Vencido";
     const aviso = c.Dias_Alerta === "" || c.Dias_Alerta === undefined || c.Dias_Alerta === null || Number.isNaN(Number(c.Dias_Alerta)) ? DIAS_COMPROMISO_POR_VENCER : Number(c.Dias_Alerta);
     if (f <= aviso) return "Por vencer";
-    return "Pendiente";
+    return base;
   }
 
   // Sugerencia de semáforo por desviación (plan - real). Es una guía: el PM decide.
@@ -122,6 +128,6 @@
 
   window.REGLAS = {
     ROLES, DIAS_FRECUENCIA, hoyISO, sumarDias, difDias, semanaISO, roles, tieneRol, puede, puedeEditar, soloPM, esPMde, esMio, visibles,
-    DIAS_COMPROMISO_POR_VENCER, seguimientosDe, estadoSeguimiento, estadoCompromiso, semaforoSugerido, siguienteIdProyecto, siguienteIdHijo, kpis, calificacion, nivelRiesgo,
+    DIAS_COMPROMISO_POR_VENCER, ESTADOS_COMPROMISO, estadoBase, cerrado, seguimientosDe, estadoSeguimiento, estadoCompromiso, semaforoSugerido, siguienteIdProyecto, siguienteIdHijo, kpis, calificacion, nivelRiesgo,
   };
 })();

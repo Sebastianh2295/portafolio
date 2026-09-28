@@ -187,7 +187,8 @@ button.kpi:hover { border-color: var(--azul); }
 .mini { margin: 0; padding-left: 16px; }
 .pasos-login { margin: 6px 0 10px; padding-left: 18px; color: var(--texto2); font-size: 13px; }
 .pill.pendiente { background: #eef3fa; color: var(--azul); }
-.pill.cumplido { background: #e3f3ea; color: #1e5e3a; }
+.pill.cumplido, .pill.cerrado { background: #e3f3ea; color: #1e5e3a; }
+.pill.encurso { background: #e6f0fd; color: #0d3f86; border: 1px solid #9cc2f0; }
 .pill.atrasado { background: #fbe3e0; color: #8e2a1f; }
 .pill.rol { background: var(--suave); color: var(--azul); }
 /* Formularios */
