@@ -5,8 +5,8 @@
   const DIAS_POR_VENCER = 2;
 
   const PERMISOS = {
-    Admin:  ["crearProyecto", "editarProyecto", "editarFrecuencia", "seguimiento", "hitos", "riesgos", "usuarios", "verTodo"],
-    PMO:    ["crearProyecto", "editarProyecto", "editarFrecuencia", "seguimiento", "hitos", "riesgos", "verTodo"],
+    Admin:  ["crearProyecto", "editarProyecto", "editarFrecuencia", "seguimiento", "hitos", "riesgos", "usuarios", "catalogos", "verTodo"],
+    PMO:    ["crearProyecto", "editarProyecto", "editarFrecuencia", "seguimiento", "hitos", "riesgos", "catalogos", "verTodo"],
     PM:     ["crearProyecto", "editarProyecto", "seguimiento", "hitos", "riesgos"],
     Lector: [],
   };

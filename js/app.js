@@ -15,6 +15,7 @@
     { id: "proyectos", t: "Proyectos" },
     { id: "cronograma", t: "Cronograma" },
     { id: "riesgos", t: "Riesgos" },
+    { id: "catalogos", t: "Catálogos", permiso: "catalogos" },
     { id: "usuarios", t: "Usuarios", permiso: "usuarios" },
   ];
 
@@ -141,7 +142,7 @@
       cargando(true, "Leyendo Excel…");
       try { await recargar(); render(); toast("Datos actualizados"); } catch (e) { toast(e.message, true); } finally { cargando(false); }
     });
-    const vistas = { dashboard: vDashboard, avances: vAvances, seguimiento: vSeguimiento, proyectos: vProyectos, ficha: vFicha, cronograma: vCronograma, riesgos: vRiesgos, usuarios: vUsuarios };
+    const vistas = { dashboard: vDashboard, avances: vAvances, seguimiento: vSeguimiento, proyectos: vProyectos, ficha: vFicha, cronograma: vCronograma, riesgos: vRiesgos, catalogos: vCatalogos, usuarios: vUsuarios };
     (vistas[S.vista] || vDashboard)($("#vista"));
   }
   function ir(vista, pid) { S.vista = vista; if (pid) S.pid = pid; render(); window.scrollTo(0, 0); }
@@ -412,6 +413,82 @@
     el.querySelectorAll(".clic").forEach((r) => r.addEventListener("click", () => ir("ficha", r.dataset.pid)));
   }
 
+  // ---------- Catálogos ----------
+  // Listas editables: solo alimentan los desplegables. Las demás las usa la lógica de la app y no se editan aquí.
+  const CATALOGOS_EDITABLES = [
+    { lista: "Cliente_Area", t: "Cliente / área", campo: "Cliente_Area" },
+    { lista: "Metodologia", t: "Metodología", campo: "Metodologia" },
+    { lista: "Fase", t: "Fase", campo: "Fase" },
+    { lista: "Prioridad", t: "Prioridad", campo: "Prioridad" },
+  ];
+  const CATALOGOS_FIJOS = { Estado: "Estado del proyecto", Semaforo: "Semáforo", Frecuencia_Seguimiento: "Frecuencia de seguimiento",
+    Estado_Hito: "Estado del hito", Tipo_Riesgo: "Tipo de riesgo", Estado_Riesgo: "Estado del riesgo", Rol: "Rol" };
+
+  function vCatalogos(el) {
+    if (!R.puede(S.usuario, "catalogos")) { el.innerHTML = vacio("Sin acceso."); return; }
+    const enUso = (campo, valor) => S.datos.Proyectos.filter((p) => String(p[campo]) === String(valor)).length;
+    el.innerHTML = `
+      <h1>Catálogos</h1>
+      <p class="sub">Valores de los desplegables de los formularios. Los cambios se guardan en la tabla Catalogos del Excel y aplican para todos los usuarios.</p>
+      <div class="grid2">
+        ${CATALOGOS_EDITABLES.map((c) => {
+          const valores = S.cat[c.lista] || [];
+          return `<div class="card" data-anchor="cat-${c.lista}">
+            <h2>${esc(c.t)}</h2>
+            <table><thead><tr><th>Valor</th><th>Proyectos que lo usan</th><th></th></tr></thead>
+              <tbody>${valores.map((v) => `<tr><td>${esc(v)}</td><td>${enUso(c.campo, v)}</td>
+                <td class="derecha"><button class="btn chico" data-quitar="${esc(c.lista)}" data-valor="${esc(v)}">Quitar</button></td></tr>`).join("") || `<tr><td colspan="3">${vacio("Sin valores.")}</td></tr>`}</tbody></table>
+            <form class="cat-agregar" data-lista="${esc(c.lista)}" novalidate>
+              <input name="valor" placeholder="Nuevo valor" aria-label="Nuevo valor para ${esc(c.t)}">
+              <button class="btn primario" type="submit">Agregar</button>
+            </form>
+            <div class="error-campo" data-e-cat="${esc(c.lista)}"></div>
+          </div>`;
+        }).join("")}
+      </div>
+      <div class="card"><h2>Listas fijas</h2>
+        <p class="sub">Estas listas controlan reglas de la app (colores, días de seguimiento, permisos), por eso no se editan aquí. Si necesitas cambiarlas, pídelo como una mejora.</p>
+        <div class="tabla-scroll"><table><thead><tr><th>Lista</th><th>Valores</th></tr></thead>
+          <tbody>${Object.entries(CATALOGOS_FIJOS).map(([k, t]) => `<tr><td>${esc(t)}</td><td>${esc((S.cat[k] || []).join(", "))}</td></tr>`).join("")}</tbody></table></div>
+      </div>`;
+    el.querySelectorAll(".cat-agregar").forEach((f) => {
+      const lista = f.dataset.lista;
+      const err = el.querySelector(`[data-e-cat="${lista}"]`);
+      f.valor.addEventListener("input", () => { err.textContent = ""; });
+      f.addEventListener("submit", (ev) => {
+        ev.preventDefault();
+        const valor = f.valor.value.trim();
+        if (!valor) { err.textContent = "Escriba el valor que quiere agregar."; return; }
+        if ((S.cat[lista] || []).some((v) => lc(v) === lc(valor))) { err.textContent = "Ese valor ya existe en la lista."; return; }
+        if (valor.length > 60) { err.textContent = "Máximo 60 caracteres."; return; }
+        guardar(() => S.api.agregarFila("Catalogos", { Lista: lista, Valor: valor }), `"${valor}" agregado`);
+      });
+    });
+    el.querySelectorAll("[data-quitar]").forEach((b) => b.addEventListener("click", () => {
+      const lista = b.dataset.quitar, valor = b.dataset.valor;
+      const c = CATALOGOS_EDITABLES.find((x) => x.lista === lista);
+      const err = el.querySelector(`[data-e-cat="${lista}"]`);
+      if ((S.cat[lista] || []).length <= 1) { err.textContent = "La lista debe tener al menos un valor."; return; }
+      const n = enUso(c.campo, valor);
+      confirmar(`Quitar "${valor}"`,
+        n ? `${n} proyecto(s) usan este valor. Lo conservarán, pero ya no aparecerá como opción en los formularios.` : `"${valor}" dejará de aparecer en ${c.t}.`,
+        "Quitar", () => guardar(() => S.api.eliminarFila("Catalogos", { Lista: lista, Valor: valor }), `"${valor}" quitado`));
+    }));
+  }
+
+  function confirmar(titulo, mensaje, textoBoton, accion) {
+    cerrarModal();
+    const m = document.createElement("div");
+    m.id = "modal";
+    m.innerHTML = `<div class="modal-caja chica" role="dialog" aria-modal="true" aria-label="${esc(titulo)}">
+      <h2>${esc(titulo)}</h2><p>${esc(mensaje)}</p>
+      <div class="acciones derecha"><button class="btn" id="c-no">Cancelar</button><button class="btn peligro" id="c-si">${esc(textoBoton)}</button></div></div>`;
+    document.body.appendChild(m);
+    $("#c-no").addEventListener("click", cerrarModal);
+    $("#c-si").addEventListener("click", accion);
+    $("#c-si").focus();
+  }
+
   // ---------- Usuarios ----------
   function vUsuarios(el) {
     if (!R.puede(S.usuario, "usuarios")) { el.innerHTML = vacio("Sin acceso."); return; }
@@ -435,7 +512,8 @@
     const control = (c) => {
       const v = valores[c.k] ?? c.def ?? "";
       const dis = c.bloqueado ? "disabled" : "";
-      if (c.tipo === "select") return `<select name="${c.k}" ${dis}><option value=""></option>${(c.opciones || []).map((o) => { const [val, txt] = Array.isArray(o) ? o : [o, o]; return `<option value="${esc(val)}" ${String(val) === String(v) ? "selected" : ""}>${esc(txt)}</option>`; }).join("")}</select>`;
+      const opciones = c.tipo === "select" && v !== "" && !(c.opciones || []).some((o) => String(Array.isArray(o) ? o[0] : o) === String(v)) ? [String(v), ...(c.opciones || [])] : c.opciones;
+      if (c.tipo === "select") return `<select name="${c.k}" ${dis}><option value=""></option>${(opciones || []).map((o) => { const [val, txt] = Array.isArray(o) ? o : [o, o]; return `<option value="${esc(val)}" ${String(val) === String(v) ? "selected" : ""}>${esc(txt)}</option>`; }).join("")}</select>`;
       if (c.tipo === "textarea") return `<textarea name="${c.k}" rows="3" ${dis}>${esc(v)}</textarea>`;
       return `<input name="${c.k}" type="${c.tipo || "text"}" value="${esc(v)}" ${c.min !== undefined ? `min="${c.min}"` : ""} ${c.max !== undefined ? `max="${c.max}"` : ""} ${dis}>`;
     };

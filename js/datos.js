@@ -69,6 +69,24 @@
         return true;
       });
     },
+
+    // Borra la fila cuyas columnas coinciden con todos los criterios ({ Lista: "Fase", Valor: "Cierre" }).
+    async eliminarFila(tabla, criterios) {
+      return Excel.run(async (ctx) => {
+        const t = ctx.workbook.tables.getItem(tabla);
+        const h = t.getHeaderRowRange().load("values");
+        const b = t.getDataBodyRange().load("values");
+        await ctx.sync();
+        const cols = h.values[0];
+        const idx = b.values.findIndex((r) =>
+          Object.entries(criterios).every(([k, v]) => String(r[cols.indexOf(k)]) === String(v)));
+        if (idx < 0) throw new Error(`No se encontró el registro en ${tabla}. Recargue e intente de nuevo.`);
+        if (b.values.length === 1) b.values = [cols.map(() => "")]; // una tabla de Excel no puede quedar sin filas
+        else t.rows.getItemAt(idx).delete();
+        await ctx.sync();
+        return true;
+      });
+    },
   };
 
   function demo() {
@@ -81,6 +99,12 @@
         const r = db[tabla].find((x) => String(x[colId]) === String(id));
         if (!r) throw new Error(`No se encontró ${id} en ${tabla}.`);
         Object.assign(r, copia(cambios));
+        return true;
+      },
+      async eliminarFila(tabla, criterios) {
+        const i = db[tabla].findIndex((r) => Object.entries(criterios).every(([k, v]) => String(r[k]) === String(v)));
+        if (i < 0) throw new Error(`No se encontró el registro en ${tabla}.`);
+        db[tabla].splice(i, 1);
         return true;
       },
     };
@@ -113,6 +137,7 @@
       leerTodo: () => llamar("leerTodo"),
       agregarFila: (...a) => llamar("agregarFila", a),
       actualizarPorId: (...a) => llamar("actualizarPorId", a),
+      eliminarFila: (...a) => llamar("eliminarFila", a),
     };
   }
 
@@ -122,5 +147,5 @@
     return demo();
   }
 
-  window.DATOS = { crear, OpsExcel, OPERACIONES: ["leerTodo", "agregarFila", "actualizarPorId"] };
+  window.DATOS = { crear, OpsExcel, OPERACIONES: ["leerTodo", "agregarFila", "actualizarPorId", "eliminarFila"] };
 })();

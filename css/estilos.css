@@ -105,6 +105,9 @@ tr.clic:hover td { background: #dbe9fa; }
 
 #modal { position: fixed; inset: 0; background: rgba(16, 32, 60, .45); display: flex; align-items: flex-start; justify-content: center; padding: 30px 12px; overflow-y: auto; z-index: 20; }
 .modal-caja { background: #fff; border-radius: 12px; padding: 20px; width: 100%; max-width: 760px; }
+.modal-caja.chica { max-width: 440px; }
+.btn.peligro { background: var(--rojo); border-color: var(--rojo); color: #fff; }
+.cat-agregar { display: flex; gap: 8px; margin-top: 12px; }
 .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
 .form-grid label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
 .form-grid label.ancho { grid-column: 1 / -1; }
