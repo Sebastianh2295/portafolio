@@ -222,6 +222,8 @@ table.raci th:first-child { text-align: left; min-width: 180px; }
 ul.deps { list-style: none; padding: 0; margin: 6px 0 0; }
 ul.deps li { padding: 6px 8px; border-left: 3px solid var(--azul-claro); margin-bottom: 6px; background: #fafcff; border-radius: 4px; }
 ul.deps li.dep-alerta { border-left-color: var(--rojo); background: #fdf3f2; }
+tr.inactivo td { opacity: .6; }
+.aviso-dup { border-left: 4px solid var(--amarillo); }
 .pestanas { display: flex; gap: 2px; border-bottom: 2px solid #dfe6ef; margin: 4px 0 14px; overflow-x: auto; }
 .pestana { background: none; border: 0; border-bottom: 3px solid transparent; margin-bottom: -2px; padding: 9px 14px; font: inherit; color: var(--texto2); cursor: pointer; white-space: nowrap; }
 .pestana:hover { color: var(--azul); }

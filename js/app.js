@@ -16,6 +16,7 @@
     { id: "proyectos", t: "Proyectos" },
     { id: "cronograma", t: "Cronograma" },
     { id: "riesgos", t: "Riesgos" },
+    { id: "recursos", t: "Recursos" },
     { id: "capacidad", t: "Capacidad del equipo" },
     { id: "priorizacion", t: "Priorización" },
     { id: "lecciones", t: "Lecciones aprendidas" },
@@ -52,6 +53,9 @@
     capacidad: ["Cuánto está dedicada cada persona sumando todos sus proyectos activos o en pausa.",
       "La dedicación del PM se pone en «Editar proyecto»; la de cada stakeholder, en su ficha o en la sección Equipo del formulario.",
       "Más de 100% = sobreasignado. Haz clic en un proyecto para ir a su ficha."],
+    recursos: ["Directorio único de personas: internas y de proveedores, sin duplicados.",
+      "Al agregar stakeholders, equipo o responsables de compromisos eliges a la persona de aquí y sus datos se llenan solos.",
+      "Si aparecen «Posibles duplicados», usa «Fusionar» para dejar un solo registro."],
     priorizacion: ["Ordena el portafolio por un puntaje de 0 a 100 según valor, urgencia, complejidad y esfuerzo.",
       "La calificación de cada proyecto se hace en «Editar proyecto» → Priorización.",
       "La matriz valor vs. esfuerzo ayuda a ver ganancias rápidas y proyectos a reconsiderar."],
@@ -116,6 +120,7 @@
       try { await S.api.actualizarVarios("Compromisos", "ID_Compromiso", viejos.map((c) => ({ id: c.ID_Compromiso, cambios: { Estado: "Cerrado" } }))); viejos.forEach((c) => { c.Estado = "Cerrado"; }); }
       catch (e) { /* sin permiso de edición: la app igual los trata como cerrados */ }
     }
+    await migrarRecursos();
     const faltan = Object.keys(CATALOGOS_BASE).filter((k) => !S.datos.Catalogos.some((f) => f.Lista === k));
     if (sembrado || !faltan.length) return;
     sembrado = true;
@@ -239,7 +244,7 @@
       cargando(true, "Leyendo Excel…");
       try { await recargar(); render(); toast("Datos actualizados"); } catch (e) { toast(e.message, true); } finally { cargando(false); }
     });
-    const vistas = { dashboard: vDashboard, avances: vAvances, seguimiento: vSeguimiento, proyectos: vProyectos, ficha: vFicha, capacidad: vCapacidad, priorizacion: vPriorizacion, lecciones: vLecciones, auditoria: vAuditoria, cronograma: vCronograma, riesgos: vRiesgos, catalogos: vCatalogos, usuarios: vUsuarios };
+    const vistas = { dashboard: vDashboard, avances: vAvances, seguimiento: vSeguimiento, proyectos: vProyectos, ficha: vFicha, recursos: vRecursos, capacidad: vCapacidad, priorizacion: vPriorizacion, lecciones: vLecciones, auditoria: vAuditoria, cronograma: vCronograma, riesgos: vRiesgos, catalogos: vCatalogos, usuarios: vUsuarios };
     const el = $("#vista");
     (vistas[S.vista] || vDashboard)(el);
     el.insertAdjacentHTML("afterbegin", ayuda(S.vista));
@@ -1917,7 +1922,7 @@
 
   // ---------- Auditoría ----------
   const ID_COLS = { Proyectos: "ID_Proyecto", Hitos: "ID_Hito", Seguimientos: "ID_Seguimiento", Riesgos: "ID_Riesgo", Usuarios: "Correo", Compromisos: "ID_Compromiso",
-    Comentarios: "ID_Comentario", Stakeholders: "ID_Stakeholder", Proveedores: "ID_Proveedor", Tickets: "ID_Ticket", Cambios: "ID_Cambio", Lecciones: "ID_Leccion", RACI: "ID_RACI", Dependencias: "ID_Dependencia" };
+    Comentarios: "ID_Comentario", Stakeholders: "ID_Stakeholder", Proveedores: "ID_Proveedor", Recursos: "ID_Recurso", Tickets: "ID_Ticket", Cambios: "ID_Cambio", Lecciones: "ID_Leccion", RACI: "ID_RACI", Dependencias: "ID_Dependencia" };
   const CAMPO_DESC = ["Nombre", "Compromiso", "Titulo", "Hito", "Descripcion", "Entregable", "Leccion", "Texto", "Valor", "Logros"];
   const NO_AUDITAR = new Set(["Auditoria", "Archivos", "Filtros"]);
   const IGNORAR_CAMPOS = new Set(["Actualizado_Por", "Actualizado_El"]);
@@ -1977,7 +1982,7 @@
     return S.auditoria;
   }
   const NOMBRE_TABLA = { Proyectos: "Proyecto", Hitos: "Hito", Seguimientos: "Seguimiento", Riesgos: "Riesgo", Usuarios: "Usuario", Compromisos: "Compromiso", Comentarios: "Comentario",
-    Stakeholders: "Stakeholder", Proveedores: "Proveedor", Tickets: "Ticket", Cambios: "Cambio", Lecciones: "Lección", RACI: "RACI", Dependencias: "Dependencia", Catalogos: "Catálogo" };
+    Stakeholders: "Stakeholder", Proveedores: "Proveedor", Recursos: "Recurso", Tickets: "Ticket", Cambios: "Cambio", Lecciones: "Lección", RACI: "RACI", Dependencias: "Dependencia", Catalogos: "Catálogo" };
   const tablaAuditoria = (lista, conProyecto) => lista.length ? `<div class="tabla-scroll"><table><thead><tr><th>Fecha</th><th>Usuario</th>${conProyecto ? "<th>Proyecto</th>" : ""}<th>Qué</th><th>Detalle</th></tr></thead><tbody>
     ${lista.map((a) => `<tr><td class="nowrap">${fechaHora(a.Fecha_Hora)}</td><td>${esc(nombreUsuario(a.Usuario))}</td>${conProyecto ? `<td>${esc((proyecto(a.ID_Proyecto) || {}).Nombre || a.ID_Proyecto || "—")}</td>` : ""}
       <td class="nowrap">${pill(a.Accion)} ${esc(NOMBRE_TABLA[a.Tabla] || a.Tabla)}</td><td class="aud-det">${esc(a.Detalle)}</td></tr>`).join("")}</tbody></table></div>` : vacio("Sin cambios registrados todavía. El registro empieza desde esta versión.");
@@ -2037,7 +2042,7 @@
     const acordadosSem = comps.filter((c) => segsSem.some((s) => s.ID_Seguimiento === c.ID_Seguimiento));
     const riesgosAltos = S.datos.Riesgos.filter((r) => ids.has(r.ID_Proyecto) && r.Estado === "Abierto" && R.nivelRiesgo(Number(r.Calificacion_Residual) || Number(r.Calificacion_Inherente) || 0) === "Alto");
     const cambiosSem = (S.datos.Cambios || []).filter((c) => ids.has(c.ID_Proyecto) && (enSemana(c.Fecha) || enSemana(c.Fecha_Decision)));
-    const sobre = capacidad().filter((x) => x.total > 100 && x.asign.some((a) => ids.has(a.p.ID_Proyecto)));
+    const sobre = capacidad().filter((x) => x.total > x.cap && x.asign.some((a) => ids.has(a.p.ID_Proyecto)));
     const depsRiesgo = (S.datos.Dependencias || []).filter((d) => ids.has(d.ID_Proyecto) && conflictoDep(d));
     const nomP = (id) => esc((proyecto(id) || {}).Nombre || id);
     const conteo = ["Verde", "Amarillo", "Rojo"].map((s) => `${s}: ${activos.filter((p) => p.Semaforo === s).length}`).join(" · ");
@@ -2070,6 +2075,166 @@
       ], "Sin alertas de capacidad ni de dependencias.")}
       <footer class="hv-pie">Fundación Santa Fe de Bogotá · Oficina de Proyectos · Informe semanal ${esc(sem)} · Generado desde el Portafolio PMO</footer>`;
     mostrarDocumento(`Informe semanal ${sem}`, doc, `Informe semanal portafolio ${sem}`);
+  }
+
+  // ---------- Recursos: directorio único de personas (sin duplicados) ----------
+  const normTxt = (t) => String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+  const recursos = () => (S.datos.Recursos || []).slice().sort((a, b) => String(a.Nombre).localeCompare(String(b.Nombre), "es"));
+  const recursoId = (id) => (S.datos.Recursos || []).find((r) => r.ID_Recurso === id);
+  // Busca por ID, luego por correo y luego por nombre (sin tildes ni mayúsculas).
+  function recursoPor({ id, correo, nombre }) {
+    const L = S.datos.Recursos || [];
+    return (id && L.find((r) => r.ID_Recurso === id)) || (correo && L.find((r) => lc(r.Correo) === lc(correo))) || (nombre && L.find((r) => normTxt(r.Nombre) === normTxt(nombre))) || null;
+  }
+  const empresaDe = (r) => (r && r.ID_Proveedor ? (proveedor(r.ID_Proveedor) || {}).Nombre || "Proveedor" : "Interno (FSFB)");
+  const datalistRecursos = (id) => `<datalist id="${id}">${recursos().filter((r) => r.Activo !== "No").map((r) => `<option value="${esc(r.Nombre)}" label="${esc([r.Cargo, empresaDe(r), r.Correo].filter(Boolean).join(" · "))}">`).join("")}</datalist>`;
+  const nuevoIdRecurso = (desp = 0) => `REC-${String((S.datos.Recursos || []).reduce((m, r) => Math.max(m, parseInt(String(r.ID_Recurso).slice(4), 10) || 0), 0) + 1 + desp).padStart(4, "0")}`;
+  // Devuelve el recurso existente o lo crea (una sola vez) con los datos disponibles.
+  async function asegurarRecurso(d) {
+    if (!d || !String(d.Nombre || "").trim()) return null;
+    const ya = recursoPor({ id: d.ID_Recurso, correo: d.Correo, nombre: d.Nombre });
+    if (ya) {
+      const faltan = {};
+      ["Correo", "Cargo", "Area", "Telefono", "ID_Proveedor"].forEach((k) => { if (d[k] && !ya[k]) faltan[k] = d[k]; });
+      if (Object.keys(faltan).length) { await S.api.actualizarPorId("Recursos", "ID_Recurso", ya.ID_Recurso, faltan); Object.assign(ya, faltan); }
+      return ya;
+    }
+    const r = { ID_Recurso: nuevoIdRecurso(), Nombre: String(d.Nombre).trim(), Correo: d.Correo || "", Cargo: d.Cargo || "", Area: d.Area || "", Telefono: d.Telefono || "",
+      ID_Proveedor: d.ID_Proveedor || "", Capacidad: 100, Activo: "Sí" };
+    await S.api.agregarFila("Recursos", r);
+    (S.datos.Recursos = S.datos.Recursos || []).push(r);
+    return r;
+  }
+  // Primera vez: arma el directorio con las personas que ya existen (usuarios, stakeholders, responsables y contactos de proveedores).
+  let recursosMigrados = false;
+  async function migrarRecursos() {
+    if (recursosMigrados || !S.datos.Recursos || S.datos.Recursos.length) return;
+    recursosMigrados = true;
+    const mapa = new Map();
+    const agregar = (d) => {
+      const nombre = String(d.Nombre || "").trim(), correo = String(d.Correo || "").trim();
+      if (!nombre && !correo) return;
+      if (correo && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(correo) && !nombre) return;
+      const k = [...mapa.keys()].find((x) => (correo && mapa.get(x).Correo && lc(mapa.get(x).Correo) === lc(correo)) || (nombre && normTxt(mapa.get(x).Nombre) === normTxt(nombre)));
+      if (k) { const r = mapa.get(k); ["Nombre", "Correo", "Cargo", "Area", "Telefono", "ID_Proveedor"].forEach((c) => { if (!r[c] && d[c]) r[c] = d[c]; }); return; }
+      mapa.set(correo || normTxt(nombre), { Nombre: nombre || correo, Correo: correo, Cargo: d.Cargo || "", Area: d.Area || "", Telefono: d.Telefono || "", ID_Proveedor: d.ID_Proveedor || "" });
+    };
+    S.datos.Usuarios.forEach((u) => agregar({ Nombre: u.Nombre, Correo: u.Correo }));
+    (S.datos.Stakeholders || []).forEach((x) => agregar(x));
+    (S.datos.Proveedores || []).forEach((v) => { if (v.Contacto) agregar({ Nombre: v.Contacto, Correo: v.Correo, Telefono: v.Telefono, ID_Proveedor: v.ID_Proveedor }); });
+    S.datos.Compromisos.forEach((c) => { if (c.Correo_Responsable) agregar({ Nombre: c.Responsable, Correo: c.Correo_Responsable }); });
+    const filas = [...mapa.values()].map((r, i) => ({ ID_Recurso: `REC-${String(i + 1).padStart(4, "0")}`, ...r, Capacidad: 100, Activo: "Sí" }));
+    if (!filas.length) return;
+    try {
+      await S.api.agregarFilas("Recursos", filas);
+      S.datos.Recursos = filas;
+      const enlaces = (S.datos.Stakeholders || []).map((x) => { const r = recursoPor({ correo: x.Correo, nombre: x.Nombre }); return r ? { id: x.ID_Stakeholder, cambios: { ID_Recurso: r.ID_Recurso } } : null; }).filter(Boolean);
+      if (enlaces.length) await S.api.actualizarVarios("Stakeholders", "ID_Stakeholder", enlaces);
+    } catch (e) { S.datos.Recursos = []; /* sin permiso de edición */ }
+  }
+  // Cambios en un recurso se reflejan donde aparece (stakeholders y responsables de compromisos).
+  async function propagarRecurso(antes, r) {
+    const stk = (S.datos.Stakeholders || []).filter((x) => x.ID_Recurso === r.ID_Recurso || (!x.ID_Recurso && ((antes.Correo && lc(x.Correo) === lc(antes.Correo)) || normTxt(x.Nombre) === normTxt(antes.Nombre))));
+    if (stk.length) await S.api.actualizarVarios("Stakeholders", "ID_Stakeholder", stk.map((x) => ({ id: x.ID_Stakeholder,
+      cambios: { ID_Recurso: r.ID_Recurso, Nombre: r.Nombre, Correo: r.Correo, Cargo: r.Cargo, Area: r.Area, Telefono: r.Telefono, ID_Proveedor: r.ID_Proveedor } })));
+    const cmp = S.datos.Compromisos.filter((c) => (antes.Correo && lc(c.Correo_Responsable) === lc(antes.Correo)) || (antes.Nombre && normTxt(c.Responsable) === normTxt(antes.Nombre)));
+    if (cmp.length && (antes.Nombre !== r.Nombre || antes.Correo !== r.Correo)) await S.api.actualizarVarios("Compromisos", "ID_Compromiso", cmp.map((c) => ({ id: c.ID_Compromiso, cambios: { Responsable: r.Nombre, Correo_Responsable: r.Correo } })));
+  }
+  const dupRecurso = (fd, excluir) => (S.datos.Recursos || []).find((r) => r.ID_Recurso !== excluir && ((fd.Correo && lc(r.Correo) === lc(fd.Correo)) || normTxt(r.Nombre) === normTxt(fd.Nombre)));
+  function formRecurso(r, alCrear) {
+    const nuevo = !r;
+    const empresas = [["", "Interno (FSFB)"], ...proveedoresActivos(r && r.ID_Proveedor).map((v) => [v.ID_Proveedor, v.Nombre])];
+    const usos = nuevo ? { stk: [], cmp: [] } : {
+      stk: (S.datos.Stakeholders || []).filter((x) => x.ID_Recurso === r.ID_Recurso || (r.Correo && lc(x.Correo) === lc(r.Correo))),
+      cmp: S.datos.Compromisos.filter((c) => r.Correo && lc(c.Correo_Responsable) === lc(r.Correo)),
+    };
+    const campos = [
+      { k: "Nombre", label: "Nombre y apellido", ancho: true },
+      { k: "Correo", label: "Correo", tipo: "email", placeholder: "nombre@fsfb.org.co" },
+      { k: "Telefono", label: "Teléfono" },
+      { k: "Cargo", label: "Cargo" },
+      { k: "Area", label: "Área", tipo: "select", opciones: S.cat.Cliente_Area },
+      { k: "ID_Proveedor", label: "Empresa", tipo: "select", opciones: empresas, ayuda: "Interno o el proveedor al que pertenece." },
+      { k: "Capacidad", label: "Capacidad disponible (%)", tipo: "number", min: 0, max: 100, def: 100, ayuda: "100 = tiempo completo; 50 = medio tiempo. Se usa en «Capacidad del equipo»." },
+      { k: "Activo", label: "¿Activo?", tipo: "select", opciones: ["Sí", "No"], def: "Sí" },
+    ];
+    modal(nuevo ? "Nuevo recurso" : `Editar ${r.Nombre}`, campos, nuevo ? {} : r, (fd) => {
+      if (nuevo) {
+        const fila = { ID_Recurso: nuevoIdRecurso(), ...fd, Capacidad: fd.Capacidad === "" ? 100 : fd.Capacidad };
+        guardar(() => S.api.agregarFila("Recursos", fila), `Recurso «${fila.Nombre}» creado`).then(() => { if (alCrear) alCrear(fila); });
+      } else guardar(async () => { await S.api.actualizarPorId("Recursos", "ID_Recurso", r.ID_Recurso, fd); await propagarRecurso(r, { ...r, ...fd }); }, "Recurso actualizado");
+    }, (fd) => {
+      if (!fd.Nombre) return "Escribe el nombre.";
+      const d = dupRecurso(fd, r && r.ID_Recurso);
+      return d ? `Ya existe «${d.Nombre}»${d.Correo ? ` (${d.Correo})` : ""} en Recursos. Usa ese registro para no duplicar.` : "";
+    }, nuevo ? {} : { eliminar: { texto: "Eliminar recurso",
+      mensaje: usos.stk.length || usos.cmp.length ? `Aparece en ${usos.stk.length} proyecto(s) como stakeholder y en ${usos.cmp.length} compromiso(s); esos registros se conservan con su nombre. Si ya no trabaja con ustedes, mejor márcalo como inactivo.` : `Se eliminará «${r.Nombre}» del directorio.`,
+      accion: () => guardar(async () => {
+        if (usos.stk.length) await S.api.actualizarVarios("Stakeholders", "ID_Stakeholder", usos.stk.map((x) => ({ id: x.ID_Stakeholder, cambios: { ID_Recurso: "" } })));
+        await S.api.eliminarFilas("Recursos", "ID_Recurso", [r.ID_Recurso]);
+      }, "Recurso eliminado") } });
+  }
+  // Posibles duplicados: mismo correo o mismo nombre (sin tildes); también nombres donde uno contiene al otro.
+  function gruposDuplicados() {
+    const L = recursos(), vistos = new Set(), grupos = [];
+    L.forEach((a) => {
+      if (vistos.has(a.ID_Recurso)) return;
+      const g = L.filter((b) => b.ID_Recurso !== a.ID_Recurso && !vistos.has(b.ID_Recurso) && ((a.Correo && lc(a.Correo) === lc(b.Correo)) || normTxt(a.Nombre) === normTxt(b.Nombre) ||
+        (normTxt(a.Nombre).length > 5 && normTxt(b.Nombre).length > 5 && (normTxt(a.Nombre).includes(normTxt(b.Nombre)) || normTxt(b.Nombre).includes(normTxt(a.Nombre))))));
+      if (g.length) { const todos = [a, ...g]; todos.forEach((x) => vistos.add(x.ID_Recurso)); grupos.push(todos); }
+    });
+    return grupos;
+  }
+  function fusionar(grupo) {
+    const campos = [{ k: "Queda", label: "¿Cuál registro se conserva?", tipo: "select", ancho: true, opciones: grupo.map((r) => [r.ID_Recurso, `${r.Nombre}${r.Correo ? ` · ${r.Correo}` : ""}${r.Cargo ? ` · ${r.Cargo}` : ""}`]), def: grupo[0].ID_Recurso }];
+    modal("Fusionar recursos duplicados", campos, {}, (fd) => guardar(async () => {
+      const queda = grupo.find((r) => r.ID_Recurso === fd.Queda) || grupo[0];
+      const otros = grupo.filter((r) => r !== queda);
+      const completo = { ...queda };
+      otros.forEach((o) => ["Correo", "Cargo", "Area", "Telefono", "ID_Proveedor"].forEach((k) => { if (!completo[k] && o[k]) completo[k] = o[k]; }));
+      await S.api.actualizarPorId("Recursos", "ID_Recurso", queda.ID_Recurso, completo);
+      for (const o of otros) await propagarRecurso(o, completo);
+      await S.api.eliminarFilas("Recursos", "ID_Recurso", otros.map((o) => o.ID_Recurso));
+    }, "Recursos fusionados"), null, { antes: `<p class="sub">Los stakeholders y compromisos de los demás pasan al que conserves; se completan los datos que le falten y se eliminan los repetidos.</p>` });
+  }
+  function vRecursos(el) {
+    const puede = R.puede(S.usuario, "editarProyecto");
+    const q = S.recQ || "";
+    const cap = capacidad();
+    const asig = (r) => cap.find((x) => (r.Correo && lc(x.correo) === lc(r.Correo)) || normTxt(x.nombre) === normTxt(r.Nombre));
+    const lista = recursos().filter((r) => !q || normTxt(`${r.Nombre} ${r.Correo} ${r.Cargo} ${r.Area} ${empresaDe(r)}`).includes(normTxt(q)));
+    const dups = gruposDuplicados();
+    el.innerHTML = `<div class="titulo-fila"><h1>Recursos</h1>${puede ? `<button class="btn primario" id="b-rec">+ Recurso</button>` : ""}</div>
+      <div class="filtros"><label class="filtro crece"><span>Buscar</span><input id="rec-q" type="search" value="${esc(q)}" placeholder="Nombre, correo, cargo, área o empresa"></label></div>
+      ${dups.length && puede ? `<div class="card aviso-dup"><h2>Posibles duplicados <span class="contador rojo">${dups.length}</span></h2>
+        <ul class="lista">${dups.map((g, i) => `<li>${g.map((r) => `<b>${esc(r.Nombre)}</b>${r.Correo ? ` <span class="sub">${esc(r.Correo)}</span>` : ""}`).join(" · ")} <button class="btn chico" data-fusionar="${i}">Fusionar</button></li>`).join("")}</ul></div>` : ""}
+      <div class="card"><p class="sub">Directorio único de personas del portafolio. En stakeholders, equipo y responsables de compromisos se eligen de aquí y sus datos se llenan solos; si escribes a alguien nuevo, se agrega automáticamente.</p>
+        ${lista.length ? `<div class="tabla-scroll"><table><thead><tr><th>Persona</th><th>Empresa</th><th>Área</th><th>Contacto</th><th>Asignado</th><th></th></tr></thead><tbody>
+          ${lista.map((r) => { const a = asig(r), c = num0(r.Capacidad) ?? 100; return `<tr class="${r.Activo === "No" ? "inactivo" : ""}"><td><b>${esc(r.Nombre)}</b>${r.Cargo ? `<div class="sub">${esc(r.Cargo)}</div>` : ""}${r.Activo === "No" ? ` <span class="pill noaplica">Inactivo</span>` : ""}</td>
+            <td>${esc(empresaDe(r))}</td><td>${esc(r.Area || "—")}</td><td>${contacto(r.Correo, r.Telefono)}</td>
+            <td class="nowrap">${a ? `${a.total}% de ${c}%${a.total > c ? ` <span class="baja">⚠</span>` : ""}<div class="sub">${a.asign.length} asignación(es)</div>` : `<span class="sub">— de ${c}%</span>`}</td>
+            <td class="derecha">${puede ? `<button class="btn chico" data-rec="${esc(r.ID_Recurso)}">Editar</button>` : ""}</td></tr>`; }).join("")}</tbody></table></div>`
+        : vacio(q ? "Nadie coincide con la búsqueda." : "Aún no hay recursos. Se crean solos con las personas que ya existen o con «+ Recurso».")}</div>`;
+    const qi = $("#rec-q"); qi.addEventListener("change", () => { S.recQ = qi.value; render(); });
+    if ($("#b-rec")) $("#b-rec").addEventListener("click", () => formRecurso());
+    el.querySelectorAll("[data-rec]").forEach((b) => b.addEventListener("click", () => formRecurso(recursoId(b.dataset.rec))));
+    el.querySelectorAll("[data-fusionar]").forEach((b) => b.addEventListener("click", () => fusionar(dups[Number(b.dataset.fusionar)])));
+  }
+  // Conecta un campo de nombre a Recursos: al elegir a alguien llena sus datos; muestra si es nuevo.
+  function selectorPersona(m, nombreSel, relleno, avisoSel) {
+    const no = m.querySelector(nombreSel);
+    if (!no) return;
+    no.setAttribute("list", "dl-recursos"); no.setAttribute("autocomplete", "off");
+    if (!m.querySelector("#dl-recursos")) no.insertAdjacentHTML("afterend", datalistRecursos("dl-recursos"));
+    const aviso = !avisoSel ? null : typeof avisoSel === "string" ? m.querySelector(avisoSel) : avisoSel;
+    const act = () => {
+      const r = recursoPor({ nombre: no.value });
+      if (r) Object.entries(relleno).forEach(([campo, sel]) => { const i = m.querySelector(sel); if (i && r[campo] !== undefined && r[campo] !== "") i.value = r[campo]; });
+      if (aviso) aviso.innerHTML = !no.value.trim() ? "" : r ? `✓ Del directorio de recursos${r.Cargo ? ` · ${esc(r.Cargo)}` : ""}` : `Persona nueva: se agregará a Recursos al guardar.`;
+      no.dispatchEvent(new Event("recurso"));
+    };
+    no.addEventListener("change", act); no.addEventListener("input", () => { if (recursoPor({ nombre: no.value })) act(); else if (aviso) aviso.innerHTML = no.value.trim() ? "Persona nueva: se agregará a Recursos al guardar." : ""; });
+    if (no.value) act();
   }
 
   // ---------- Tickets del helpdesk ----------
@@ -2127,11 +2292,12 @@
       sumar(p.PM, nombreUsuario(p.PM), p, "PM", num0(p.Dedicacion_PM));
       stakeholdersDe(p.ID_Proyecto).forEach((x) => sumar(x.Correo, x.Nombre, p, x.Rol, num0(x.Dedicacion), x.ID_Stakeholder));
     });
-    return Object.values(personas).sort((a, b) => b.total - a.total || String(a.nombre).localeCompare(String(b.nombre), "es"));
+    Object.values(personas).forEach((x) => { const r = recursoPor({ correo: x.correo, nombre: x.nombre }); x.cap = (r && num0(r.Capacidad)) ?? 100; if (r) x.nombre = r.Nombre; });
+    return Object.values(personas).sort((a, b) => b.total / b.cap - a.total / a.cap || String(a.nombre).localeCompare(String(b.nombre), "es"));
   }
-  const nivelCap = (t) => (t > 100 ? "Sobreasignado" : t >= 85 ? "Al límite" : "Disponible");
+  const nivelCap = (t, cap = 100) => (t > cap ? "Sobreasignado" : t >= cap * 0.85 ? "Al límite" : "Disponible");
   const totalDe = (correo, nombre) => (capacidad().find((x) => x.k === clavePersona(correo, nombre)) || { total: 0, asign: [] });
-  const barraCap = (t) => `<span class="cap-barra" title="${t}%"><span class="cap-lleno ${t > 100 ? "rojo" : t >= 85 ? "ambar" : ""}" style="width:${Math.min(100, (t / 150) * 100)}%"></span><span class="cap-100"></span></span> <b>${t}%</b>`;
+  const barraCap = (t, cap = 100) => `<span class="cap-barra" title="${t}% de ${cap}%"><span class="cap-lleno ${t > cap ? "rojo" : t >= cap * 0.85 ? "ambar" : ""}" style="width:${Math.min(100, (t / 150) * 100)}%"></span><span class="cap-100" style="left:${(cap / 150) * 100}%"></span></span> <b>${t}%</b>${cap !== 100 ? ` <span class="sub">de ${cap}%</span>` : ""}`;
 
   function vCapacidad(el) {
     const ids = new Set(visibles().map((p) => p.ID_Proyecto));
@@ -2139,21 +2305,21 @@
     const ver = S.capVer || "todos";
     // Se muestran las personas de los proyectos filtrados; su total cuenta todos sus proyectos.
     let lista = capacidad().filter((x) => x.asign.some((a) => idsF.has(a.p.ID_Proyecto)));
-    const n = (nv) => lista.filter((x) => nivelCap(x.total) === nv).length;
-    if (ver !== "todos") lista = lista.filter((x) => nivelCap(x.total) === ver);
+    const n = (nv) => lista.filter((x) => nivelCap(x.total, x.cap) === nv).length;
+    if (ver !== "todos") lista = lista.filter((x) => nivelCap(x.total, x.cap) === ver);
     el.innerHTML = `
       <h1>Capacidad del equipo</h1>
       ${barraFiltros()}
       <div class="kpis kpis-3">
-        <div class="kpi estatico ${n("Sobreasignado") ? "alerta" : ""}"><span class="kpi-t">Sobreasignados (más de 100%)</span><span class="kpi-v">${n("Sobreasignado")}</span></div>
-        <div class="kpi estatico"><span class="kpi-t">Al límite (85% a 100%)</span><span class="kpi-v">${n("Al límite")}</span></div>
+        <div class="kpi estatico ${n("Sobreasignado") ? "alerta" : ""}"><span class="kpi-t">Sobreasignados (sobre su capacidad)</span><span class="kpi-v">${n("Sobreasignado")}</span></div>
+        <div class="kpi estatico"><span class="kpi-t">Al límite (85% a 100% de su capacidad)</span><span class="kpi-v">${n("Al límite")}</span></div>
         <div class="kpi estatico"><span class="kpi-t">Con capacidad disponible</span><span class="kpi-v">${n("Disponible")}</span></div>
       </div>
       <div class="card"><div class="titulo-fila"><h2>Dedicación por persona</h2>
         <div class="seg">${["todos", "Sobreasignado", "Al límite", "Disponible"].map((v) => `<button class="btn chico ${ver === v ? "primario" : ""}" data-capver="${v}">${v === "todos" ? "Todos" : v}</button>`).join("")}</div></div>
-        <p class="sub">Suma el % de dedicación de cada persona en los proyectos activos o en pausa (PM y stakeholders). Se registra en «Editar proyecto» o al agregar un stakeholder. La línea marca el 100%.</p>
+        <p class="sub">Suma el % de dedicación de cada persona en los proyectos activos o en pausa (PM y stakeholders). Se registra en «Editar proyecto» o al agregar un stakeholder. La línea marca la capacidad de cada persona (100% salvo que en Recursos tenga otra).</p>
         ${lista.length ? `<div class="tabla-scroll"><table><thead><tr><th>Persona</th><th>Total</th><th>Estado</th><th>Proyectos</th></tr></thead><tbody>
-          ${lista.map((x) => `<tr><td><b>${esc(x.nombre)}</b>${x.correo ? `<div class="sub">${esc(x.correo)}</div>` : ""}</td><td class="nowrap">${barraCap(x.total)}</td><td>${pill(nivelCap(x.total))}</td>
+          ${lista.map((x) => `<tr><td><b>${esc(x.nombre)}</b>${x.correo ? `<div class="sub">${esc(x.correo)}</div>` : ""}</td><td class="nowrap">${barraCap(x.total, x.cap)}</td><td>${pill(nivelCap(x.total, x.cap))}</td>
             <td><div class="cap-asign">${x.asign.sort((a, b) => b.ded - a.ded).map((a) => ids.has(a.p.ID_Proyecto)
               ? `<button class="chip-proy" data-pid="${esc(a.p.ID_Proyecto)}">${esc(a.p.Nombre)} · ${esc(a.rol)} · <b>${a.ded}%</b></button>`
               : `<span class="chip-proy">Otro proyecto · <b>${a.ded}%</b></span>`).join("")}</div></td></tr>`).join("")}</tbody></table></div>`
@@ -2203,7 +2369,7 @@
     const empresas = [["", "Interno (FSFB)"], ...proveedoresActivos(x && x.ID_Proveedor).map((v) => [v.ID_Proveedor, v.Nombre])];
     const campos = [
       { k: "Rol", label: "Rol en el proyecto", tipo: "select", opciones: S.cat.Rol_Stakeholder, ayuda: "Los roles se configuran en Catálogos." },
-      { k: "Nombre", label: "Nombre", placeholder: "Nombre y apellido" },
+      { k: "Nombre", label: "Persona", placeholder: "Escribe y elige del directorio", ayuda: " " },
       { k: "Cargo", label: "Cargo", placeholder: "Ej.: Director médico" },
       { k: "Area", label: "Área", tipo: "select", opciones: S.cat.Cliente_Area },
       { k: "ID_Proveedor", label: "Empresa", tipo: "select", opciones: empresas, ayuda: "Si la persona es del proveedor, elígelo aquí." },
@@ -2213,6 +2379,8 @@
     ];
     const vivo = { init: (m) => {
       const ded = m.querySelector('[name="Dedicacion"]'), co = m.querySelector('[name="Correo"]'), no = m.querySelector('[name="Nombre"]');
+      selectorPersona(m, '[name="Nombre"]', { Correo: '[name="Correo"]', Cargo: '[name="Cargo"]', Area: '[name="Area"]', ID_Proveedor: '[name="ID_Proveedor"]', Telefono: '[name="Telefono"]' }, no.parentElement.querySelector(".sub"));
+      no.addEventListener("recurso", () => ded.dispatchEvent(new Event("input")));
       const ay = ded.parentElement.querySelector(".sub");
       const calc = () => {
         const otros = totalDe(co.value.trim(), no.value.trim()).total - (x ? num0(x.Dedicacion) || 0 : 0);
@@ -2222,10 +2390,20 @@
       [ded, co, no].forEach((i) => i.addEventListener("input", calc)); calc();
     } };
     modal(nuevo ? `Nuevo stakeholder · ${p.Nombre}` : `Editar stakeholder · ${x.Nombre || x.Rol}`, campos, nuevo ? { Rol: rolSugerido || "" } : x, (fd) => {
+      // La persona queda en Recursos (sin duplicar) y sus datos actualizados se reflejan en todos sus proyectos.
+      const conRecurso = async () => {
+        const antes = recursoPor({ id: x && x.ID_Recurso, correo: fd.Correo, nombre: fd.Nombre });
+        const r = await asegurarRecurso(fd);
+        if (!r) return "";
+        const cambios = {};
+        ["Nombre", "Correo", "Cargo", "Area", "Telefono", "ID_Proveedor"].forEach((k) => { if (fd[k] !== undefined && fd[k] !== "" && String(fd[k]) !== String(r[k] || "")) cambios[k] = fd[k]; });
+        if (antes && Object.keys(cambios).length) { const previo = { ...r }; await S.api.actualizarPorId("Recursos", "ID_Recurso", r.ID_Recurso, cambios); Object.assign(r, cambios); await propagarRecurso(previo, r); }
+        return r.ID_Recurso;
+      };
       if (nuevo) {
         const id = R.siguienteIdHijo("STK", S.datos.Stakeholders || [], "ID_Stakeholder", p.ID_Proyecto);
-        guardar(() => S.api.agregarFila("Stakeholders", { ID_Stakeholder: id, ID_Proyecto: p.ID_Proyecto, ...fd }), "Stakeholder agregado");
-      } else guardar(() => S.api.actualizarPorId("Stakeholders", "ID_Stakeholder", x.ID_Stakeholder, fd));
+        guardar(async () => { const idr = await conRecurso(); await S.api.agregarFila("Stakeholders", { ID_Stakeholder: id, ID_Proyecto: p.ID_Proyecto, ...fd, ID_Recurso: idr }); }, "Stakeholder agregado");
+      } else guardar(async () => { const idr = await conRecurso(); await S.api.actualizarPorId("Stakeholders", "ID_Stakeholder", x.ID_Stakeholder, { ...fd, ID_Recurso: idr }); });
     }, null, nuevo ? vivo : { ...vivo, eliminar: { texto: "Quitar del proyecto", mensaje: `${x.Nombre || "Esta persona"} dejará de aparecer como ${x.Rol || "stakeholder"} de este proyecto.`,
       accion: () => guardar(() => S.api.eliminarFilas("Stakeholders", "ID_Stakeholder", [x.ID_Stakeholder]), "Stakeholder quitado") } });
   }
@@ -2317,11 +2495,10 @@
           <button type="button" class="btn primario chico" id="rol-crear">Crear rol</button><button type="button" class="btn chico" id="rol-cancelar">Cancelar</button></div>
         <div id="eq-form" class="eq-form" hidden><div class="pn-grid">
           <select id="eq-rol" aria-label="Rol">${opcionesRol()}</select>
-          <input id="eq-nombre" placeholder="Nombre *" aria-label="Nombre" list="eq-gente" autocomplete="off">
+          <input id="eq-nombre" placeholder="Persona * (elige del directorio)" aria-label="Persona" autocomplete="off">
           <input id="eq-correo" type="email" placeholder="Correo" aria-label="Correo">
           <input id="eq-ded" type="number" min="0" max="100" placeholder="Dedicación %" aria-label="Dedicación"></div>
-          <datalist id="eq-gente">${[...new Set([...S.datos.Usuarios.map((x) => x.Nombre), ...(S.datos.Stakeholders || []).map((x) => x.Nombre)].filter(Boolean))].map((n) => `<option value="${esc(n)}">`).join("")}</datalist>
-          <div class="sub" id="eq-total"></div>
+          <div class="sub" id="eq-rec"></div><div class="sub" id="eq-total"></div>
           <div class="acciones"><button type="button" class="btn primario chico" id="eq-agregar">Agregar al equipo</button><button type="button" class="btn chico" id="eq-cancelar">Cancelar</button></div></div>
         <div class="error-campo" id="eq-error"></div>`;
       const pintar = () => {
@@ -2335,6 +2512,8 @@
       const $m = (id) => m.querySelector(id);
       const err = $m("#eq-error");
       const gente = [...S.datos.Usuarios.map((x) => [x.Nombre, x.Correo]), ...(S.datos.Stakeholders || []).map((x) => [x.Nombre, x.Correo])];
+      selectorPersona(m, "#eq-nombre", { Correo: "#eq-correo" }, "#eq-rec");
+      $m("#eq-nombre").addEventListener("recurso", () => tot());
       $m("#eq-nombre").addEventListener("change", () => { const g = gente.find((x) => lc(x[0]) === lc($m("#eq-nombre").value) && x[1]); if (g && !$m("#eq-correo").value) $m("#eq-correo").value = g[1]; tot(); });
       const tot = () => {
         const n = $m("#eq-nombre").value.trim(), c = $m("#eq-correo").value.trim();
@@ -2374,8 +2553,10 @@
     const guardarEquipo = async (pid) => {
       if (!pendStk.length) return;
       const base = S.datos.Stakeholders || [];
-      await S.api.agregarFilas("Stakeholders", pendStk.map((x, i) => ({ ID_Stakeholder: R.siguienteIdHijo("STK", base, "ID_Stakeholder", pid, i), ID_Proyecto: pid,
-        Rol: x.Rol, Nombre: x.Nombre, Cargo: "", Area: "", Correo: x.Correo, Telefono: "", ID_Proveedor: "", Dedicacion: x.Dedicacion })));
+      const recs = [];
+      for (const x of pendStk) recs.push(await asegurarRecurso({ Nombre: x.Nombre, Correo: x.Correo }));
+      await S.api.agregarFilas("Stakeholders", pendStk.map((x, i) => { const r = recs[i] || {}; return { ID_Stakeholder: R.siguienteIdHijo("STK", base, "ID_Stakeholder", pid, i), ID_Proyecto: pid,
+        Rol: x.Rol, Nombre: r.Nombre || x.Nombre, Cargo: r.Cargo || "", Area: r.Area || "", Correo: x.Correo || r.Correo || "", Telefono: r.Telefono || "", ID_Proveedor: r.ID_Proveedor || "", Dedicacion: x.Dedicacion, ID_Recurso: r.ID_Recurso || "" }; }));
     };
     // Crear un proveedor sin salir del formulario: se guarda de inmediato y queda marcado.
     const initProv = (m) => {
@@ -2459,13 +2640,13 @@
       <div><b>¿Tienes el acta en PDF?</b><div class="sub">Súbela: la app lee la fecha y los compromisos, los llena abajo y guarda el acta con la sesión.</div></div>
       <button type="button" class="btn primario" id="b-acta-pdf">Subir acta (PDF)</button>
       <div id="acta-estado" class="acta-estado" aria-live="polite"></div></div>`;
-    const contexto = `<div class="contexto">
+    const contexto = `${datalistRecursos("dl-recursos")}<div class="contexto">
       <div><span class="sub">Último reporte</span><b>${ult ? `${fecha(ult.Fecha_Corte)} · ${pct(ult.Avance_Real)} · ${esc(ult.Semaforo)}` : "Es el primer reporte"}</b></div>
       <div><span class="sub">Plan registrado</span><b>${pct(p.Avance_Planeado)}</b></div>
       <div><span class="sub">Frecuencia</span><b>${esc(p.Frecuencia_Seguimiento)}</b></div></div>`;
     const filaComp = (c = {}) => `<div class="comp-fila">
       <input class="c-texto" placeholder="Compromiso (qué se hará)" aria-label="Compromiso" value="${esc(c.Compromiso || "")}">
-      <input class="c-resp" placeholder="Responsable" aria-label="Responsable" value="${esc(c.Responsable || "")}">
+      <input class="c-resp" placeholder="Responsable" aria-label="Responsable" list="dl-recursos" autocomplete="off" value="${esc(c.Responsable || "")}">
       <input class="c-fecha" type="date" aria-label="Fecha límite" value="${esc(c.Fecha_Compromiso || "")}" title="${esc(c.Fecha_Texto && !c.Fecha_Compromiso ? `En el acta: ${c.Fecha_Texto}` : "")}">
       <button type="button" class="btn chico c-quitar" aria-label="Quitar compromiso">✕</button></div>`;
     const despues = `
@@ -2555,7 +2736,7 @@
       const actaElegida = acta;
       const comps = extra.nuevos.map((c, i) => ({
         ID_Compromiso: R.siguienteIdHijo("CMP", S.datos.Compromisos, "ID_Compromiso", p.ID_Proyecto, i),
-        ID_Proyecto: p.ID_Proyecto, ID_Seguimiento: idSeg, ...c, Estado: "Pendiente", Fecha_Cierre: "", Registrado_Por: S.usuario.Correo,
+        ID_Proyecto: p.ID_Proyecto, ID_Seguimiento: idSeg, ...c, Correo_Responsable: (recursoPor({ nombre: c.Responsable }) || {}).Correo || "", Estado: "Pendiente", Fecha_Cierre: "", Registrado_Por: S.usuario.Correo,
       }));
       guardar(async () => {
         await S.api.agregarFila("Seguimientos", fila);
@@ -2670,7 +2851,7 @@
     const pid = nuevo ? pNuevo.ID_Proyecto : c.ID_Proyecto;
     const sesiones = R.seguimientosDe(pid, S.datos.Seguimientos).slice().reverse()
       .map((s) => [s.ID_Seguimiento, `Sesión del ${fecha(s.Fecha_Corte)}${s.Fecha_Acta && s.Fecha_Acta !== s.Fecha_Corte ? ` (acta ${fecha(s.Fecha_Acta)})` : ""}`]);
-    const gente = [...S.datos.Usuarios.filter((u) => u.Activo === "Sí").map((u) => [u.Nombre || u.Correo, u.Correo]),
+    const gente = [...recursos().filter((r) => r.Activo !== "No").map((r) => [r.Nombre, r.Correo || ""]), ...S.datos.Usuarios.filter((u) => u.Activo === "Sí").map((u) => [u.Nombre || u.Correo, u.Correo]),
       ...(S.datos.Stakeholders || []).filter((x) => x.ID_Proyecto === pid && x.Nombre).map((x) => [x.Nombre, x.Correo || ""])];
     const personas = [...new Set(gente.map((g) => g[0]))].sort((a, b) => a.localeCompare(b, "es"));
     const correoPorNombre = (n) => (gente.find((g) => lc(g[0]) === lc(n) && g[1]) || [])[1] || "";
@@ -2695,6 +2876,7 @@
         const fila = { ID_Compromiso: R.siguienteIdHijo("CMP", S.datos.Compromisos, "ID_Compromiso", pNuevo.ID_Proyecto), ID_Proyecto: pNuevo.ID_Proyecto, ID_Seguimiento: fd.ID_Seguimiento || "",
           Compromiso: fd.Compromiso || "(sin descripción)", Responsable: fd.Responsable, Correo_Responsable: fd.Correo_Responsable || correoPorNombre(fd.Responsable), Dias_Alerta: fd.Dias_Alerta === "" ? "" : fd.Dias_Alerta, Fecha_Compromiso: fd.Fecha_Compromiso, Estado: "Pendiente", Fecha_Cierre: "", Registrado_Por: S.usuario.Correo };
         guardar(async () => {
+          if (fila.Correo_Responsable) await asegurarRecurso({ Nombre: fila.Responsable, Correo: fila.Correo_Responsable });
           await S.api.agregarFila("Compromisos", fila);
           if (fd.Comentario) await S.api.agregarFila("Comentarios", nuevoComentario(fila, fd.Comentario));
         }, "Compromiso agregado");
@@ -2707,6 +2889,7 @@
       if (fd.Estado !== "Cerrado") fd.Fecha_Cierre = "";
       const cambioEstado = fd.Estado !== R.estadoBase(c);
       guardar(async () => {
+        if (fd.Correo_Responsable && fd.Responsable) await asegurarRecurso({ Nombre: fd.Responsable, Correo: fd.Correo_Responsable });
         await S.api.actualizarPorId("Compromisos", "ID_Compromiso", c.ID_Compromiso, fd);
         if (cambioEstado) await S.api.agregarFila("Comentarios", nuevoComentario(c, TEXTO_ESTADO[fd.Estado] || `Estado: ${fd.Estado}.`));
       }, "Compromiso actualizado");

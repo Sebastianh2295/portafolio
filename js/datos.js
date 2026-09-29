@@ -27,6 +27,8 @@
     RACI: ["ID_RACI", "ID_Proyecto", "Entregable", "Asignaciones"],
     // Dependencias: ID_Proyecto depende de Depende_De.
     Dependencias: ["ID_Dependencia", "ID_Proyecto", "Depende_De", "Tipo", "Descripcion"],
+    // Directorio único de personas (recursos) del portafolio.
+    Recursos: ["ID_Recurso", "Nombre", "Correo", "Cargo", "Area", "Telefono", "ID_Proveedor", "Capacidad", "Activo"],
     // Registro de auditoría: quién cambió qué y cuándo.
     Auditoria: ["Fecha_Hora", "Usuario", "Tabla", "ID_Registro", "ID_Proyecto", "Accion", "Detalle"],
     // Filtros guardados por cada usuario (y los que Admin/PMO comparten con todos).
@@ -38,7 +40,7 @@
   // Columnas agregadas en versiones posteriores: si faltan en el Excel, se crean al final de la tabla.
   const COLUMNAS_NUEVAS = {
     Proyectos: ["URL_Repositorio", "URL_Documentos", "Proveedores", "Codigo_Almera", "Dedicacion_PM", "Fecha_Fin_Base", "Presupuesto_Base", "Valor", "Urgencia", "Riesgo_Prio", "Esfuerzo"],
-    Stakeholders: ["Dedicacion"],
+    Stakeholders: ["Dedicacion", "ID_Recurso"],
     Seguimientos: ["Fecha_Acta", "URL_Acta", "Acta_Archivo", "Ejecutado"],
     Compromisos: ["Correo_Responsable", "Dias_Alerta"],
     Comentarios: ["Adjuntos"],
