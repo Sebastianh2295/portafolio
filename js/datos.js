@@ -27,7 +27,8 @@
   const TABLAS = Object.keys(ESTRUCTURA);
   // Columnas agregadas en versiones posteriores: si faltan en el Excel, se crean al final de la tabla.
   const COLUMNAS_NUEVAS = {
-    Proyectos: ["URL_Repositorio", "URL_Documentos", "Proveedores", "Codigo_Almera"],
+    Proyectos: ["URL_Repositorio", "URL_Documentos", "Proveedores", "Codigo_Almera", "Dedicacion_PM"],
+    Stakeholders: ["Dedicacion"],
     Seguimientos: ["Fecha_Acta", "URL_Acta", "Acta_Archivo"],
     Compromisos: ["Correo_Responsable", "Dias_Alerta"],
     Comentarios: ["Adjuntos"],

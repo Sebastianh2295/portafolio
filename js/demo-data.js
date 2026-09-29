@@ -11,3 +11,6 @@ window.DEMO_DATA.Stakeholders = [
   { ID_Stakeholder: "STK-0001-3", ID_Proyecto: "PRY-0001", Rol: "Líder funcional", Nombre: "Laura Gómez", Cargo: "Gerente de proyecto", Area: "", Correo: "laura@solucionesti.com", Telefono: "", ID_Proveedor: "PRV-0001" },
 ];
 window.DEMO_DATA.Proyectos.forEach((p) => { if (p.ID_Proyecto === "PRY-0001") p.Proveedores = "PRV-0001"; if (p.ID_Proyecto === "PRY-0002") p.Proveedores = "PRV-0001, PRV-0002"; });
+window.DEMO_DATA.Proyectos.forEach((p, i) => { p.Dedicacion_PM = [50, 40, 30, 40, 25, 30, 20, 35, 30, 20][i] || 30; });
+window.DEMO_DATA.Stakeholders.forEach((s, i) => { s.Dedicacion = [10, 60, 50][i]; });
+window.DEMO_DATA.Stakeholders.push({ ID_Stakeholder: "STK-0002-1", ID_Proyecto: "PRY-0002", Rol: "Product Owner", Nombre: "Jorge Díaz", Cargo: "Jefe de procesos", Area: "Operaciones", Correo: "jdiaz@empresa.com", Telefono: "", ID_Proveedor: "", Dedicacion: 50 });

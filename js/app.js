@@ -16,6 +16,7 @@
     { id: "proyectos", t: "Proyectos" },
     { id: "cronograma", t: "Cronograma" },
     { id: "riesgos", t: "Riesgos" },
+    { id: "capacidad", t: "Capacidad del equipo" },
     { id: "catalogos", t: "Catálogos", permiso: "catalogos" },
     { id: "usuarios", t: "Usuarios", permiso: "usuarios" },
   ];
@@ -45,6 +46,9 @@
     catalogos: ["Valores de los desplegables de los formularios.",
       "Agrega o quita valores; los proyectos que ya usan un valor lo conservan.",
       "Aquí también configuras los roles de stakeholder (Sponsor, Líder funcional, Product Owner…) y el maestro de proveedores."],
+    capacidad: ["Cuánto está dedicada cada persona sumando todos sus proyectos activos o en pausa.",
+      "La dedicación del PM se pone en «Editar proyecto»; la de cada stakeholder, en su ficha o en la sección Equipo del formulario.",
+      "Más de 100% = sobreasignado. Haz clic en un proyecto para ir a su ficha."],
     usuarios: ["Quién entra y qué puede hacer. Un usuario puede tener varios roles.",
       "El PM ve los proyectos donde figura como PM. El Lector ve los proyectos que le asignes aquí."],
   };
@@ -223,7 +227,7 @@
       cargando(true, "Leyendo Excel…");
       try { await recargar(); render(); toast("Datos actualizados"); } catch (e) { toast(e.message, true); } finally { cargando(false); }
     });
-    const vistas = { dashboard: vDashboard, avances: vAvances, seguimiento: vSeguimiento, proyectos: vProyectos, ficha: vFicha, cronograma: vCronograma, riesgos: vRiesgos, catalogos: vCatalogos, usuarios: vUsuarios };
+    const vistas = { dashboard: vDashboard, avances: vAvances, seguimiento: vSeguimiento, proyectos: vProyectos, ficha: vFicha, capacidad: vCapacidad, cronograma: vCronograma, riesgos: vRiesgos, catalogos: vCatalogos, usuarios: vUsuarios };
     const el = $("#vista");
     (vistas[S.vista] || vDashboard)(el);
     el.insertAdjacentHTML("afterbegin", ayuda(S.vista));
@@ -1422,7 +1426,7 @@
       const dl = c.sugerencias ? `<datalist id="dl-${c.k}">${c.sugerencias.map((o) => `<option value="${esc(o)}">`).join("")}</datalist>` : "";
       return dl + `<input name="${c.k}" ${c.sugerencias ? `list="dl-${c.k}" autocomplete="off"` : ""} type="${c.tipo || "text"}" value="${esc(v)}" placeholder="${esc(c.placeholder || "")}" ${c.min !== undefined ? `min="${c.min}"` : ""} ${c.max !== undefined ? `max="${c.max}"` : ""} ${dis}>`;
     };
-    const cuerpo = campos.map((c) => (c.seccion
+    const cuerpo = campos.map((c) => (c.html ? `<div class="ancho form-html">${c.html}</div>` : c.seccion
       ? `<div class="form-seccion">${esc(c.seccion)}${c.ayuda ? `<span class="sub"> · ${esc(c.ayuda)}</span>` : ""}</div>`
       : `<label class="${c.tipo === "textarea" || c.tipo === "checks" || c.ancho ? "ancho" : ""}"><span class="etq">${esc(c.label)}</span>${control(c)}${c.ayuda ? `<span class="sub">${esc(c.ayuda)}</span>` : ""}<span class="error-campo" data-e="${c.k}"></span></label>`)).join("");
     m.innerHTML = `<div class="modal-caja" role="dialog" aria-modal="true" aria-label="${esc(titulo)}">
@@ -1442,7 +1446,7 @@
     $("#m-form").addEventListener("submit", (ev) => {
       ev.preventDefault();
       const fd = {};
-      campos.filter((c) => !c.seccion).forEach((c) => {
+      campos.filter((c) => !c.seccion && !c.html).forEach((c) => {
         if (c.tipo === "checks") { fd[c.k] = [...m.querySelectorAll(`[data-checks="${c.k}"] input:checked`)].map((i) => i.value).join(", "); return; }
         let v = m.querySelector(`[name="${c.k}"]`).value.trim();
         if (c.tipo === "number" && v !== "") v = Number(v);
@@ -1450,7 +1454,7 @@
       });
       let ok = true;
       const err = (k, msg) => { ok = false; const e = m.querySelector(`[data-e="${k}"]`); if (e) e.textContent = msg; };
-      campos.filter((c) => !c.seccion).forEach((c) => {
+      campos.filter((c) => !c.seccion && !c.html).forEach((c) => {
         const v = fd[c.k];
         if (c.tipo === "number" && v !== "" && (Number.isNaN(v) || (c.min !== undefined && v < c.min) || (c.max !== undefined && v > c.max)))
           err(c.k, c.max !== undefined ? `Debe estar entre ${c.min} y ${c.max}.` : `Debe ser mayor o igual a ${c.min}.`);
@@ -1592,6 +1596,61 @@
       accion: () => guardar(() => S.api.eliminarFilas("Tickets", "ID_Ticket", [t.ID_Ticket]), "Ticket eliminado") } });
   }
 
+  // ---------- Capacidad del equipo ----------
+  // Cada persona suma su dedicación (%) en los proyectos activos o en pausa: PM (Dedicacion_PM) y stakeholders (Dedicacion).
+  const CUENTAN = (p) => p.Estado === "Activo" || p.Estado === "En pausa";
+  const clavePersona = (correo, nombre) => (correo ? lc(correo) : "n:" + lc(nombre));
+  const num0 = (v) => (v === "" || v === null || v === undefined || Number.isNaN(Number(v)) ? null : Number(v));
+  function capacidad() {
+    const personas = {};
+    const sumar = (correo, nombre, p, rol, ded, idStk) => {
+      if (ded === null || !(correo || nombre)) return;
+      const k = clavePersona(correo, nombre);
+      const x = (personas[k] = personas[k] || { k, nombre: nombre || nombreUsuario(correo), correo: correo || "", total: 0, asign: [] });
+      if (!x.correo && correo) x.correo = correo;
+      x.total += ded; x.asign.push({ p, rol, ded, idStk });
+    };
+    S.datos.Proyectos.filter(CUENTAN).forEach((p) => {
+      sumar(p.PM, nombreUsuario(p.PM), p, "PM", num0(p.Dedicacion_PM));
+      stakeholdersDe(p.ID_Proyecto).forEach((x) => sumar(x.Correo, x.Nombre, p, x.Rol, num0(x.Dedicacion), x.ID_Stakeholder));
+    });
+    return Object.values(personas).sort((a, b) => b.total - a.total || String(a.nombre).localeCompare(String(b.nombre), "es"));
+  }
+  const nivelCap = (t) => (t > 100 ? "Sobreasignado" : t >= 85 ? "Al límite" : "Disponible");
+  const totalDe = (correo, nombre) => (capacidad().find((x) => x.k === clavePersona(correo, nombre)) || { total: 0, asign: [] });
+  const barraCap = (t) => `<span class="cap-barra" title="${t}%"><span class="cap-lleno ${t > 100 ? "rojo" : t >= 85 ? "ambar" : ""}" style="width:${Math.min(100, (t / 150) * 100)}%"></span><span class="cap-100"></span></span> <b>${t}%</b>`;
+
+  function vCapacidad(el) {
+    const ids = new Set(visibles().map((p) => p.ID_Proyecto));
+    const idsF = new Set(filtrados().map((p) => p.ID_Proyecto));
+    const ver = S.capVer || "todos";
+    // Se muestran las personas de los proyectos filtrados; su total cuenta todos sus proyectos.
+    let lista = capacidad().filter((x) => x.asign.some((a) => idsF.has(a.p.ID_Proyecto)));
+    const n = (nv) => lista.filter((x) => nivelCap(x.total) === nv).length;
+    if (ver !== "todos") lista = lista.filter((x) => nivelCap(x.total) === ver);
+    el.innerHTML = `
+      <h1>Capacidad del equipo</h1>
+      ${barraFiltros()}
+      <div class="kpis kpis-3">
+        <div class="kpi estatico ${n("Sobreasignado") ? "alerta" : ""}"><span class="kpi-t">Sobreasignados (más de 100%)</span><span class="kpi-v">${n("Sobreasignado")}</span></div>
+        <div class="kpi estatico"><span class="kpi-t">Al límite (85% a 100%)</span><span class="kpi-v">${n("Al límite")}</span></div>
+        <div class="kpi estatico"><span class="kpi-t">Con capacidad disponible</span><span class="kpi-v">${n("Disponible")}</span></div>
+      </div>
+      <div class="card"><div class="titulo-fila"><h2>Dedicación por persona</h2>
+        <div class="seg">${["todos", "Sobreasignado", "Al límite", "Disponible"].map((v) => `<button class="btn chico ${ver === v ? "primario" : ""}" data-capver="${v}">${v === "todos" ? "Todos" : v}</button>`).join("")}</div></div>
+        <p class="sub">Suma el % de dedicación de cada persona en los proyectos activos o en pausa (PM y stakeholders). Se registra en «Editar proyecto» o al agregar un stakeholder. La línea marca el 100%.</p>
+        ${lista.length ? `<div class="tabla-scroll"><table><thead><tr><th>Persona</th><th>Total</th><th>Estado</th><th>Proyectos</th></tr></thead><tbody>
+          ${lista.map((x) => `<tr><td><b>${esc(x.nombre)}</b>${x.correo ? `<div class="sub">${esc(x.correo)}</div>` : ""}</td><td class="nowrap">${barraCap(x.total)}</td><td>${pill(nivelCap(x.total))}</td>
+            <td><div class="cap-asign">${x.asign.sort((a, b) => b.ded - a.ded).map((a) => ids.has(a.p.ID_Proyecto)
+              ? `<button class="chip-proy" data-pid="${esc(a.p.ID_Proyecto)}">${esc(a.p.Nombre)} · ${esc(a.rol)} · <b>${a.ded}%</b></button>`
+              : `<span class="chip-proy">Otro proyecto · <b>${a.ded}%</b></span>`).join("")}</div></td></tr>`).join("")}</tbody></table></div>`
+        : vacio("Aún no hay dedicaciones registradas. Pon el % de dedicación del PM en «Editar proyecto» y el de cada stakeholder en su ficha.")}
+      </div>`;
+    enlazarFiltros();
+    el.querySelectorAll("[data-capver]").forEach((b) => b.addEventListener("click", () => { S.capVer = b.dataset.capver; render(); }));
+    el.querySelectorAll(".chip-proy[data-pid]").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); ir("ficha", b.dataset.pid); }));
+  }
+
   // ---------- Stakeholders y proveedores ----------
   const proveedores = () => (S.datos.Proveedores || []).slice().sort((a, b) => String(a.Nombre).localeCompare(String(b.Nombre), "es"));
   const proveedor = (id) => (S.datos.Proveedores || []).find((x) => x.ID_Proveedor === id);
@@ -1601,6 +1660,12 @@
   const stakeholdersDe = (pid) => (S.datos.Stakeholders || []).filter((x) => x.ID_Proyecto === pid);
   const contacto = (correo, tel) => [correo ? `<a href="mailto:${esc(correo)}">${esc(correo)}</a>` : "", tel ? esc(tel) : ""].filter(Boolean).join("<br>") || "—";
 
+  function celdaDedicacion(correo, nombre, ded) {
+    const d = num0(ded);
+    if (d === null) return `<span class="sub">Sin registrar</span>`;
+    const t = totalDe(correo, nombre).total;
+    return `<b>${d}%</b><div class="sub ${t > 100 ? "baja" : ""}">Total: ${t}%${t > 100 ? " ⚠ sobreasignado" : ""}</div>`;
+  }
   function cardStakeholders(p, puede) {
     const roles = S.cat.Rol_Stakeholder || [];
     const orden = (r) => { const i = roles.indexOf(r); return i < 0 ? 99 : i; };
@@ -1609,10 +1674,13 @@
     const provs = idsLista(p.Proveedores).map(proveedor).filter(Boolean);
     return `<div class="card"><div class="titulo-fila"><h2>Stakeholders y proveedores</h2>${puede ? `<button class="btn" id="b-stk">+ Stakeholder</button>` : ""}</div>
       ${faltan.length ? `<div class="faltan-stk"><span class="sub">Sin asignar:</span> ${faltan.map((r) => puede ? `<button class="btn chico" data-rol-stk="${esc(r)}">+ ${esc(r)}</button>` : `<span class="pill noaplica">${esc(r)}</span>`).join(" ")}</div>` : ""}
-      ${lista.length ? `<div class="tabla-scroll"><table><thead><tr><th>Rol</th><th>Nombre</th><th>Cargo / área</th><th>Empresa</th><th>Contacto</th><th></th></tr></thead>
-        <tbody>${lista.map((x) => `<tr><td><b>${esc(x.Rol)}</b></td><td>${esc(x.Nombre)}</td><td>${esc([x.Cargo, x.Area].filter(Boolean).join(" · ") || "—")}</td>
+      <div class="tabla-scroll"><table><thead><tr><th>Rol</th><th>Nombre</th><th>Cargo / área</th><th>Empresa</th><th>Contacto</th><th>Dedicación</th><th></th></tr></thead>
+        <tbody><tr class="fila-pm"><td><b>PM</b></td><td>${esc(nombreUsuario(p.PM))}</td><td>Gerente del proyecto</td><td>Interno</td><td>${contacto(p.PM, "")}</td>
+          <td>${celdaDedicacion(p.PM, nombreUsuario(p.PM), p.Dedicacion_PM)}</td><td class="derecha sub">${puede ? "en «Editar proyecto»" : ""}</td></tr>
+        ${lista.map((x) => `<tr><td><b>${esc(x.Rol)}</b></td><td>${esc(x.Nombre)}</td><td>${esc([x.Cargo, x.Area].filter(Boolean).join(" · ") || "—")}</td>
           <td>${x.ID_Proveedor ? esc((proveedor(x.ID_Proveedor) || {}).Nombre || x.ID_Proveedor) : "Interno"}</td><td>${contacto(x.Correo, x.Telefono)}</td>
-          <td class="derecha">${puede ? `<button class="btn chico" data-stk="${esc(x.ID_Stakeholder)}">Editar</button>` : ""}</td></tr>`).join("")}</tbody></table></div>` : ""}
+          <td>${celdaDedicacion(x.Correo, x.Nombre, x.Dedicacion)}</td>
+          <td class="derecha">${puede ? `<button class="btn chico" data-stk="${esc(x.ID_Stakeholder)}">Editar</button>` : ""}</td></tr>`).join("")}</tbody></table></div>
       <div class="provs"><b>Proveedor(es):</b> ${provs.length ? provs.map((x) => `<span class="prov">${esc(x.Nombre)}${x.Servicio ? ` <span class="sub">· ${esc(x.Servicio)}</span>` : ""}${x.Contacto || x.Correo ? ` <span class="sub">· ${esc(x.Contacto || "")} ${x.Correo ? `<a href="mailto:${esc(x.Correo)}">${esc(x.Correo)}</a>` : ""}</span>` : ""}</span>`).join("")
         : `<span class="sub">Ninguno${puede ? " — asígnalos con «Editar proyecto»." : "."}</span>`}</div></div>`;
   }
@@ -1628,13 +1696,24 @@
       { k: "ID_Proveedor", label: "Empresa", tipo: "select", opciones: empresas, ayuda: "Si la persona es del proveedor, elígelo aquí." },
       { k: "Correo", label: "Correo", tipo: "email", placeholder: "nombre@empresa.com" },
       { k: "Telefono", label: "Teléfono", placeholder: "Opcional" },
+      { k: "Dedicacion", label: "Dedicación a este proyecto (%)", tipo: "number", min: 0, max: 100, placeholder: "Ej.: 30", ayuda: "Porcentaje de su tiempo. Déjalo vacío si no aplica." },
     ];
+    const vivo = { init: (m) => {
+      const ded = m.querySelector('[name="Dedicacion"]'), co = m.querySelector('[name="Correo"]'), no = m.querySelector('[name="Nombre"]');
+      const ay = ded.parentElement.querySelector(".sub");
+      const calc = () => {
+        const otros = totalDe(co.value.trim(), no.value.trim()).total - (x ? num0(x.Dedicacion) || 0 : 0);
+        const t = otros + (Number(ded.value) || 0);
+        ay.innerHTML = (co.value || no.value) ? `En otros proyectos: ${otros}% · <b class="${t > 100 ? "baja" : ""}">Total con este: ${t}%${t > 100 ? " ⚠ supera el 100%" : ""}</b>` : "Porcentaje de su tiempo. Déjalo vacío si no aplica.";
+      };
+      [ded, co, no].forEach((i) => i.addEventListener("input", calc)); calc();
+    } };
     modal(nuevo ? `Nuevo stakeholder · ${p.Nombre}` : `Editar stakeholder · ${x.Nombre || x.Rol}`, campos, nuevo ? { Rol: rolSugerido || "" } : x, (fd) => {
       if (nuevo) {
         const id = R.siguienteIdHijo("STK", S.datos.Stakeholders || [], "ID_Stakeholder", p.ID_Proyecto);
         guardar(() => S.api.agregarFila("Stakeholders", { ID_Stakeholder: id, ID_Proyecto: p.ID_Proyecto, ...fd }), "Stakeholder agregado");
       } else guardar(() => S.api.actualizarPorId("Stakeholders", "ID_Stakeholder", x.ID_Stakeholder, fd));
-    }, null, nuevo ? {} : { eliminar: { texto: "Quitar del proyecto", mensaje: `${x.Nombre || "Esta persona"} dejará de aparecer como ${x.Rol || "stakeholder"} de este proyecto.`,
+    }, null, nuevo ? vivo : { ...vivo, eliminar: { texto: "Quitar del proyecto", mensaje: `${x.Nombre || "Esta persona"} dejará de aparecer como ${x.Rol || "stakeholder"} de este proyecto.`,
       accion: () => guardar(() => S.api.eliminarFilas("Stakeholders", "ID_Stakeholder", [x.ID_Stakeholder]), "Stakeholder quitado") } });
   }
 
@@ -1681,6 +1760,7 @@
       { k: "Cliente_Area", label: "Cliente / área", tipo: "select", opciones: S.cat.Cliente_Area },
       { k: "PM", label: "PM responsable", tipo: "select", opciones: pms, bloqueado: pmFijo,
         ayuda: pmFijo ? "Quedas como PM de esta iniciativa." : "Solo aparecen usuarios con rol PM. El PM verá este proyecto." },
+      { k: "Dedicacion_PM", label: "Dedicación del PM a este proyecto (%)", tipo: "number", min: 0, max: 100, placeholder: "Ej.: 40", ayuda: "Suma en «Capacidad del equipo»." },
       { k: "Metodologia", label: "Metodología", tipo: "select", opciones: S.cat.Metodologia },
       { k: "Prioridad", label: "Prioridad", tipo: "select", opciones: S.cat.Prioridad, def: "Media" },
       { seccion: "2. Estado" },
@@ -1700,13 +1780,88 @@
       { seccion: "5. Proveedores", ayuda: "márcalos o crea uno nuevo aquí mismo" },
       { k: "Proveedores", label: "Proveedor(es) del proyecto", tipo: "checks", vacio: "Aún no hay proveedores. Créalos en Catálogos → Proveedores.",
         opciones: proveedoresActivos(p ? p.Proveedores : "").map((x) => [x.ID_Proveedor, x.Nombre]) },
-      { seccion: "6. Enlaces", ayuda: "opcionales; pega la dirección completa" },
+      { seccion: "6. Equipo y stakeholders", ayuda: "roles, personas y su dedicación" },
+      { html: `<div id="fp-equipo"></div>` },
+      { seccion: "7. Enlaces", ayuda: "opcionales; pega la dirección completa" },
       { k: "URL_Repositorio", label: "URL del repositorio", tipo: "url", placeholder: "https://github.com/… o https://dev.azure.com/…" },
       { k: "URL_Documentos", label: "URL de documentos", tipo: "url", placeholder: "https://…sharepoint.com/…" },
-      { seccion: "7. Comentario" },
+      { seccion: "8. Comentario" },
       { k: "Comentario_Estado", label: "Comentario de estado", tipo: "textarea", placeholder: "Novedad principal del proyecto" },
     ];
     const valores = p ? { ...p } : { PM: pmFijo ? u.Correo : "" };
+    // Equipo: personas nuevas se guardan con el proyecto; los roles nuevos van de una vez al catálogo.
+    const pendStk = [];
+    const initEquipo = (m) => {
+      const cont = m.querySelector("#fp-equipo");
+      const actuales = p ? stakeholdersDe(p.ID_Proyecto) : [];
+      const opcionesRol = () => (S.cat.Rol_Stakeholder || []).map((r) => `<option>${esc(r)}</option>`).join("");
+      cont.innerHTML = `
+        <ul class="eq-lista" id="eq-lista"></ul>
+        <div class="acciones"><button type="button" class="btn chico" id="eq-abrir">+ Agregar persona</button><button type="button" class="btn chico" id="rol-abrir">+ Crear rol nuevo</button></div>
+        <div id="rol-form" class="eq-form" hidden><input id="rol-nombre" placeholder="Nombre del rol (ej.: Líder técnico, Arquitecto, QA)" aria-label="Nuevo rol">
+          <button type="button" class="btn primario chico" id="rol-crear">Crear rol</button><button type="button" class="btn chico" id="rol-cancelar">Cancelar</button></div>
+        <div id="eq-form" class="eq-form" hidden><div class="pn-grid">
+          <select id="eq-rol" aria-label="Rol">${opcionesRol()}</select>
+          <input id="eq-nombre" placeholder="Nombre *" aria-label="Nombre" list="eq-gente" autocomplete="off">
+          <input id="eq-correo" type="email" placeholder="Correo" aria-label="Correo">
+          <input id="eq-ded" type="number" min="0" max="100" placeholder="Dedicación %" aria-label="Dedicación"></div>
+          <datalist id="eq-gente">${[...new Set([...S.datos.Usuarios.map((x) => x.Nombre), ...(S.datos.Stakeholders || []).map((x) => x.Nombre)].filter(Boolean))].map((n) => `<option value="${esc(n)}">`).join("")}</datalist>
+          <div class="sub" id="eq-total"></div>
+          <div class="acciones"><button type="button" class="btn primario chico" id="eq-agregar">Agregar al equipo</button><button type="button" class="btn chico" id="eq-cancelar">Cancelar</button></div></div>
+        <div class="error-campo" id="eq-error"></div>`;
+      const pintar = () => {
+        m.querySelector("#eq-lista").innerHTML = [
+          ...actuales.map((x) => `<li><b>${esc(x.Rol)}</b> · ${esc(x.Nombre)}${num0(x.Dedicacion) !== null ? ` · ${num0(x.Dedicacion)}%` : ""} <span class="sub">(se edita en la ficha)</span></li>`),
+          ...pendStk.map((x, i) => `<li class="nuevo"><b>${esc(x.Rol)}</b> · ${esc(x.Nombre)}${x.Dedicacion !== "" ? ` · ${x.Dedicacion}%` : ""} <span class="pill encurso">nuevo</span> <button type="button" class="btn enlace" data-q="${i}">✕</button></li>`),
+        ].join("") || `<li class="sub">Sin personas aún. Agrega Sponsor, Líder funcional, Product Owner…</li>`;
+        m.querySelectorAll("[data-q]").forEach((b) => b.addEventListener("click", () => { pendStk.splice(Number(b.dataset.q), 1); pintar(); }));
+      };
+      pintar();
+      const $m = (id) => m.querySelector(id);
+      const err = $m("#eq-error");
+      const gente = [...S.datos.Usuarios.map((x) => [x.Nombre, x.Correo]), ...(S.datos.Stakeholders || []).map((x) => [x.Nombre, x.Correo])];
+      $m("#eq-nombre").addEventListener("change", () => { const g = gente.find((x) => lc(x[0]) === lc($m("#eq-nombre").value) && x[1]); if (g && !$m("#eq-correo").value) $m("#eq-correo").value = g[1]; tot(); });
+      const tot = () => {
+        const n = $m("#eq-nombre").value.trim(), c = $m("#eq-correo").value.trim();
+        if (!n && !c) { $m("#eq-total").textContent = ""; return; }
+        const otros = totalDe(c, n).total, t = otros + (Number($m("#eq-ded").value) || 0);
+        $m("#eq-total").innerHTML = `Hoy tiene asignado: ${otros}% · <b class="${t > 100 ? "baja" : ""}">Total: ${t}%${t > 100 ? " ⚠ supera el 100%" : ""}</b>`;
+      };
+      ["#eq-ded", "#eq-correo"].forEach((id) => $m(id).addEventListener("input", tot));
+      $m("#eq-abrir").addEventListener("click", () => { $m("#eq-form").hidden = false; $m("#rol-form").hidden = true; $m("#eq-nombre").focus(); });
+      $m("#eq-cancelar").addEventListener("click", () => { $m("#eq-form").hidden = true; });
+      $m("#rol-abrir").addEventListener("click", () => { $m("#rol-form").hidden = false; $m("#rol-nombre").focus(); });
+      $m("#rol-cancelar").addEventListener("click", () => { $m("#rol-form").hidden = true; });
+      $m("#eq-agregar").addEventListener("click", () => {
+        const nombre = $m("#eq-nombre").value.trim(), correo = $m("#eq-correo").value.trim(), ded = $m("#eq-ded").value.trim();
+        if (!nombre) { err.textContent = "Escribe el nombre de la persona."; return; }
+        if (correo && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(correo)) { err.textContent = "Correo no válido."; return; }
+        if (ded !== "" && (Number(ded) < 0 || Number(ded) > 100)) { err.textContent = "La dedicación va de 0 a 100."; return; }
+        pendStk.push({ Rol: $m("#eq-rol").value, Nombre: nombre, Correo: correo, Dedicacion: ded === "" ? "" : Number(ded) });
+        ["#eq-nombre", "#eq-correo", "#eq-ded"].forEach((id) => { $m(id).value = ""; });
+        $m("#eq-total").textContent = ""; err.textContent = ""; pintar();
+      });
+      $m("#rol-crear").addEventListener("click", async () => {
+        const rol = $m("#rol-nombre").value.trim();
+        if (!rol) { err.textContent = "Escribe el nombre del rol."; return; }
+        if ((S.cat.Rol_Stakeholder || []).some((r) => lc(r) === lc(rol))) { err.textContent = "Ese rol ya existe."; return; }
+        cargando(true, "Creando rol…");
+        try {
+          await S.api.agregarFila("Catalogos", { Lista: "Rol_Stakeholder", Valor: rol });
+          S.datos.Catalogos.push({ Lista: "Rol_Stakeholder", Valor: rol }); (S.cat.Rol_Stakeholder = S.cat.Rol_Stakeholder || []).push(rol);
+          $m("#eq-rol").innerHTML = opcionesRol(); $m("#eq-rol").value = rol;
+          $m("#rol-nombre").value = ""; $m("#rol-form").hidden = true; $m("#eq-form").hidden = false; err.textContent = "";
+          toast(`Rol «${rol}» creado`);
+        } catch (e) { err.textContent = "No se pudo crear el rol: " + e.message; }
+        finally { cargando(false); }
+      });
+    };
+    const guardarEquipo = async (pid) => {
+      if (!pendStk.length) return;
+      const base = S.datos.Stakeholders || [];
+      await S.api.agregarFilas("Stakeholders", pendStk.map((x, i) => ({ ID_Stakeholder: R.siguienteIdHijo("STK", base, "ID_Stakeholder", pid, i), ID_Proyecto: pid,
+        Rol: x.Rol, Nombre: x.Nombre, Cargo: "", Area: "", Correo: x.Correo, Telefono: "", ID_Proveedor: "", Dedicacion: x.Dedicacion })));
+    };
     // Crear un proveedor sin salir del formulario: se guarda de inmediato y queda marcado.
     const initProv = (m) => {
       const checks = m.querySelector('[data-checks="Proveedores"]');
@@ -1752,14 +1907,14 @@
         const fila = { ...fd, Nombre: fd.Nombre || `Iniciativa ${id}`, ID_Proyecto: id, Avance_Real: fd.Avance_Real === "" ? 0 : fd.Avance_Real, ...sello() };
         S.pid = fila.ID_Proyecto;
         S.vista = "ficha";
-        guardar(() => S.api.agregarFila("Proyectos", fila), `Iniciativa ${fila.ID_Proyecto} registrada`);
+        guardar(async () => { await S.api.agregarFila("Proyectos", fila); await guardarEquipo(id); }, `Iniciativa ${fila.ID_Proyecto} registrada`);
       } else {
-        guardar(() => S.api.actualizarPorId("Proyectos", "ID_Proyecto", p.ID_Proyecto, { ...fd, ...sello() }));
+        guardar(async () => { await S.api.actualizarPorId("Proyectos", "ID_Proyecto", p.ID_Proyecto, { ...fd, ...sello() }); await guardarEquipo(p.ID_Proyecto); });
       }
     }, (fd) => (fd.Fecha_Inicio && fd.Fecha_Fin_Plan && fd.Fecha_Fin_Plan < fd.Fecha_Inicio ? "La fecha fin no puede ser anterior a la fecha de inicio." : ""),
-    !nuevo && R.puede(u, "verTodo") ? { init: initProv, eliminar: { texto: "Eliminar proyecto", titulo: `Eliminar ${p.ID_Proyecto}`,
+    !nuevo && R.puede(u, "verTodo") ? { init: (m) => { initProv(m); initEquipo(m); }, eliminar: { texto: "Eliminar proyecto", titulo: `Eliminar ${p.ID_Proyecto}`,
       mensaje: `Se borrará «${p.Nombre}» con todos sus seguimientos, compromisos, hitos, riesgos, stakeholders y actas. No se puede deshacer. Si solo terminó, mejor cambia su estado a Cerrado o Cancelado.`,
-      accion: () => { S.vista = "proyectos"; guardar(() => eliminarProyecto(p.ID_Proyecto), `Proyecto ${p.ID_Proyecto} eliminado`); } } } : { init: initProv });
+      accion: () => { S.vista = "proyectos"; guardar(() => eliminarProyecto(p.ID_Proyecto), `Proyecto ${p.ID_Proyecto} eliminado`); } } } : { init: (m) => { initProv(m); initEquipo(m); } });
   }
 
   function formSeguimiento(p) {
