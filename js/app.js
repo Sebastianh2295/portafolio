@@ -171,7 +171,7 @@
     app().innerHTML = `
       <div class="login">
         <div class="login-caja">
-          <div class="marca"><span class="logo">P</span> Portafolio de Proyectos</div>
+          <div class="marca"><span class="logo">P</span><div><div>Portafolio de Proyectos</div><div class="sub">Oficina de Proyectos · FSFB</div></div></div>
           <p>Registra y consulta el avance de los proyectos del portafolio. Todo se guarda en el Excel del equipo.</p>
           <ol class="pasos-login"><li>Escribe tu correo corporativo.</li><li>Verás los proyectos que te corresponden según tu rol.</li></ol>
           <form id="f-login" novalidate>
@@ -210,27 +210,51 @@
     const menu = VISTAS.filter((v) => !v.permiso || R.puede(S.usuario, v.permiso));
     const activa = S.vista === "ficha" ? "proyectos" : S.vista;
     const etiquetaModo = { demo: "Demostración: los cambios no se guardan", panel: "Conectado a Excel", ventana: "Conectado a Excel" }[S.modo];
+    const u = S.usuario;
+    const al = alertas(); const nAl = al.vencidos.length + al.pronto.length;
+    const oscuro = document.documentElement.dataset.tema === "oscuro";
+    S.navMini = leerLocal("pmo_nav_mini", false);
+    const itemNav = (v) => `<button class="nav ${v.id === activa ? "activa" : ""}" data-vista="${v.id}" title="${esc(v.t)}">${ico(v.id)}<span>${esc(v.t)}</span></button>`;
     app().innerHTML = `
-      <div class="layout">
-        <aside class="lateral">
-          <div class="marca"><span class="logo">P</span> Portafolio PMO</div>
-          <nav aria-label="Módulos">${menu.map((v) => `<button class="nav ${v.id === activa ? "activa" : ""}" data-vista="${v.id}">${esc(v.t)}</button>`).join("")}</nav>
-          <select id="nav-movil" aria-label="Módulo">${menu.map((v) => `<option value="${v.id}" ${v.id === activa ? "selected" : ""}>${esc(v.t)}</option>`).join("")}</select>
+      <div class="shell ${S.navMini ? "mini" : ""}">
+        <header class="appbar">
+          <button class="ab-btn" id="b-menu" aria-label="Mostrar u ocultar el menú">${ico("menu")}</button>
+          <div class="ab-marca"><span class="logo">P</span><span class="ab-nombre">Portafolio PMO</span><span class="ab-org">FSFB</span></div>
+          <button class="ab-buscar" id="b-buscar" title="Búsqueda global (Ctrl+K)">${ico("buscar")}<span>Buscar proyectos, personas, riesgos…</span><kbd>Ctrl K</kbd></button>
+          <div class="ab-der">
+            <span class="modo ${S.modo}" title="${esc(etiquetaModo)}">${S.modo === "demo" ? "Demo" : "Excel"}</span>
+            <button class="ab-btn campana ${al.vencidos.length ? "roja" : nAl ? "ambar" : ""}" id="b-alertas" title="Compromisos vencidos o por vencer">${ico("campana")}${nAl ? `<span class="ab-badge">${nAl}</span>` : ""}</button>
+            <button class="ab-btn" id="b-ayuda" title="Mostrar la ayuda de esta pantalla">${ico("ayuda")}</button>
+            <div class="ab-usuario"><button class="ab-avatar" id="b-usuario" aria-haspopup="true" aria-expanded="false" title="${esc(u.Nombre || u.Correo)}">${avatar(u.Nombre || u.Correo)}</button>
+              <div class="menu-usuario" id="menu-usuario" hidden>
+                <div class="mu-cab">${avatar(u.Nombre || u.Correo, "grande")}<div><b>${esc(u.Nombre || u.Correo)}</b><div class="sub">${esc(u.Correo)}</div><div class="sub">${esc(R.roles(u).join(", "))}</div></div></div>
+                <button class="mu-item" id="b-recargar">${ico("actualizar")} Actualizar datos del Excel</button>
+                <button class="mu-item" id="b-tema">${ico(oscuro ? "sol" : "luna")} ${oscuro ? "Modo claro" : "Modo oscuro"}</button>
+                <div class="mu-sep"></div>
+                <div class="mu-info sub">${esc(etiquetaModo)} · versión ${esc(window.APP_VERSION || "")}</div>
+                <button class="mu-item" id="b-salir">${ico("salir")} Salir</button>
+              </div></div>
+          </div>
+        </header>
+        <aside class="nav-lat" aria-label="Módulos">
+          ${GRUPOS_NAV.map(([g, ids]) => { const its = menu.filter((v) => ids.includes(v.id)); return its.length ? `<div class="nav-grupo"><div class="nav-titulo">${esc(g)}</div>${its.map(itemNav).join("")}</div>` : ""; }).join("")}
+          <button class="nav nav-colapsar" id="b-colapsar" title="${S.navMini ? "Expandir menú" : "Contraer menú"}">${ico(S.navMini ? "expandir" : "colapsar")}<span>Contraer menú</span></button>
         </aside>
-        <main>
-          <header class="barra">
-            <span class="modo ${S.modo}">${esc(etiquetaModo)}</span><span class="version" title="Versión de la app">v${esc(window.APP_VERSION || "")}</span>
-            <span class="quien">${esc(S.usuario.Nombre || S.usuario.Correo)} · <b>${esc(R.roles(S.usuario).join(", "))}</b></span>
-            ${(() => { const a = alertas(); const n = a.vencidos.length + a.pronto.length; return `<button class="btn campana ${a.vencidos.length ? "roja" : n ? "ambar" : ""}" id="b-alertas" title="Compromisos vencidos o por vencer">🔔 <span>${n}</span></button>`; })()}
-            <button class="btn" id="b-ayuda" title="Mostrar la ayuda de esta pantalla">? Ayuda</button>
-            <button class="btn" id="b-recargar" title="Volver a leer el Excel">Actualizar</button>
-            <button class="btn" id="b-salir">Salir</button>
-          </header>
-          <section id="vista"></section>
-        </main>
+        <div class="nav-velo" id="nav-velo"></div>
+        <main class="contenido">${migas()}<section id="vista"></section></main>
       </div>`;
-    document.querySelectorAll(".nav").forEach((b) => b.addEventListener("click", () => ir(b.dataset.vista)));
-    $("#nav-movil").addEventListener("change", (e) => ir(e.target.value));
+    document.querySelectorAll(".nav[data-vista]").forEach((b) => b.addEventListener("click", () => { document.body.classList.remove("nav-abierta"); ir(b.dataset.vista); }));
+    document.querySelectorAll("[data-miga]").forEach((b) => b.addEventListener("click", () => ir(b.dataset.miga)));
+    $("#b-menu").addEventListener("click", () => {
+      if (window.innerWidth <= 760) document.body.classList.toggle("nav-abierta");
+      else { guardarLocal("pmo_nav_mini", !S.navMini); render(); }
+    });
+    $("#nav-velo").addEventListener("click", () => document.body.classList.remove("nav-abierta"));
+    $("#b-colapsar").addEventListener("click", () => { guardarLocal("pmo_nav_mini", !S.navMini); render(); });
+    $("#b-buscar").addEventListener("click", abrirBusqueda);
+    const mu = $("#menu-usuario"), bu = $("#b-usuario");
+    bu.addEventListener("click", (e) => { e.stopPropagation(); mu.hidden = !mu.hidden; bu.setAttribute("aria-expanded", String(!mu.hidden)); });
+    $("#b-tema").addEventListener("click", () => { aplicarTema(oscuro ? "claro" : "oscuro"); render(); });
     $("#b-salir").addEventListener("click", () => { S.usuario = null; S.avisoAlertas = false; guardarSesion(""); render(); });
     $("#b-alertas").addEventListener("click", panelAlertas);
     if (!S.avisoAlertas) {
@@ -405,12 +429,15 @@
       <span class="avance-real" style="width:${Math.min(100, Number(real) || 0)}%"></span>
       <span class="avance-plan" style="left:${Math.min(100, Number(plan) || 0)}%"></span>
     </span><span class="avance-txt">${pct(real)} / ${pct(plan)}</span>`;
-  const vacio = (msg) => `<div class="vacio">${esc(msg)}</div>`;
+  const vacio = (msg) => `<div class="vacio">${typeof ico === "function" ? ico("vacio", "vacio-ico") : ""}<div>${esc(msg)}</div></div>`;
 
   function grafico(canvas, config) {
     if (!canvas) return;
     if (typeof Chart === "undefined") { canvas.replaceWith(Object.assign(document.createElement("div"), { className: "vacio", textContent: "No se pudo cargar la librería de gráficos." })); return; }
-    Chart.defaults.font.family = "Calibri, Arial, sans-serif";
+    const cs = getComputedStyle(document.documentElement);
+    Chart.defaults.font.family = cs.getPropertyValue("--fuente").trim() || "Segoe UI, Arial, sans-serif";
+    Chart.defaults.color = cs.getPropertyValue("--texto2").trim() || "#5f6b7a";
+    Chart.defaults.borderColor = cs.getPropertyValue("--borde").trim() || "#e3e8ee";
     S.charts.push(new Chart(canvas, config));
   }
 
@@ -975,7 +1002,7 @@
         <thead><tr><th>Proyecto</th><th class="opc">Área</th><th>PM</th><th class="opc">Metodología</th><th class="opc">Fase</th><th>Estado</th><th>Semáforo</th><th>Avance real / plan</th><th class="opc">Fin plan</th><th>Seguimiento</th></tr></thead>
         <tbody>${lista.map((p) => `<tr class="clic" data-pid="${esc(p.ID_Proyecto)}" tabindex="0">
           <td><b>${esc(p.Nombre)}</b><div class="sub">${esc(p.ID_Proyecto)} · prioridad ${esc(String(p.Prioridad).toLowerCase())}</div></td><td class="opc">${esc(p.Cliente_Area)}</td>
-          <td>${esc(nombreUsuario(p.PM))}</td><td class="opc">${esc(p.Metodologia)}</td><td class="opc">${esc(p.Fase)}</td><td>${esc(p.Estado)}</td><td>${chipSemaforo(p.Semaforo)}</td>
+          <td>${persona(nombreUsuario(p.PM))}</td><td class="opc">${esc(p.Metodologia)}</td><td class="opc">${esc(p.Fase)}</td><td>${esc(p.Estado)}</td><td>${chipSemaforo(p.Semaforo)}</td>
           <td class="celda-avance">${barraAvance(p.Avance_Real, p.Avance_Planeado)}</td><td class="opc">${fecha(p.Fecha_Fin_Plan)}</td>
           <td>${pill(R.estadoSeguimiento(p, S.datos.Seguimientos).estado)}</td></tr>`).join("") || `<tr><td colspan="10">${vacio(visibles().length ? "No hay proyectos con estos filtros. Prueba «Limpiar filtros»." : "Aún no tienes proyectos. Registra el primero con «+ Nueva iniciativa».")}</td></tr>`}</tbody>
       </table></div></div>`;
@@ -2186,7 +2213,7 @@
         <ul class="lista">${dups.map((g, i) => `<li>${g.map((r) => `<b>${esc(r.Nombre)}</b>${r.Correo ? ` <span class="sub">${esc(r.Correo)}</span>` : ""}`).join(" · ")} <button class="btn chico" data-fusionar="${i}">Fusionar</button></li>`).join("")}</ul></div>` : ""}
       <div class="card"><p class="sub">Directorio único de personas del portafolio. En stakeholders, equipo y responsables de compromisos se eligen de aquí y sus datos se llenan solos; si escribes a alguien nuevo, se agrega automáticamente.</p>
         ${lista.length ? `<div class="tabla-scroll"><table><thead><tr><th>Persona</th><th>Empresa</th><th>Área</th><th>Contacto</th><th>Asignado</th><th></th></tr></thead><tbody>
-          ${lista.map((r) => { const a = asig(r), c = num0(r.Capacidad) ?? 100; return `<tr class="${r.Activo === "No" ? "inactivo" : ""}"><td><b>${esc(r.Nombre)}</b>${r.Cargo ? `<div class="sub">${esc(r.Cargo)}</div>` : ""}${r.Activo === "No" ? ` <span class="pill noaplica">Inactivo</span>` : ""}</td>
+          ${lista.map((r) => { const a = asig(r), c = num0(r.Capacidad) ?? 100; return `<tr class="${r.Activo === "No" ? "inactivo" : ""}"><td>${persona(r.Nombre, r.Cargo)}${r.Activo === "No" ? ` <span class="pill noaplica">Inactivo</span>` : ""}</td>
             <td>${esc(empresaDe(r))}</td><td>${esc(r.Area || "—")}</td><td>${contacto(r.Correo, r.Telefono)}</td>
             <td class="nowrap">${a ? `${a.total}% de ${c}%${a.total > c ? ` <span class="baja">⚠</span>` : ""}<div class="sub">${a.asign.length} asignación(es)</div>` : `<span class="sub">— de ${c}%</span>`}</td>
             <td class="derecha">${puede ? `<button class="btn chico" data-rec="${esc(r.ID_Recurso)}">Editar</button>` : ""}</td></tr>`; }).join("")}</tbody></table></div>`
@@ -2456,7 +2483,7 @@
           <span class="rg-cal ${cr ? R.nivelRiesgo(cr).toLowerCase() : "vacia"}" title="Después de mitigar: probabilidad ${esc(PROB_TXT[r.Probabilidad_Residual] || "—")} × impacto ${esc(IMP_TXT[r.Impacto_Residual] || "—")}">Residual <b>${cr || "—"}</b> ${cr ? R.nivelRiesgo(cr) : ""}</span>
           ${baja !== null ? `<span class="sub">${baja > 0 ? `la mitigación lo baja ${baja}%` : baja < 0 ? "⚠ el residual es mayor" : "sin reducción"}</span>` : ""}
         </div>
-        <div class="rg-meta"><span>👤 ${r.Responsable ? esc(r.Responsable) : `<span class="baja">Sin responsable</span>`}</span><span>📍 ${esc(origenRiesgo(r))}</span></div>
+        <div class="rg-meta"><span>${r.Responsable ? persona(r.Responsable) : `<span class="baja">Sin responsable</span>`}</span><span>📍 ${esc(origenRiesgo(r))}</span></div>
         ${r.Plan_Mitigacion || r.Plan_Contingencia ? `<details class="rg-planes"><summary>Planes de mitigación y contingencia</summary>
           ${r.Plan_Mitigacion ? `<div><b>Mitigación:</b> ${esc(r.Plan_Mitigacion)}</div>` : ""}${r.Plan_Contingencia ? `<div><b>Contingencia:</b> ${esc(r.Plan_Contingencia)}</div>` : ""}</details>`
           : riesgoActivo(r) ? `<div class="baja sub">⚠ Sin plan de mitigación</div>` : ""}
@@ -2514,6 +2541,148 @@
     }));
     if (alEditar) el.querySelectorAll(".rg-card [data-riesgo]").forEach((b) => b.addEventListener("click", () => alEditar(S.datos.Riesgos.find((x) => x.ID_Riesgo === b.dataset.riesgo))));
   }
+
+  // ---------- Íconos (trazos estilo Lucide, dibujados en línea) ----------
+  const ICONOS = {
+    dashboard: '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>',
+    avances: '<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>',
+    seguimiento: '<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/>',
+    proyectos: '<path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+    cronograma: '<path d="M3 3v18h18"/><rect x="7" y="6" width="9" height="3" rx="1"/><rect x="10" y="11" width="8" height="3" rx="1"/><rect x="6" y="16" width="6" height="3" rx="1"/>',
+    riesgos: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+    recursos: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+    capacidad: '<path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/>',
+    priorizacion: '<path d="M3 3v18h18"/><path d="M7 16h4"/><path d="M7 11h8"/><path d="M7 6h12"/>',
+    lecciones: '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>',
+    catalogos: '<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M2 14h4M10 8h4M18 16h4"/>',
+    usuarios: '<circle cx="12" cy="8" r="4"/><path d="M6 21v-2a6 6 0 0 1 12 0v2"/>',
+    auditoria: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
+    buscar: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+    campana: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
+    ayuda: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
+    actualizar: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
+    salir: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/>',
+    luna: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
+    sol: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>',
+    menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
+    colapsar: '<path d="m11 17-5-5 5-5"/><path d="m18 17-5-5 5-5"/>',
+    expandir: '<path d="m6 17 5-5-5-5"/><path d="m13 17 5-5-5-5"/>',
+    vacio: '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+    compromiso: '<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>',
+    ticket: '<path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M13 5v2M13 17v2M13 11v2"/>',
+    ir: '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
+  };
+  const ico = (n, cls = "") => `<svg class="ico ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONOS[n] || ""}</svg>`;
+
+  // Avatar con iniciales y un color estable por persona.
+  function avatar(nombre, tam = "") {
+    const n = String(nombre || "?").replace(/@.*/, "").trim();
+    const partes = n.split(/[\s._-]+/).filter(Boolean);
+    const ini = ((partes[0] || "?")[0] + (partes.length > 1 ? partes[partes.length - 1][0] : "")).toUpperCase();
+    let h = 0; for (const ch of n) h = (h * 31 + ch.charCodeAt(0)) % 360;
+    return `<span class="avatar ${tam}" style="--av:${h}" title="${esc(nombre)}" aria-hidden="true">${esc(ini)}</span>`;
+  }
+  const persona = (nombre, sub) => `<span class="persona">${avatar(nombre)}<span><span class="persona-n">${esc(nombre || "—")}</span>${sub ? `<span class="sub">${esc(sub)}</span>` : ""}</span></span>`;
+
+  // Tema claro / oscuro (se recuerda en este equipo).
+  function aplicarTema(t) { document.documentElement.dataset.tema = t; guardarLocal("pmo_tema", t); }
+  aplicarTema(leerLocal("pmo_tema", "claro"));
+
+  // Menú agrupado como en las suites empresariales.
+  const GRUPOS_NAV = [
+    ["Inicio", ["dashboard", "avances", "seguimiento"]],
+    ["Portafolio", ["proyectos", "cronograma", "riesgos", "priorizacion"]],
+    ["Personas", ["recursos", "capacidad"]],
+    ["Conocimiento", ["lecciones"]],
+    ["Administración", ["catalogos", "usuarios", "auditoria"]],
+  ];
+  const NOMBRE_TAB = { resumen: "Resumen", compromisos: "Compromisos", seguimientos: "Seguimientos", hitos: "Hitos", riesgos: "Riesgos", tickets: "Tickets", cambios: "Cambios", raci: "RACI", lecciones: "Lecciones", auditoria: "Historial de cambios" };
+  function migas() {
+    const v = VISTAS.find((x) => x.id === (S.vista === "ficha" ? "proyectos" : S.vista));
+    const grupo = (GRUPOS_NAV.find((g) => g[1].includes(v ? v.id : "")) || ["Inicio"])[0];
+    const partes = [`<span>${esc(grupo)}</span>`, S.vista === "ficha" ? `<button class="btn enlace" data-miga="proyectos">Proyectos</button>` : `<span>${esc(v ? v.t : "")}</span>`];
+    if (S.vista === "ficha") { const p = proyecto(S.pid); if (p) partes.push(`<span>${esc(p.Nombre)}</span>`, `<span>${esc(NOMBRE_TAB[S.fichaTab] || "Resumen")}</span>`); }
+    return `<nav class="migas" aria-label="Ubicación">${partes.join('<span class="sep">›</span>')}</nav>`;
+  }
+
+  // Ordenar cualquier tabla con clic en el encabezado (ignora tablas agrupadas o de edición).
+  document.addEventListener("click", (e) => {
+    const th = e.target.closest && e.target.closest("#vista table:not(.raci):not(.no-orden) thead th");
+    if (!th || e.target.closest("button, a, input, select")) return;
+    const tabla = th.closest("table"), tb = tabla.tBodies[0];
+    if (!tb || tb.querySelector("tr.grupo, td[colspan]")) return;
+    const col = [...th.parentNode.children].indexOf(th);
+    const dir = th.dataset.orden === "asc" ? "desc" : "asc";
+    tabla.querySelectorAll("thead th").forEach((x) => delete x.dataset.orden);
+    th.dataset.orden = dir;
+    const val = (tr) => { const t = (tr.children[col] ? tr.children[col].innerText : "").trim(); const f = t.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+      if (f) return `${f[3]}${f[2]}${f[1]}`; const n = parseFloat(t.replace(/[$.\s]/g, "").replace(",", ".")); return /^[$\d]/.test(t) && !Number.isNaN(n) ? n : normTxt(t); };
+    const filas = [...tb.rows].sort((a, b) => { const x = val(a), y = val(b); const r = typeof x === "number" && typeof y === "number" ? x - y : String(x).localeCompare(String(y), "es", { numeric: true }); return dir === "asc" ? r : -r; });
+    filas.forEach((f) => tb.appendChild(f));
+  });
+
+  // ---------- Búsqueda global (Ctrl+K) ----------
+  function indiceBusqueda() {
+    const out = [];
+    const ids = new Set(visibles().map((p) => p.ID_Proyecto));
+    const nom = (pid) => (proyecto(pid) || {}).Nombre || pid;
+    VISTAS.filter((v) => !v.permiso || R.puede(S.usuario, v.permiso)).forEach((v) => out.push({ tipo: "Ir a", ico: v.id, t: v.t, sub: "Pantalla", ir: () => ir(v.id) }));
+    visibles().forEach((p) => out.push({ tipo: "Proyectos", ico: "proyectos", t: p.Nombre, sub: [p.ID_Proyecto, p.Codigo_Almera ? `Almera ${p.Codigo_Almera}` : "", nombreUsuario(p.PM), p.Estado].filter(Boolean).join(" · "), ir: () => { S.fichaTab = "resumen"; ir("ficha", p.ID_Proyecto); } }));
+    recursos().forEach((r) => out.push({ tipo: "Personas", ico: "recursos", t: r.Nombre, sub: [r.Cargo, empresaDe(r), r.Correo].filter(Boolean).join(" · "), ir: () => { S.recQ = r.Nombre; ir("recursos"); } }));
+    S.datos.Compromisos.filter((c) => ids.has(c.ID_Proyecto)).forEach((c) => out.push({ tipo: "Compromisos", ico: "compromiso", t: c.Compromiso, sub: `${nom(c.ID_Proyecto)} · ${c.Responsable || "sin responsable"} · ${R.estadoCompromiso(c)}`, peso: R.cerrado(c) ? 1 : 0,
+      ir: () => { S.fichaTab = "compromisos"; ir("ficha", c.ID_Proyecto); detalleCompromiso(c.ID_Compromiso); } }));
+    S.datos.Riesgos.filter((r) => ids.has(r.ID_Proyecto)).forEach((r) => out.push({ tipo: "Riesgos", ico: "riesgos", t: r.Descripcion, sub: `${nom(r.ID_Proyecto)} · #${numRiesgo(r)} · ${r.Estado} · ${nivelActual(r)}`, peso: riesgoActivo(r) ? 0 : 1,
+      ir: () => { S.fichaTab = "riesgos"; ir("ficha", r.ID_Proyecto); formRiesgo(proyecto(r.ID_Proyecto), r); } }));
+    (S.datos.Tickets || []).filter((t) => ids.has(t.ID_Proyecto)).forEach((t) => out.push({ tipo: "Tickets", ico: "ticket", t: `${t.Numero || ""} ${t.Titulo || ""}`.trim(), sub: `${nom(t.ID_Proyecto)} · ${t.Estado}`, ir: () => { S.fichaTab = "tickets"; ir("ficha", t.ID_Proyecto); } }));
+    (S.datos.Lecciones || []).filter((l) => ids.has(l.ID_Proyecto)).forEach((l) => out.push({ tipo: "Lecciones", ico: "lecciones", t: l.Leccion, sub: `${nom(l.ID_Proyecto)} · ${l.Categoria || ""}`, ir: () => { S.fichaTab = "lecciones"; ir("ficha", l.ID_Proyecto); } }));
+    return out;
+  }
+  function abrirBusqueda() {
+    if (!S.usuario || $("#paleta")) return;
+    const indice = indiceBusqueda();
+    const o = document.createElement("div");
+    o.id = "paleta";
+    o.innerHTML = `<div class="paleta-caja" role="dialog" aria-modal="true" aria-label="Búsqueda global">
+      <div class="paleta-in">${ico("buscar")}<input id="paleta-q" placeholder="Buscar proyectos, personas, compromisos, riesgos, tickets o pantallas…" autocomplete="off"><kbd>Esc</kbd></div>
+      <div id="paleta-res" class="paleta-res" role="listbox"></div>
+      <div class="paleta-pie"><span><kbd>↑</kbd><kbd>↓</kbd> moverse</span><span><kbd>Enter</kbd> abrir</span><span><kbd>Esc</kbd> cerrar</span></div></div>`;
+    document.body.appendChild(o);
+    const q = $("#paleta-q"), res = $("#paleta-res");
+    let vis = [], act = 0;
+    const cerrar = () => o.remove();
+    const pintar = () => {
+      const terms = normTxt(q.value).split(" ").filter(Boolean);
+      const orden = ["Ir a", "Proyectos", "Personas", "Compromisos", "Riesgos", "Tickets", "Lecciones"];
+      vis = (terms.length ? indice.filter((x) => { const h = normTxt(`${x.t} ${x.sub}`); return terms.every((t) => h.includes(t)); }) : indice.filter((x) => x.tipo === "Ir a" || x.tipo === "Proyectos"))
+        .sort((a, b) => orden.indexOf(a.tipo) - orden.indexOf(b.tipo) || (a.peso || 0) - (b.peso || 0));
+      const porTipo = {}; vis.forEach((x) => { (porTipo[x.tipo] = porTipo[x.tipo] || []).push(x); });
+      vis = Object.values(porTipo).flatMap((l) => l.slice(0, terms.length ? 6 : 12));
+      act = Math.min(act, Math.max(0, vis.length - 1));
+      let i = -1, html = "";
+      Object.keys(porTipo).forEach((tipo) => {
+        const l = vis.filter((x) => x.tipo === tipo);
+        if (!l.length) return;
+        html += `<div class="paleta-grupo">${esc(tipo)}</div>` + l.map((x) => { i++; return `<div class="paleta-item ${i === act ? "activo" : ""}" data-i="${i}" role="option">${ico(x.ico)}<div><div class="paleta-t">${esc(x.t)}</div><div class="sub">${esc(x.sub)}</div></div>${ico("ir", "paleta-ir")}</div>`; }).join("");
+      });
+      res.innerHTML = html || `<div class="vacio">Sin resultados para «${esc(q.value)}».</div>`;
+      const a = res.querySelector(".activo"); if (a) a.scrollIntoView({ block: "nearest" });
+    };
+    const abrir = (i) => { const x = vis[i]; if (!x) return; cerrar(); x.ir(); };
+    q.addEventListener("input", () => { act = 0; pintar(); });
+    q.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowDown") { e.preventDefault(); act = Math.min(vis.length - 1, act + 1); pintar(); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); act = Math.max(0, act - 1); pintar(); }
+      else if (e.key === "Enter") { e.preventDefault(); abrir(act); }
+      else if (e.key === "Escape") cerrar();
+    });
+    res.addEventListener("click", (e) => { const it = e.target.closest(".paleta-item"); if (it) abrir(Number(it.dataset.i)); });
+    o.addEventListener("mousedown", (e) => { if (e.target === o) cerrar(); });
+    pintar(); q.focus();
+  }
+  document.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); abrirBusqueda(); }
+  });
+  document.addEventListener("click", (e) => { const mu = document.getElementById("menu-usuario"); if (mu && !mu.hidden && !e.target.closest(".ab-usuario")) mu.hidden = true; });
 
   // ---------- Tickets del helpdesk ----------
   const ticketsDe = (pid) => (S.datos.Tickets || []).filter((t) => t.ID_Proyecto === pid);
@@ -2597,7 +2766,7 @@
         <div class="seg">${["todos", "Sobreasignado", "Al límite", "Disponible"].map((v) => `<button class="btn chico ${ver === v ? "primario" : ""}" data-capver="${v}">${v === "todos" ? "Todos" : v}</button>`).join("")}</div></div>
         <p class="sub">Suma el % de dedicación de cada persona en los proyectos activos o en pausa (PM y stakeholders). Se registra en «Editar proyecto» o al agregar un stakeholder. La línea marca la capacidad de cada persona (100% salvo que en Recursos tenga otra).</p>
         ${lista.length ? `<div class="tabla-scroll"><table><thead><tr><th>Persona</th><th>Total</th><th>Estado</th><th>Proyectos</th></tr></thead><tbody>
-          ${lista.map((x) => `<tr><td><b>${esc(x.nombre)}</b>${x.correo ? `<div class="sub">${esc(x.correo)}</div>` : ""}</td><td class="nowrap">${barraCap(x.total, x.cap)}</td><td>${pill(nivelCap(x.total, x.cap))}</td>
+          ${lista.map((x) => `<tr><td>${persona(x.nombre, x.correo)}</td><td class="nowrap">${barraCap(x.total, x.cap)}</td><td>${pill(nivelCap(x.total, x.cap))}</td>
             <td><div class="cap-asign">${x.asign.sort((a, b) => b.ded - a.ded).map((a) => ids.has(a.p.ID_Proyecto)
               ? `<button class="chip-proy" data-pid="${esc(a.p.ID_Proyecto)}">${esc(a.p.Nombre)} · ${esc(a.rol)} · <b>${a.ded}%</b></button>`
               : `<span class="chip-proy">Otro proyecto · <b>${a.ded}%</b></span>`).join("")}</div></td></tr>`).join("")}</tbody></table></div>`
@@ -2632,9 +2801,9 @@
     return `<div class="card"><div class="titulo-fila"><h2>Stakeholders y proveedores</h2>${puede ? `<button class="btn" id="b-stk">+ Stakeholder</button>` : ""}</div>
       ${faltan.length ? `<div class="faltan-stk"><span class="sub">Sin asignar:</span> ${faltan.map((r) => puede ? `<button class="btn chico" data-rol-stk="${esc(r)}">+ ${esc(r)}</button>` : `<span class="pill noaplica">${esc(r)}</span>`).join(" ")}</div>` : ""}
       <div class="tabla-scroll"><table><thead><tr><th>Rol</th><th>Nombre</th><th>Cargo / área</th><th>Empresa</th><th>Contacto</th><th>Dedicación</th><th></th></tr></thead>
-        <tbody><tr class="fila-pm"><td><b>PM</b></td><td>${esc(nombreUsuario(p.PM))}</td><td>Gerente del proyecto</td><td>Interno</td><td>${contacto(p.PM, "")}</td>
+        <tbody><tr class="fila-pm"><td><b>PM</b></td><td>${persona(nombreUsuario(p.PM))}</td><td>Gerente del proyecto</td><td>Interno</td><td>${contacto(p.PM, "")}</td>
           <td>${celdaDedicacion(p.PM, nombreUsuario(p.PM), p.Dedicacion_PM)}</td><td class="derecha sub">${puede ? "en «Editar proyecto»" : ""}</td></tr>
-        ${lista.map((x) => `<tr><td><b>${esc(x.Rol)}</b></td><td>${esc(x.Nombre)}</td><td>${esc([x.Cargo, x.Area].filter(Boolean).join(" · ") || "—")}</td>
+        ${lista.map((x) => `<tr><td><b>${esc(x.Rol)}</b></td><td>${persona(x.Nombre)}</td><td>${esc([x.Cargo, x.Area].filter(Boolean).join(" · ") || "—")}</td>
           <td>${x.ID_Proveedor ? esc((proveedor(x.ID_Proveedor) || {}).Nombre || x.ID_Proveedor) : "Interno"}</td><td>${contacto(x.Correo, x.Telefono)}</td>
           <td>${celdaDedicacion(x.Correo, x.Nombre, x.Dedicacion)}</td>
           <td class="derecha">${puede ? `<button class="btn chico" data-stk="${esc(x.ID_Stakeholder)}">Editar</button>` : ""}</td></tr>`).join("")}</tbody></table></div>
