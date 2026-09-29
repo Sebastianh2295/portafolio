@@ -17,8 +17,11 @@
     { id: "cronograma", t: "Cronograma" },
     { id: "riesgos", t: "Riesgos" },
     { id: "capacidad", t: "Capacidad del equipo" },
+    { id: "priorizacion", t: "Priorización" },
+    { id: "lecciones", t: "Lecciones aprendidas" },
     { id: "catalogos", t: "Catálogos", permiso: "catalogos" },
     { id: "usuarios", t: "Usuarios", permiso: "usuarios" },
+    { id: "auditoria", t: "Auditoría", permiso: "usuarios" },
   ];
 
   // Ayuda corta de cada pantalla: para qué sirve y cómo se usa.
@@ -49,6 +52,13 @@
     capacidad: ["Cuánto está dedicada cada persona sumando todos sus proyectos activos o en pausa.",
       "La dedicación del PM se pone en «Editar proyecto»; la de cada stakeholder, en su ficha o en la sección Equipo del formulario.",
       "Más de 100% = sobreasignado. Haz clic en un proyecto para ir a su ficha."],
+    priorizacion: ["Ordena el portafolio por un puntaje de 0 a 100 según valor, urgencia, complejidad y esfuerzo.",
+      "La calificación de cada proyecto se hace en «Editar proyecto» → Priorización.",
+      "La matriz valor vs. esfuerzo ayuda a ver ganancias rápidas y proyectos a reconsiderar."],
+    lecciones: ["Todas las lecciones aprendidas del portafolio en un solo lugar.",
+      "Busca por palabra clave o filtra por categoría antes de arrancar un proyecto parecido.",
+      "Se registran en la pestaña «Lecciones» de cada proyecto."],
+    auditoria: ["Registro de quién cambió qué y cuándo en toda la app.", "Filtra por usuario, tipo de dato o texto."],
     usuarios: ["Quién entra y qué puede hacer. Un usuario puede tener varios roles.",
       "El PM ve los proyectos donde figura como PM. El Lector ve los proyectos que le asignes aquí."],
   };
@@ -95,7 +105,8 @@
     Object.entries(CATALOGOS_BASE).forEach(([k, v]) => { if (!S.cat[k]) S.cat[k] = v.slice(); });
   }
   // Listas nuevas que se crean solas en la tabla Catalogos la primera vez (luego se editan desde Catálogos).
-  const CATALOGOS_BASE = { Rol_Stakeholder: ["Sponsor", "Líder funcional", "Product Owner"], Estado_Ticket: ["Abierto", "En curso", "Resuelto", "Cerrado"] };
+  const CATALOGOS_BASE = { Rol_Stakeholder: ["Sponsor", "Líder funcional", "Product Owner"], Estado_Ticket: ["Abierto", "En curso", "Resuelto", "Cerrado"],
+    Tipo_Cambio: ["Alcance", "Tiempo", "Costo", "Recursos", "Calidad"], Categoria_Leccion: ["Planeación", "Técnica", "Proveedores", "Comunicación", "Equipo", "Calidad", "Gestión del cambio"] };
   let sembrado = false;
   // La primera vez, deja en el Excel los roles de stakeholder base para poder editarlos desde Catálogos.
   async function sembrarCatalogos() {
@@ -132,6 +143,7 @@
     cargando(true, "Guardando en Excel…");
     try {
       await accion();
+      if (S.api.vaciar) await S.api.vaciar();
       await recargar();
       cerrarModal();
       render();
@@ -227,7 +239,7 @@
       cargando(true, "Leyendo Excel…");
       try { await recargar(); render(); toast("Datos actualizados"); } catch (e) { toast(e.message, true); } finally { cargando(false); }
     });
-    const vistas = { dashboard: vDashboard, avances: vAvances, seguimiento: vSeguimiento, proyectos: vProyectos, ficha: vFicha, capacidad: vCapacidad, cronograma: vCronograma, riesgos: vRiesgos, catalogos: vCatalogos, usuarios: vUsuarios };
+    const vistas = { dashboard: vDashboard, avances: vAvances, seguimiento: vSeguimiento, proyectos: vProyectos, ficha: vFicha, capacidad: vCapacidad, priorizacion: vPriorizacion, lecciones: vLecciones, auditoria: vAuditoria, cronograma: vCronograma, riesgos: vRiesgos, catalogos: vCatalogos, usuarios: vUsuarios };
     const el = $("#vista");
     (vistas[S.vista] || vDashboard)(el);
     el.insertAdjacentHTML("afterbegin", ayuda(S.vista));
@@ -242,7 +254,8 @@
   function ir(vista, pid) { S.vista = vista; if (pid) S.pid = pid; render(); window.scrollTo(0, 0); }
   // Cualquier elemento con data-pid abre la ficha del proyecto.
   function enlazarClics(el) {
-    el.querySelectorAll("[data-pid]").forEach((r) => r.addEventListener("click", (ev) => {
+    el.querySelectorAll("button[data-pid]:not(.chip-proy)").forEach((b) => b.addEventListener("click", (ev) => { ev.stopPropagation(); ir("ficha", b.dataset.pid); }));
+    el.querySelectorAll("[data-pid]:not(button)").forEach((r) => r.addEventListener("click", (ev) => {
       if (ev.target.closest("button, a, input, select")) return;
       ir("ficha", r.dataset.pid);
     }));
@@ -496,7 +509,8 @@
         <div class="card"><h2>Activos por PM</h2>${barrasH(porPM)}</div>
         <div class="card"><h2>Activos por área</h2>${barrasH(porArea)}</div>
       </div>
-      <div class="card"><h2>Portafolio por estado</h2>${barrasH(porEstado, { color: COLORES.azulClaro })}</div>`;
+      <div class="card"><h2>Portafolio por estado</h2>${barrasH(porEstado, { color: COLORES.azulClaro })}</div>
+      <div class="card"><h2>Curva S del presupuesto (proyectos activos)</h2>${(() => { S._curvaD = datosCurvaS(activos); return S._curvaD ? `<div class="grafico-alto"><canvas id="g-curvas"></canvas></div><p class="sub">Planeado acumulado según la línea base de cada proyecto contra el ejecutado reportado en los seguimientos. Si la línea real va por encima, se gasta más rápido de lo planeado.</p>` : vacio("Registra presupuesto y fechas en los proyectos activos para ver la curva S."); })()}</div>`;
 
     enlazarFiltros();
     el.querySelectorAll("[data-kpi]").forEach((b) => b.addEventListener("click", () => {
@@ -509,6 +523,7 @@
     el.querySelectorAll("[data-sem]").forEach((b) => b.addEventListener("click", () => {
       S.filtros.estado = "Activo"; S.filtrosLista.semaforo = b.dataset.sem; ir("proyectos");
     }));
+    if ($("#g-curvas") && S._curvaD) graficoCurvaS($("#g-curvas"), S._curvaD);
     const datos = tendencia.map((t) => t.valor);
     grafico($("#g-tend"), { type: "line",
       data: { labels: tendencia.map((t) => t.semana.slice(5)), datasets: [{ label: "Avance promedio", data: datos, borderColor: COLORES.azul, backgroundColor: COLORES.azul, borderWidth: 2, pointRadius: 4, pointHoverRadius: 6, spanGaps: true, tension: 0.25 }] },
@@ -543,7 +558,7 @@
     const reportaron = new Set(deSemana.map((s) => s.ID_Proyecto));
     const sinReporte = filtrados().filter((p) => p.Estado === "Activo" && p.Frecuencia_Seguimiento === "Semanal" && !reportaron.has(p.ID_Proyecto));
     el.innerHTML = `
-      <h1>Avances de la semana</h1>
+      <div class="titulo-fila"><h1>Avances de la semana</h1><button class="btn primario" id="b-informe">📄 Informe semanal (PDF)</button></div>
       ${barraFiltros()}
       <div class="filtros"><label class="filtro"><span>Semana</span><select id="sel-semana">${semanas.map((w) => `<option ${w === S.semana ? "selected" : ""}>${w}</option>`).join("")}</select></label>
         <span class="sub">${deSemana.length} seguimiento(s) reportado(s) · ${sinReporte.length} proyecto(s) semanal(es) sin reporte</span></div>
@@ -552,6 +567,7 @@
         <tbody>${filas || `<tr><td colspan="7">${vacio("No hay seguimientos reportados en esta semana con los filtros actuales.")}</td></tr>`}</tbody></table></div></div>
       <div class="card"><h2>Proyectos semanales sin reporte en ${esc(S.semana)}</h2>
         ${sinReporte.length ? `<ul class="lista">${sinReporte.map((p) => `<li class="clic" data-pid="${esc(p.ID_Proyecto)}"><b>${esc(p.Nombre)}</b> · ${esc(nombreUsuario(p.PM))}</li>`).join("")}</ul>` : vacio("Todos los proyectos semanales reportaron.")}</div>`;
+    $("#b-informe").addEventListener("click", () => informeSemanal(S.semana));
     enlazarFiltros();
     $("#sel-semana").addEventListener("change", (e) => { S.semana = e.target.value; render(); });
   }
@@ -983,7 +999,9 @@
     const vencidosN = comps.filter((x) => x.e === "Vencido").length;
     const TABS = [["resumen", "Resumen"], ["compromisos", `Compromisos <span class="contador ${vencidosN ? "rojo" : ""}">${abiertosN}</span>`],
       ["seguimientos", `Seguimientos <span class="contador">${segs.length}</span>`], ["hitos", `Hitos <span class="contador">${hitos.length}</span>`], ["riesgos", `Riesgos <span class="contador">${riesgos.length}</span>`],
-      ["tickets", `Tickets <span class="contador">${ticketsDe(p.ID_Proyecto).filter(ticketAbierto).length}</span>`]];
+      ["tickets", `Tickets <span class="contador">${ticketsDe(p.ID_Proyecto).filter(ticketAbierto).length}</span>`],
+      ["cambios", `Cambios${cambiosDe(p.ID_Proyecto).some((c) => c.Estado === "Solicitado") ? ` <span class="contador rojo">${cambiosDe(p.ID_Proyecto).filter((c) => c.Estado === "Solicitado").length}</span>` : ""}`],
+      ["raci", "RACI"], ["lecciones", `Lecciones <span class="contador">${leccionesDe(p.ID_Proyecto).length}</span>`], ["auditoria", "Historial de cambios"]];
     const tab = TABS.some((t) => t[0] === S.fichaTab) ? S.fichaTab : "resumen";
     const pestanas = `<div class="pestanas" role="tablist">${TABS.map(([id, t]) => `<button class="pestana ${id === tab ? "activa" : ""}" role="tab" aria-selected="${id === tab}" data-tab="${id}">${t}</button>`).join("")}</div>`;
     const cuerpo = {
@@ -998,10 +1016,16 @@
         <div class="dato ancho"><div class="dato-k">Comentario de estado</div><div class="dato-v">${esc(p.Comentario_Estado || "—")}</div></div>
       </div>
       ${cardStakeholders(p, puedeP("editarProyecto"))}
+      ${cardDependencias(p, puedeP("editarProyecto"))}
+      <div class="card"><h2>Curva S del presupuesto</h2>${(() => { S._curvaP = datosCurvaS([p]); return S._curvaP ? `<div class="grafico-alto"><canvas id="g-curvas-p"></canvas></div><p class="sub">Planeado: ${num0(p.Presupuesto_Base) !== null ? "presupuesto de la línea base" : "presupuesto"} repartido entre inicio y fin. Real: ejecutado reportado en cada seguimiento.</p>` : vacio("Registra presupuesto y fechas para ver la curva S."); })()}</div>
       <div class="card"><h2>Curva de avance</h2>${segs.length ? `<div class="grafico-alto"><canvas id="g-curva"></canvas></div>` : vacio("Aún no hay seguimientos. La curva aparece con el primer reporte.")}</div>
 `,
       compromisos: () => seccionCompromisos(p, comps, segs, puedeP("compromisos")),
       tickets: () => seccionTickets(p, puedeP("compromisos")),
+      cambios: () => seccionCambios(p, puedeP("editarProyecto"), R.puede(u, "verTodo")),
+      raci: () => seccionRACI(p, puedeP("editarProyecto")),
+      lecciones: () => seccionLecciones(p, puedeP("editarProyecto")),
+      auditoria: () => seccionAuditoria(p),
       seguimientos: () => `      <div class="card"><div class="titulo-fila"><h2>Historial de sesiones de seguimiento</h2><div class="acciones"><button class="btn chico" id="b-expandir">Expandir compromisos</button><button class="btn chico" id="b-contraer">Contraer</button>${puedeP("seguimiento") && p.Estado === "Activo" ? `<button class="btn" id="b-seg2">+ Registrar seguimiento</button>` : ""}</div></div>
         <p class="sub">Cada fila es una sesión: su avance, lo que pasó, los compromisos que se acordaron y el acta.</p><div class="tabla-scroll"><table class="historial">
         <thead><tr><th>Sesión</th><th>Avance</th><th>Logros y próximos pasos</th><th>Bloqueos</th><th>Compromisos acordados</th><th>Acta</th></tr></thead>
@@ -1052,6 +1076,21 @@
     if ($("#b-seg2")) $("#b-seg2").addEventListener("click", () => formSeguimiento(p));
     if ($("#b-tk")) $("#b-tk").addEventListener("click", () => formTicket(p));
     $("#b-hv").addEventListener("click", () => hojaDeVida(p));
+    if ($("#g-curvas-p") && S._curvaP) graficoCurvaS($("#g-curvas-p"), S._curvaP);
+    if ($("#b-cambio")) $("#b-cambio").addEventListener("click", () => formCambio(p));
+    if ($("#b-lb")) $("#b-lb").addEventListener("click", () => fijarLineaBase(p));
+    el.querySelectorAll("[data-cambio]").forEach((b) => b.addEventListener("click", () => formCambio(p, cambiosDe(p.ID_Proyecto).find((c) => c.ID_Cambio === b.dataset.cambio))));
+    el.querySelectorAll("[data-decidir]").forEach((b) => b.addEventListener("click", () => decidirCambio(p, cambiosDe(p.ID_Proyecto).find((c) => c.ID_Cambio === b.dataset.decidir))));
+    if ($("#b-leccion")) $("#b-leccion").addEventListener("click", () => formLeccion(p));
+    el.querySelectorAll("[data-leccion]").forEach((b) => b.addEventListener("click", () => formLeccion(p, leccionesDe(p.ID_Proyecto).find((l) => l.ID_Leccion === b.dataset.leccion))));
+    if ($("#b-dep")) $("#b-dep").addEventListener("click", () => formDependencia(p));
+    el.querySelectorAll("[data-dep]").forEach((b) => b.addEventListener("click", () => formDependencia(p, (S.datos.Dependencias || []).find((d) => d.ID_Dependencia === b.dataset.dep))));
+    if (tab === "raci") enlazarRACI(el, p);
+    if (tab === "auditoria") {
+      const fa = (a) => a.ID_Proyecto === p.ID_Proyecto;
+      llenarAuditoria(el, fa, false);
+      $("#aud-recargar").addEventListener("click", async () => { await cargarAuditoria(true); llenarAuditoria(el, fa, false); });
+    }
     el.querySelectorAll("[data-tk]").forEach((b) => b.addEventListener("click", () => formTicket(p, ticketsDe(p.ID_Proyecto).find((t) => t.ID_Ticket === b.dataset.tk))));
     el.querySelectorAll("[data-tkver]").forEach((b) => b.addEventListener("click", () => { S.tkVer = b.dataset.tkver; render(); }));
     S.segAbiertos = S.segAbiertos || new Set();
@@ -1124,7 +1163,11 @@
         </div></div>
         ${ps.map((p) => {
           const hs = S.datos.Hitos.filter((h) => h.ID_Proyecto === p.ID_Proyecto && h.Fecha_Plan >= ini && h.Fecha_Plan <= fin);
-          return `<div class="g-fila clic" data-pid="${esc(p.ID_Proyecto)}"><div class="g-nombre"><b>${esc(p.Nombre)}</b><div class="sub">${esc(p.Estado)} · ${pct(p.Avance_Real)} · ${fecha(p.Fecha_Inicio)} → ${fecha(p.Fecha_Fin_Plan)}</div></div>
+          return `<div class="g-fila clic" data-pid="${esc(p.ID_Proyecto)}"><div class="g-nombre"><b>${esc(p.Nombre)}</b><div class="sub">${esc(p.Estado)} · ${pct(p.Avance_Real)} · ${fecha(p.Fecha_Inicio)} → ${fecha(p.Fecha_Fin_Plan)}</div>${(() => {
+            const ds = depsDe(p.ID_Proyecto); if (!ds.length) return "";
+            const mal = ds.filter(conflictoDep);
+            return `<div class="sub ${mal.length ? "baja" : ""}" title="${esc(ds.map((d) => `Depende de ${(proyecto(d.Depende_De) || {}).Nombre || d.Depende_De}${conflictoDep(d) ? " ⚠ " + conflictoDep(d) : ""}`).join("\n"))}">⛓ Depende de ${ds.length}${mal.length ? " ⚠" : ""}</div>`;
+          })()}</div>
             <div class="g-pista">
               ${meses.map((m) => `<span class="g-rejilla ${m.m === 0 ? "enero" : ""}" style="left:${x(m.iso)}%"></span>`).join("")}
               <div class="g-barra${recorte(p)}" style="left:${x(p.Fecha_Inicio)}%;width:${Math.max(1, x(p.Fecha_Fin_Plan) - x(p.Fecha_Inicio))}%" title="${esc(p.Nombre)}: ${fecha(p.Fecha_Inicio)} → ${fecha(p.Fecha_Fin_Plan)}"><div class="g-real" style="width:${Math.min(100, Number(p.Avance_Real) || 0)}%"></div></div>
@@ -1184,6 +1227,8 @@
     { lista: "Prioridad", t: "Prioridad", campo: "Prioridad" },
     { lista: "Rol_Stakeholder", t: "Rol del stakeholder", campo: "Rol", tabla: "Stakeholders", idCol: "ID_Stakeholder" },
     { lista: "Estado_Ticket", t: "Estado del ticket (helpdesk)", campo: "Estado", tabla: "Tickets", idCol: "ID_Ticket" },
+    { lista: "Tipo_Cambio", t: "Tipo de cambio", campo: "Tipo", tabla: "Cambios", idCol: "ID_Cambio" },
+    { lista: "Categoria_Leccion", t: "Categoría de lección aprendida", campo: "Categoria", tabla: "Lecciones", idCol: "ID_Leccion" },
   ];
   const filasCat = (c) => (S.datos[c.tabla || "Proyectos"] || []);
   const CATALOGOS_FIJOS = { Estado: "Estado del proyecto", Semaforo: "Semáforo", Frecuencia_Seguimiento: "Frecuencia de seguimiento",
@@ -1499,13 +1544,7 @@
     const fechaEv = (f) => (f.length > 10 ? `${fecha(f.slice(0, 10))} ${f.slice(11, 16)}` : fecha(f));
     const abiertos = comps.filter((c) => !R.cerrado(c)).length;
     const doc = `
-      <div class="hv-marca" aria-hidden="true"><span>FSFB</span></div>
-      <header class="hv-cab">
-        <div class="hv-logo">Fundación<br>Santa Fe de Bogotá</div>
-        <div class="hv-cab-t"><div class="hv-tipo">Hoja de vida del proyecto</div><h1>${esc(p.Nombre)}</h1>
-          <div class="hv-sub">${esc(pid)}${p.Codigo_Almera ? ` · Almera ${esc(p.Codigo_Almera)}` : ""} · ${esc(p.Cliente_Area || "")}</div></div>
-        <div class="hv-gen">Generado el ${fecha(R.hoyISO())}<br>por ${esc(S.usuario.Nombre || S.usuario.Correo)}</div>
-      </header>
+      ${cabDocumento("Hoja de vida del proyecto", p.Nombre, `${esc(pid)}${p.Codigo_Almera ? ` · Almera ${esc(p.Codigo_Almera)}` : ""} · ${esc(p.Cliente_Area || "")}`)}
       <section class="hv-kpis">
         <div><span>Estado</span><b>${t(p.Estado)}</b></div><div><span>Fase</span><b>${t(p.Fase)}</b></div>
         <div><span>Semáforo</span><b>${t(p.Semaforo)}</b></div><div><span>Avance real / plan</span><b>${pct(p.Avance_Real)} / ${pct(p.Avance_Planeado)}</b></div>
@@ -1537,26 +1576,500 @@
       ${tabla(["Hito", "Fecha plan", "Fecha real", "Estado"], hitos.map((h) => `<tr><td>${t(h.Hito)}</td><td>${fecha(h.Fecha_Plan)}</td><td>${h.Fecha_Real ? fecha(h.Fecha_Real) : "—"}</td><td>${t(h.Estado)}</td></tr>`), "Sin hitos.")}
       <h2>7. Riesgos</h2>
       ${tabla(["Riesgo", "Tipo", "Estado", "Inherente", "Residual", "Mitigación"], riesgos.map((r) => `<tr><td>${t(r.Descripcion)}</td><td>${t(r.Tipo)}</td><td>${t(r.Estado)}</td><td>${R.nivelRiesgo(Number(r.Calificacion_Inherente) || 0)} (${Number(r.Calificacion_Inherente) || 0})</td><td>${R.nivelRiesgo(Number(r.Calificacion_Residual) || 0)} (${Number(r.Calificacion_Residual) || 0})</td><td>${t(r.Plan_Mitigacion)}</td></tr>`), "Sin riesgos.")}
-      <h2>8. Tickets del helpdesk</h2>
+      <h2>8. Control de cambios</h2>
+      ${(() => { const lb = lineaBase(p); return lb.tiene ? `<p class="hv-p"><b>Línea base:</b> fin ${fecha(lb.fb)} → actual ${fecha(p.Fecha_Fin_Plan)}${lb.dias !== null ? ` (${lb.dias > 0 ? "+" : ""}${lb.dias} días)` : ""} · presupuesto ${lb.pb !== null ? cop(lb.pb) : "—"} → actual ${cop(p.Presupuesto)}${lb.pctCosto !== null ? ` (${lb.pctCosto > 0 ? "+" : ""}${lb.pctCosto}%)` : ""}</p>` : ""; })()}
+      ${tabla(["Fecha", "Tipo", "Cambio", "Impacto", "Estado"], cambiosDe(pid).map((c) => `<tr><td class="hv-nw">${fecha(c.Fecha)}</td><td>${t(c.Tipo)}</td><td>${t(c.Descripcion)}</td><td>${t(c.Impacto)}${c.Nueva_Fecha_Fin ? `<br><small>Nueva fecha fin ${fecha(c.Nueva_Fecha_Fin)}</small>` : ""}${num0(c.Nuevo_Presupuesto) !== null ? `<br><small>Nuevo presupuesto ${cop(c.Nuevo_Presupuesto)}</small>` : ""}</td><td>${t(c.Estado)}${c.Fecha_Decision ? `<br><small>${fecha(c.Fecha_Decision)}</small>` : ""}</td></tr>`), "Sin cambios registrados.")}
+      <h2>9. Dependencias</h2>
+      ${tabla(["Relación", "Proyecto", "Tipo", "Alerta"], [...depsDe(pid).map((d) => `<tr><td>Depende de</td><td>${esc((proyecto(d.Depende_De) || {}).Nombre || d.Depende_De)}</td><td>${t(d.Tipo)}</td><td>${esc(conflictoDep(d) || "—")}</td></tr>`),
+        ...bloqueaA(pid).map((d) => `<tr><td>Bloquea a</td><td>${esc((proyecto(d.ID_Proyecto) || {}).Nombre || d.ID_Proyecto)}</td><td>${t(d.Tipo)}</td><td>${esc(conflictoDep(d) || "—")}</td></tr>`)], "Sin dependencias.")}
+      <h2>10. Lecciones aprendidas</h2>
+      ${tabla(["Tipo", "Categoría", "Qué pasó", "Lección", "Recomendación"], leccionesDe(pid).map((l) => `<tr><td>${t(l.Tipo)}</td><td>${t(l.Categoria)}</td><td>${t(l.Situacion)}</td><td>${t(l.Leccion)}</td><td>${t(l.Recomendacion)}</td></tr>`), "Sin lecciones registradas.")}
+      <h2>11. Tickets del helpdesk</h2>
       ${tabla(["N.º", "Título", "Estado", "Prioridad", "Registrado"], tks.map((k) => `<tr><td>${t(k.Numero)}</td><td>${t(k.Titulo)}</td><td>${t(k.Estado)}</td><td>${t(k.Prioridad)}</td><td>${fecha(k.Fecha_Registro)}</td></tr>`), "Sin tickets.")}
       <footer class="hv-pie">Fundación Santa Fe de Bogotá · Oficina de Proyectos · Hoja de vida ${esc(pid)} · Documento generado desde el Portafolio PMO</footer>`;
+    mostrarDocumento(`Hoja de vida · ${p.Nombre}`, doc, `Hoja de vida ${pid} - ${p.Nombre}`);
+  }
+  // Vista de documento imprimible (hoja de vida, informe semanal): se guarda como PDF desde Imprimir.
+  function mostrarDocumento(titulo, html, nombreArchivo) {
     cerrarModal();
     const o = document.createElement("div");
     o.className = "hv-overlay";
-    o.innerHTML = `<div class="hv-barra no-print"><b>Hoja de vida · ${esc(p.Nombre)}</b><div class="acciones">
+    o.innerHTML = `<div class="hv-barra no-print"><b>${esc(titulo)}</b><div class="acciones">
       <button class="btn primario" id="hv-imprimir">🖨 Imprimir / Guardar como PDF</button><button class="btn" id="hv-cerrar">Cerrar</button></div>
       <div class="sub">En la ventana de impresión elige «Guardar como PDF» como destino.</div></div>
-      <div class="hv-hoja"><article class="hv">${doc}</article></div>`;
+      <div class="hv-hoja"><article class="hv">${html}</article></div>`;
     document.body.appendChild(o);
     document.body.classList.add("con-hv");
     const cerrar = () => { o.remove(); document.body.classList.remove("con-hv"); };
     o.querySelector("#hv-cerrar").addEventListener("click", cerrar);
     o.querySelector("#hv-imprimir").addEventListener("click", () => {
       const tituloAnt = document.title;
-      document.title = `Hoja de vida ${pid} - ${p.Nombre}`;
+      document.title = nombreArchivo;
       window.print();
       setTimeout(() => { document.title = tituloAnt; }, 1000);
     });
+  }
+  const cabDocumento = (tipo, titulo, sub) => `<div class="hv-marca" aria-hidden="true"><span>FSFB</span></div>
+      <header class="hv-cab"><div class="hv-logo">Fundación<br>Santa Fe de Bogotá</div>
+        <div class="hv-cab-t"><div class="hv-tipo">${tipo}</div><h1>${esc(titulo)}</h1><div class="hv-sub">${sub}</div></div>
+        <div class="hv-gen">Generado el ${fecha(R.hoyISO())}<br>por ${esc(S.usuario.Nombre || S.usuario.Correo)}</div></header>`;
+
+  // ---------- Control de cambios y línea base ----------
+  const cambiosDe = (pid) => (S.datos.Cambios || []).filter((c) => c.ID_Proyecto === pid).sort((a, b) => String(b.Fecha).localeCompare(String(a.Fecha)) || String(b.ID_Cambio).localeCompare(String(a.ID_Cambio), "es", { numeric: true }));
+  function lineaBase(p) {
+    const fb = p.Fecha_Fin_Base || "", pb = num0(p.Presupuesto_Base);
+    return {
+      tiene: !!(fb || pb !== null), fb, pb,
+      dias: fb && p.Fecha_Fin_Plan ? R.difDias(p.Fecha_Fin_Plan, fb) : null,
+      pctCosto: pb ? Math.round(((Number(p.Presupuesto) || 0) - pb) / pb * 100) : null,
+    };
+  }
+  function seccionCambios(p, puedeSolicitar, puedeDecidir) {
+    const lb = lineaBase(p);
+    const lista = cambiosDe(p.ID_Proyecto);
+    const pend = lista.filter((c) => c.Estado === "Solicitado").length;
+    const desvio = (v, u) => (v === null ? "—" : `<span class="${v > 0 ? "baja" : v < 0 ? "sube" : ""}">${v > 0 ? "+" : ""}${v}${u}</span>`);
+    return `<div class="card"><div class="titulo-fila"><h2>Línea base</h2>${puedeDecidir ? `<button class="btn chico" id="b-lb">${lb.tiene ? "Volver a fijar línea base" : "Fijar línea base"}</button>` : ""}</div>
+        ${lb.tiene ? `<div class="datos">
+          <div class="dato"><div class="dato-k">Fin planeado original</div><div class="dato-v">${fecha(lb.fb)}</div></div>
+          <div class="dato"><div class="dato-k">Fin planeado actual</div><div class="dato-v">${fecha(p.Fecha_Fin_Plan)} · ${desvio(lb.dias, " días")}</div></div>
+          <div class="dato"><div class="dato-k">Presupuesto original</div><div class="dato-v">${lb.pb !== null ? cop(lb.pb) : "—"}</div></div>
+          <div class="dato"><div class="dato-k">Presupuesto actual</div><div class="dato-v">${cop(p.Presupuesto)} · ${desvio(lb.pctCosto, "%")}</div></div></div>`
+        : `<p class="sub">Aún no hay línea base. Se fija sola con el primer cambio aprobado (toma la fecha fin y el presupuesto de ese momento)${puedeDecidir ? ", o puedes fijarla ahora" : ""}.</p>`}
+      </div>
+      <div class="card"><div class="titulo-fila"><h2>Control de cambios ${pend ? `<span class="contador rojo">${pend} por decidir</span>` : ""}</h2>${puedeSolicitar ? `<button class="btn primario" id="b-cambio">+ Solicitar cambio</button>` : ""}</div>
+        <p class="sub">Cambios de alcance, tiempo, costo o recursos. El PM los solicita y la PMO o el Admin los aprueban; al aprobar, la fecha fin y el presupuesto nuevos se aplican al proyecto.</p>
+        ${lista.length ? `<div class="tabla-scroll"><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Cambio</th><th>Impacto</th><th>Estado</th><th></th></tr></thead><tbody>
+          ${lista.map((c) => `<tr><td class="nowrap">${fecha(c.Fecha)}<div class="sub">${esc(nombreUsuario(c.Solicitado_Por))}</div></td><td>${esc(c.Tipo)}</td>
+            <td><b>${esc(c.Descripcion)}</b>${c.Justificacion ? `<div class="sub">Por qué: ${esc(c.Justificacion)}</div>` : ""}</td>
+            <td>${esc(c.Impacto || "")}${c.Nueva_Fecha_Fin ? `<div class="sub">Nueva fecha fin: ${fecha(c.Nueva_Fecha_Fin)}</div>` : ""}${num0(c.Nuevo_Presupuesto) !== null ? `<div class="sub">Nuevo presupuesto: ${cop(c.Nuevo_Presupuesto)}</div>` : ""}</td>
+            <td>${pill(c.Estado || "Solicitado")}${c.Fecha_Decision ? `<div class="sub">${fecha(c.Fecha_Decision)} · ${esc(nombreUsuario(c.Decidido_Por))}</div>` : ""}${c.Comentario_Decision ? `<div class="sub">${esc(c.Comentario_Decision)}</div>` : ""}</td>
+            <td class="derecha nowrap">${c.Estado === "Solicitado" && puedeDecidir ? `<button class="btn chico primario" data-decidir="${esc(c.ID_Cambio)}">Decidir</button> ` : ""}${c.Estado === "Solicitado" && puedeSolicitar ? `<button class="btn chico" data-cambio="${esc(c.ID_Cambio)}">Editar</button>` : ""}</td></tr>`).join("")}
+        </tbody></table></div>` : vacio("Sin cambios registrados.")}</div>`;
+  }
+  function formCambio(p, c) {
+    const nuevo = !c;
+    const campos = [
+      { k: "Tipo", label: "Tipo de cambio", tipo: "select", opciones: S.cat.Tipo_Cambio, def: "Alcance" },
+      { k: "Fecha", label: "Fecha de la solicitud", tipo: "date", def: R.hoyISO() },
+      { k: "Descripcion", label: "¿Qué cambia?", tipo: "textarea", placeholder: "Describe el cambio" },
+      { k: "Justificacion", label: "¿Por qué?", tipo: "textarea", placeholder: "Motivo o necesidad" },
+      { k: "Impacto", label: "Impacto", tipo: "textarea", placeholder: "Efecto en alcance, calidad, equipo, riesgos…" },
+      { seccion: "Si cambia la fecha o el costo", ayuda: "se aplican al proyecto cuando se aprueba" },
+      { k: "Nueva_Fecha_Fin", label: "Nueva fecha fin", tipo: "date", ayuda: `Hoy: ${fecha(p.Fecha_Fin_Plan)}` },
+      { k: "Nuevo_Presupuesto", label: "Nuevo presupuesto (COP)", tipo: "number", min: 0, ayuda: `Hoy: ${cop(p.Presupuesto)}` },
+    ];
+    modal(nuevo ? `Solicitar cambio · ${p.Nombre}` : "Editar solicitud de cambio", campos, nuevo ? {} : c, (fd) => {
+      if (nuevo) {
+        const id = R.siguienteIdHijo("CAM", S.datos.Cambios || [], "ID_Cambio", p.ID_Proyecto);
+        guardar(() => S.api.agregarFila("Cambios", { ID_Cambio: id, ID_Proyecto: p.ID_Proyecto, ...fd, Estado: "Solicitado", Solicitado_Por: S.usuario.Correo }), "Cambio solicitado");
+      } else guardar(() => S.api.actualizarPorId("Cambios", "ID_Cambio", c.ID_Cambio, fd), "Solicitud actualizada");
+    }, null, nuevo ? {} : { eliminar: { texto: "Eliminar solicitud", mensaje: "Se borrará esta solicitud de cambio.",
+      accion: () => guardar(() => S.api.eliminarFilas("Cambios", "ID_Cambio", [c.ID_Cambio]), "Solicitud eliminada") } });
+  }
+  function decidirCambio(p, c) {
+    const campos = [
+      { k: "Decision", label: "Decisión", tipo: "select", opciones: ["Aprobado", "Rechazado"], def: "Aprobado" },
+      { k: "Comentario_Decision", label: "Comentario (opcional)", tipo: "textarea", placeholder: "Condiciones, instancia que aprobó…" },
+    ];
+    const efectos = [c.Nueva_Fecha_Fin ? `fecha fin ${fecha(p.Fecha_Fin_Plan)} → ${fecha(c.Nueva_Fecha_Fin)}` : "", num0(c.Nuevo_Presupuesto) !== null ? `presupuesto ${cop(p.Presupuesto)} → ${cop(c.Nuevo_Presupuesto)}` : ""].filter(Boolean);
+    modal(`Decidir cambio · ${c.Tipo}`, campos, {}, (fd) => guardar(async () => {
+      const aprobado = fd.Decision !== "Rechazado";
+      if (aprobado) {
+        const lb = lineaBase(p);
+        const cambiosP = {};
+        if (!lb.tiene) { cambiosP.Fecha_Fin_Base = p.Fecha_Fin_Plan; cambiosP.Presupuesto_Base = p.Presupuesto; }
+        if (c.Nueva_Fecha_Fin) cambiosP.Fecha_Fin_Plan = c.Nueva_Fecha_Fin;
+        if (num0(c.Nuevo_Presupuesto) !== null) cambiosP.Presupuesto = Number(c.Nuevo_Presupuesto);
+        if (Object.keys(cambiosP).length) await S.api.actualizarPorId("Proyectos", "ID_Proyecto", p.ID_Proyecto, { ...cambiosP, ...sello() });
+      }
+      await S.api.actualizarPorId("Cambios", "ID_Cambio", c.ID_Cambio, { Estado: aprobado ? "Aprobado" : "Rechazado", Decidido_Por: S.usuario.Correo, Fecha_Decision: R.hoyISO(), Comentario_Decision: fd.Comentario_Decision });
+    }, fd.Decision === "Rechazado" ? "Cambio rechazado" : "Cambio aprobado y aplicado"), null,
+    { antes: `<div class="resumen-filtro"><b>${esc(c.Descripcion)}</b>${efectos.length ? `<br>Si se aprueba: ${esc(efectos.join(" · "))}` : "<br>No cambia fechas ni presupuesto."}</div>` });
+  }
+  function fijarLineaBase(p) {
+    confirmar("Fijar línea base", `La línea base quedará con fin ${fecha(p.Fecha_Fin_Plan)} y presupuesto ${cop(p.Presupuesto)}. Los cambios futuros se medirán contra estos valores.`, "Fijar",
+      () => guardar(() => S.api.actualizarPorId("Proyectos", "ID_Proyecto", p.ID_Proyecto, { Fecha_Fin_Base: p.Fecha_Fin_Plan, Presupuesto_Base: p.Presupuesto }), "Línea base fijada"), "primario");
+  }
+
+  // ---------- Lecciones aprendidas ----------
+  const leccionesDe = (pid) => (S.datos.Lecciones || []).filter((l) => l.ID_Proyecto === pid);
+  const tarjetaLeccion = (l, conProyecto, puede) => `<div class="leccion ${l.Tipo === "Positiva" ? "positiva" : "mejorar"}">
+      <div class="titulo-fila"><div>${pill(l.Tipo || "A mejorar")} <b>${esc(l.Categoria || "General")}</b>${conProyecto ? ` · <button class="btn enlace" data-pid="${esc(l.ID_Proyecto)}">${esc((proyecto(l.ID_Proyecto) || {}).Nombre || l.ID_Proyecto)}</button>` : ""}</div>
+        <div><span class="sub">${fecha(l.Fecha)} · ${esc(nombreUsuario(l.Registrado_Por))}</span>${puede ? ` <button class="btn chico" data-leccion="${esc(l.ID_Leccion)}">Editar</button>` : ""}</div></div>
+      ${l.Situacion ? `<div><span class="sub">Qué pasó:</span> ${esc(l.Situacion)}</div>` : ""}
+      <div><span class="sub">Lección:</span> <b>${esc(l.Leccion)}</b></div>
+      ${l.Recomendacion ? `<div><span class="sub">Recomendación:</span> ${esc(l.Recomendacion)}</div>` : ""}</div>`;
+  function seccionLecciones(p, puede) {
+    const lista = leccionesDe(p.ID_Proyecto).sort((a, b) => String(b.Fecha).localeCompare(String(a.Fecha)));
+    return `<div class="card"><div class="titulo-fila"><h2>Lecciones aprendidas</h2>${puede ? `<button class="btn primario" id="b-leccion">+ Lección</button>` : ""}</div>
+      <p class="sub">Qué funcionó y qué haríamos distinto. Se pueden consultar desde el menú «Lecciones aprendidas» para proyectos parecidos.</p>
+      ${lista.length ? lista.map((l) => tarjetaLeccion(l, false, puede)).join("") : vacio(`Aún no hay lecciones.${puede ? " Regístralas durante el proyecto y, sobre todo, al cerrarlo." : ""}`)}</div>`;
+  }
+  function formLeccion(p, l) {
+    const nuevo = !l;
+    const campos = [
+      { k: "Tipo", label: "Tipo", tipo: "select", opciones: ["Positiva", "A mejorar"], def: "A mejorar" },
+      { k: "Categoria", label: "Categoría", tipo: "select", opciones: S.cat.Categoria_Leccion },
+      { k: "Situacion", label: "¿Qué pasó?", tipo: "textarea", placeholder: "La situación o el hecho" },
+      { k: "Leccion", label: "Lección aprendida", tipo: "textarea", placeholder: "Qué aprendimos" },
+      { k: "Recomendacion", label: "Recomendación para otros proyectos", tipo: "textarea" },
+      { k: "Fecha", label: "Fecha", tipo: "date", def: R.hoyISO() },
+    ];
+    modal(nuevo ? `Nueva lección · ${p.Nombre}` : "Editar lección", campos, nuevo ? {} : l, (fd) => {
+      if (nuevo) {
+        const id = R.siguienteIdHijo("LEC", S.datos.Lecciones || [], "ID_Leccion", p.ID_Proyecto);
+        guardar(() => S.api.agregarFila("Lecciones", { ID_Leccion: id, ID_Proyecto: p.ID_Proyecto, ...fd, Registrado_Por: S.usuario.Correo }), "Lección registrada");
+      } else guardar(() => S.api.actualizarPorId("Lecciones", "ID_Leccion", l.ID_Leccion, fd), "Lección actualizada");
+    }, null, nuevo ? {} : { eliminar: { texto: "Eliminar lección", mensaje: "Se borrará esta lección.",
+      accion: () => guardar(() => S.api.eliminarFilas("Lecciones", "ID_Leccion", [l.ID_Leccion]), "Lección eliminada") } });
+  }
+  function vLecciones(el) {
+    const ids = new Set(filtrados().map((p) => p.ID_Proyecto));
+    const F = S.lecF = S.lecF || { texto: "", cat: "", tipo: "" };
+    const lista = (S.datos.Lecciones || []).filter((l) => ids.has(l.ID_Proyecto) && (!F.cat || l.Categoria === F.cat) && (!F.tipo || l.Tipo === F.tipo) &&
+      (!F.texto || `${l.Situacion} ${l.Leccion} ${l.Recomendacion} ${(proyecto(l.ID_Proyecto) || {}).Nombre}`.toLowerCase().includes(F.texto.toLowerCase())))
+      .sort((a, b) => String(b.Fecha).localeCompare(String(a.Fecha)));
+    el.innerHTML = `<h1>Lecciones aprendidas</h1>${barraFiltros()}
+      <div class="filtros"><label class="filtro crece"><span>Buscar</span><input id="lec-txt" type="search" value="${esc(F.texto)}" placeholder="Palabra clave: proveedor, integración, pruebas…"></label>
+        <label class="filtro"><span>Categoría</span><select id="lec-cat"><option value="">Todas</option>${(S.cat.Categoria_Leccion || []).map((c) => `<option ${c === F.cat ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></label>
+        <label class="filtro"><span>Tipo</span><select id="lec-tipo"><option value="">Todas</option>${["Positiva", "A mejorar"].map((c) => `<option ${c === F.tipo ? "selected" : ""}>${c}</option>`).join("")}</select></label></div>
+      <div class="card"><h2>${lista.length} lección(es)</h2>${lista.length ? lista.map((l) => tarjetaLeccion(l, true, false)).join("") : vacio("No hay lecciones con estos filtros. Se registran en la pestaña «Lecciones» de cada proyecto.")}</div>`;
+    enlazarFiltros();
+    $("#lec-txt").addEventListener("change", (e) => { F.texto = e.target.value; render(); });
+    $("#lec-cat").addEventListener("change", (e) => { F.cat = e.target.value; render(); });
+    $("#lec-tipo").addEventListener("change", (e) => { F.tipo = e.target.value; render(); });
+  }
+
+  // ---------- Matriz RACI ----------
+  const raciDe = (pid) => (S.datos.RACI || []).filter((r) => r.ID_Proyecto === pid);
+  const asignRaci = (r) => { try { return r.Asignaciones ? JSON.parse(r.Asignaciones) : {}; } catch (e) { return {}; } };
+  function seccionRACI(p, puede) {
+    const filas = raciDe(p.ID_Proyecto);
+    const cols = [{ k: "PM", t: "PM", n: nombreUsuario(p.PM) }, ...stakeholdersDe(p.ID_Proyecto).map((x) => ({ k: x.ID_Stakeholder, t: x.Rol, n: x.Nombre }))];
+    const aviso = (a) => { const v = Object.values(a); const nA = v.filter((x) => x === "A").length, nR = v.filter((x) => x === "R").length;
+      return nA !== 1 ? (nA ? "Debe haber un solo A" : "Falta el A (quien aprueba)") : !nR ? "Falta al menos un R (quien ejecuta)" : ""; };
+    return `<div class="card"><div class="titulo-fila"><h2>Matriz RACI</h2>${puede ? `<div class="acciones"><button class="btn primario" id="raci-guardar" disabled>Guardar matriz</button></div>` : ""}</div>
+      <p class="sub"><b>R</b> Responsable (ejecuta) · <b>A</b> Aprueba (uno por entregable) · <b>C</b> Consultado · <b>I</b> Informado. Las columnas son el PM y los stakeholders del proyecto.</p>
+      ${filas.length ? `<div class="tabla-scroll"><table class="raci"><thead><tr><th>Entregable</th>${cols.map((c) => `<th title="${esc(c.n)}">${esc(c.t)}<div class="raci-n">${esc(c.n)}</div></th>`).join("")}${puede ? "<th></th>" : ""}</tr></thead><tbody>
+        ${filas.map((r) => { const a = asignRaci(r); const w = aviso(a); return `<tr data-raci="${esc(r.ID_RACI)}"><td><b>${esc(r.Entregable)}</b>${w ? `<div class="sub baja">⚠ ${w}</div>` : ""}</td>
+          ${cols.map((c) => `<td class="centro">${puede ? `<select class="raci-sel v-${esc(a[c.k] || "")}" data-col="${esc(c.k)}" aria-label="${esc(r.Entregable)} · ${esc(c.t)}">${["", "R", "A", "C", "I"].map((v) => `<option ${a[c.k] === v || (!a[c.k] && !v) ? "selected" : ""}>${v}</option>`).join("")}</select>` : `<b class="raci-v v-${esc(a[c.k] || "")}">${esc(a[c.k] || "")}</b>`}</td>`).join("")}
+          ${puede ? `<td><button class="btn chico" data-raci-del="${esc(r.ID_RACI)}" title="Quitar entregable">✕</button></td>` : ""}</tr>`; }).join("")}</tbody></table></div>` : vacio("Aún no hay entregables en la matriz.")}
+      ${puede ? `<form class="cat-agregar" id="raci-nuevo" novalidate><input name="ent" placeholder="Nuevo entregable (ej.: Documento de requerimientos)" aria-label="Nuevo entregable"><button class="btn" type="submit">+ Entregable</button></form>
+        ${cols.length === 1 ? `<p class="sub">Agrega stakeholders al proyecto (Resumen o «Editar proyecto») para tener más columnas.</p>` : ""}` : ""}</div>`;
+  }
+  function enlazarRACI(el, p) {
+    const btn = el.querySelector("#raci-guardar");
+    el.querySelectorAll(".raci-sel").forEach((s) => s.addEventListener("change", () => { s.className = `raci-sel v-${s.value}`; if (btn) { btn.disabled = false; btn.textContent = "Guardar matriz •"; } }));
+    if (btn) btn.addEventListener("click", () => {
+      const cambios = [...el.querySelectorAll("tr[data-raci]")].map((tr) => {
+        const a = {}; tr.querySelectorAll(".raci-sel").forEach((s) => { if (s.value) a[s.dataset.col] = s.value; });
+        return { id: tr.dataset.raci, cambios: { Asignaciones: JSON.stringify(a) } };
+      });
+      guardar(() => S.api.actualizarVarios("RACI", "ID_RACI", cambios), "Matriz RACI guardada");
+    });
+    const f = el.querySelector("#raci-nuevo");
+    if (f) f.addEventListener("submit", (ev) => {
+      ev.preventDefault();
+      const ent = f.ent.value.trim();
+      if (!ent) return;
+      guardar(() => S.api.agregarFila("RACI", { ID_RACI: R.siguienteIdHijo("RACI", S.datos.RACI || [], "ID_RACI", p.ID_Proyecto), ID_Proyecto: p.ID_Proyecto, Entregable: ent, Asignaciones: "{}" }), "Entregable agregado");
+    });
+    el.querySelectorAll("[data-raci-del]").forEach((b) => b.addEventListener("click", () => confirmar("Quitar entregable", "Se quitará esta fila de la matriz RACI.", "Quitar",
+      () => guardar(() => S.api.eliminarFilas("RACI", "ID_RACI", [b.dataset.raciDel]), "Entregable quitado"))));
+  }
+
+  // ---------- Dependencias entre proyectos ----------
+  const TIPOS_DEP = ["Fin → Inicio", "Inicio → Inicio", "Fin → Fin"];
+  const depsDe = (pid) => (S.datos.Dependencias || []).filter((d) => d.ID_Proyecto === pid);
+  const bloqueaA = (pid) => (S.datos.Dependencias || []).filter((d) => d.Depende_De === pid);
+  // ¿La dependencia está en riesgo? Devuelve el motivo o "".
+  function conflictoDep(d) {
+    const suc = proyecto(d.ID_Proyecto), pre = proyecto(d.Depende_De);
+    if (!suc || !pre || pre.Estado === "Cerrado") return "";
+    const motivos = [];
+    const tipo = d.Tipo || TIPOS_DEP[0];
+    if (tipo === "Fin → Inicio" && pre.Fecha_Fin_Plan && suc.Fecha_Inicio && pre.Fecha_Fin_Plan > suc.Fecha_Inicio) motivos.push(`«${pre.Nombre}» termina el ${fecha(pre.Fecha_Fin_Plan)}, después del inicio de «${suc.Nombre}» (${fecha(suc.Fecha_Inicio)})`);
+    if (tipo === "Fin → Fin" && pre.Fecha_Fin_Plan && suc.Fecha_Fin_Plan && pre.Fecha_Fin_Plan > suc.Fecha_Fin_Plan) motivos.push(`«${pre.Nombre}» termina después que «${suc.Nombre}»`);
+    if (tipo === "Inicio → Inicio" && pre.Fecha_Inicio && suc.Fecha_Inicio && pre.Fecha_Inicio > suc.Fecha_Inicio) motivos.push(`«${pre.Nombre}» inicia después que «${suc.Nombre}»`);
+    if (pre.Semaforo === "Rojo") motivos.push(`«${pre.Nombre}» está en rojo`);
+    return motivos.join(" · ");
+  }
+  function cardDependencias(p, puede) {
+    const deps = depsDe(p.ID_Proyecto), bloq = bloqueaA(p.ID_Proyecto);
+    const ids = new Set(visibles().map((x) => x.ID_Proyecto));
+    const item = (d, otroId, dir) => { const o = proyecto(otroId) || {}; const c = conflictoDep(d);
+      return `<li class="${c ? "dep-alerta" : ""}">${dir} ${ids.has(otroId) ? `<button class="btn enlace" data-pid="${esc(otroId)}">${esc(o.Nombre || otroId)}</button>` : esc(o.Nombre || otroId)}
+        <span class="sub">· ${esc(d.Tipo || TIPOS_DEP[0])} · ${esc(o.Estado || "")} · fin ${fecha(o.Fecha_Fin_Plan)}</span>${d.Descripcion ? `<div class="sub">${esc(d.Descripcion)}</div>` : ""}
+        ${c ? `<div class="baja">⚠ ${esc(c)}</div>` : ""}${puede ? ` <button class="btn chico" data-dep="${esc(d.ID_Dependencia)}">Editar</button>` : ""}</li>`; };
+    return `<div class="card"><div class="titulo-fila"><h2>Dependencias</h2>${puede ? `<button class="btn" id="b-dep">+ Dependencia</button>` : ""}</div>
+      ${deps.length || bloq.length ? `<div class="grid2">
+        <div><b>Este proyecto depende de</b><ul class="deps">${deps.map((d) => item(d, d.Depende_De, "⬅")).join("") || `<li class="sub">Ninguno</li>`}</ul></div>
+        <div><b>Bloquea a</b><ul class="deps">${bloq.map((d) => item(d, d.ID_Proyecto, "➡")).join("") || `<li class="sub">Ninguno</li>`}</ul></div></div>`
+        : `<p class="sub">Sin dependencias. Regístralas cuando este proyecto necesite que otro termine (o empiece) primero.</p>`}</div>`;
+  }
+  function formDependencia(p, d) {
+    const nuevo = !d;
+    const ya = new Set(depsDe(p.ID_Proyecto).map((x) => x.Depende_De));
+    const opciones = S.datos.Proyectos.filter((x) => x.ID_Proyecto !== p.ID_Proyecto && (!ya.has(x.ID_Proyecto) || (d && d.Depende_De === x.ID_Proyecto)))
+      .sort((a, b) => String(a.Nombre).localeCompare(String(b.Nombre), "es")).map((x) => [x.ID_Proyecto, `${x.Nombre} (${x.ID_Proyecto})`]);
+    const campos = [
+      { k: "Depende_De", label: "Depende del proyecto", tipo: "select", opciones, ancho: true },
+      { k: "Tipo", label: "Tipo de dependencia", tipo: "select", opciones: TIPOS_DEP, def: TIPOS_DEP[0], ayuda: "Fin → Inicio: el otro debe terminar antes de que este empiece." },
+      { k: "Descripcion", label: "Qué se necesita del otro proyecto", tipo: "textarea", placeholder: "Ej.: la integración con el ERP debe estar en producción" },
+    ];
+    modal(nuevo ? `Nueva dependencia · ${p.Nombre}` : "Editar dependencia", campos, nuevo ? {} : d, (fd) => {
+      if (nuevo) {
+        const id = R.siguienteIdHijo("DEP", S.datos.Dependencias || [], "ID_Dependencia", p.ID_Proyecto);
+        guardar(() => S.api.agregarFila("Dependencias", { ID_Dependencia: id, ID_Proyecto: p.ID_Proyecto, ...fd }), "Dependencia registrada");
+      } else guardar(() => S.api.actualizarPorId("Dependencias", "ID_Dependencia", d.ID_Dependencia, fd), "Dependencia actualizada");
+    }, (fd) => (!fd.Depende_De ? "Elige el proyecto del que depende." : depsDe(fd.Depende_De).some((x) => x.Depende_De === p.ID_Proyecto) ? "Ese proyecto ya depende de este: se formaría un ciclo." : ""),
+    nuevo ? {} : { eliminar: { texto: "Quitar dependencia", mensaje: "Se quitará esta dependencia.", accion: () => guardar(() => S.api.eliminarFilas("Dependencias", "ID_Dependencia", [d.ID_Dependencia]), "Dependencia quitada") } });
+  }
+
+  // ---------- Priorización del portafolio ----------
+  const CRITERIOS = [
+    { k: "Valor", t: "Valor para la institución", peso: 0.35, inv: false },
+    { k: "Urgencia", t: "Urgencia", peso: 0.25, inv: false },
+    { k: "Riesgo_Prio", t: "Complejidad / riesgo de ejecución", peso: 0.2, inv: true },
+    { k: "Esfuerzo", t: "Esfuerzo / costo", peso: 0.2, inv: true },
+  ];
+  // Puntaje 0-100: más valor y urgencia suben; más riesgo y esfuerzo bajan.
+  function puntaje(p) {
+    if (CRITERIOS.some((c) => !num0(p[c.k]))) return null;
+    const v = CRITERIOS.reduce((a, c) => a + c.peso * (c.inv ? 6 - Number(p[c.k]) : Number(p[c.k])), 0);
+    return Math.round(((v - 1) / 4) * 100);
+  }
+  const cuadrante = (p) => { const v = Number(p.Valor), e = Number(p.Esfuerzo); return v >= 3 ? (e <= 3 ? "Ganancia rápida" : "Proyecto mayor") : (e <= 3 ? "Relleno" : "Reconsiderar"); };
+  function vPriorizacion(el) {
+    const ps = filtrados();
+    const cal = ps.filter((p) => puntaje(p) !== null).sort((a, b) => puntaje(b) - puntaje(a));
+    const sin = ps.filter((p) => puntaje(p) === null);
+    const puede = (p) => R.puedeEditar(S.usuario, p, "editarProyecto");
+    el.innerHTML = `<h1>Priorización del portafolio</h1>${barraFiltros()}
+      <div class="card"><h2>Cómo se calcula</h2><p class="sub">Cada proyecto se califica de 1 a 5 en «Editar proyecto» → sección Priorización. Puntaje (0 a 100) = ${CRITERIOS.map((c) => `${c.t} ${Math.round(c.peso * 100)}%${c.inv ? " (a menor, mejor)" : ""}`).join(" · ")}.</p></div>
+      <div class="grid2">
+        <div class="card"><h2>Ranking</h2>${cal.length ? `<div class="tabla-scroll"><table><thead><tr><th>#</th><th>Proyecto</th><th>Puntaje</th><th class="opc">V · U · R · E</th><th>Cuadrante</th></tr></thead><tbody>
+          ${cal.map((p, i) => `<tr class="clic" data-pid="${esc(p.ID_Proyecto)}"><td>${i + 1}</td><td><b>${esc(p.Nombre)}</b><div class="sub">${esc(p.Estado)} · ${esc(nombreUsuario(p.PM))}</div></td>
+            <td class="nowrap"><span class="cap-barra"><span class="cap-lleno" style="width:${puntaje(p)}%;background:var(--azul)"></span></span> <b>${puntaje(p)}</b></td>
+            <td class="opc">${CRITERIOS.map((c) => esc(p[c.k])).join(" · ")}</td><td>${pill(cuadrante(p))}</td></tr>`).join("")}</tbody></table></div>` : vacio("Aún no hay proyectos calificados.")}</div>
+        <div class="card"><h2>Valor vs. esfuerzo</h2>${cal.length ? `<div class="grafico-alto"><canvas id="g-prio"></canvas></div><p class="sub">Arriba a la izquierda: ganancias rápidas (mucho valor, poco esfuerzo). El tamaño del punto es la urgencia.</p>` : vacio("Califica proyectos para ver la matriz.")}</div>
+      </div>
+      ${sin.length ? `<div class="card"><h2>Sin calificar <span class="contador">${sin.length}</span></h2><ul class="lista">${sin.map((p) => `<li>${esc(p.Nombre)} ${puede(p) ? `<button class="btn chico" data-calificar="${esc(p.ID_Proyecto)}">Calificar</button>` : ""}</li>`).join("")}</ul></div>` : ""}`;
+    enlazarFiltros();
+    el.querySelectorAll("[data-calificar]").forEach((b) => b.addEventListener("click", () => formProyecto(proyecto(b.dataset.calificar))));
+    if (cal.length) {
+      const jit = (i) => ((i % 5) - 2) * 0.06;
+      grafico($("#g-prio"), { type: "bubble", data: { datasets: [{ label: "Proyectos", data: cal.map((p, i) => ({ x: Number(p.Esfuerzo) + jit(i), y: Number(p.Valor) + jit(i + 2), r: 4 + Number(p.Urgencia) * 2.5, nombre: p.Nombre, pts: puntaje(p) })),
+        backgroundColor: "rgba(16,73,148,.55)", borderColor: COLORES.azul }] },
+        options: { maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `${c.raw.nombre}: ${c.raw.pts} pts` } } },
+          scales: { x: { min: 0.5, max: 5.5, title: { display: true, text: "Esfuerzo / costo →" }, ticks: { stepSize: 1 } }, y: { min: 0.5, max: 5.5, title: { display: true, text: "Valor →" }, ticks: { stepSize: 1 } } } },
+        plugins: [{ id: "cuadrantes", beforeDraw: (ch) => { const { ctx, scales: { x, y } } = ch; const cx = x.getPixelForValue(3.5), cy = y.getPixelForValue(2.5);
+          ctx.save(); ctx.strokeStyle = "#ccc"; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(cx, y.top); ctx.lineTo(cx, y.bottom); ctx.moveTo(x.left, cy); ctx.lineTo(x.right, cy); ctx.stroke();
+          ctx.setLineDash([]); ctx.fillStyle = "#999"; ctx.font = "11px Calibri, Arial"; ctx.fillText("Ganancias rápidas", x.left + 6, y.top + 14); ctx.fillText("Proyectos mayores", cx + 6, y.top + 14);
+          ctx.fillText("Rellenos", x.left + 6, y.bottom - 6); ctx.fillText("Reconsiderar", cx + 6, y.bottom - 6); ctx.restore(); } }] });
+    }
+  }
+
+  // ---------- Curva S de presupuesto ----------
+  const MESES_C = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+  const mesesEntre = (a, b) => { const r = []; let y = Number(a.slice(0, 4)), m = Number(a.slice(5, 7)); const yb = Number(b.slice(0, 4)), mb = Number(b.slice(5, 7));
+    while (y < yb || (y === yb && m <= mb)) { r.push(`${y}-${String(m).padStart(2, "0")}`); m === 12 ? (y++, m = 1) : m++; if (r.length > 120) break; } return r; };
+  const finDeMes = (ym) => { const [y, m] = ym.split("-").map(Number); return `${ym}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`; };
+  const etiquetaMes = (ym) => `${MESES_C[Number(ym.slice(5, 7)) - 1]} ${ym.slice(2, 4)}`;
+  // Plan: presupuesto de la línea base (o actual) repartido parejo entre inicio y fin; real: ejecutado reportado en los seguimientos.
+  function planAcumulado(p, hasta) {
+    const pres = num0(p.Presupuesto_Base) ?? (Number(p.Presupuesto) || 0);
+    const fin = p.Fecha_Fin_Base || p.Fecha_Fin_Plan;
+    if (!p.Fecha_Inicio || !fin || !pres) return 0;
+    if (hasta < p.Fecha_Inicio) return 0;
+    if (hasta >= fin) return pres;
+    return pres * (R.difDias(hasta, p.Fecha_Inicio) + 1) / (R.difDias(fin, p.Fecha_Inicio) + 1);
+  }
+  function realAcumulado(p, hasta) {
+    const hoy = R.hoyISO();
+    const segs = R.seguimientosDe(p.ID_Proyecto, S.datos.Seguimientos).filter((s) => num0(s.Ejecutado) !== null && s.Fecha_Corte <= hasta);
+    if (hasta >= hoy) return Number(p.Ejecutado) || 0;
+    return segs.length ? Number(segs[segs.length - 1].Ejecutado) : null;
+  }
+  function datosCurvaS(ps) {
+    const con = ps.filter((p) => p.Fecha_Inicio && (p.Fecha_Fin_Base || p.Fecha_Fin_Plan) && (num0(p.Presupuesto_Base) || Number(p.Presupuesto)));
+    if (!con.length) return null;
+    const ini = con.reduce((m, p) => (p.Fecha_Inicio < m ? p.Fecha_Inicio : m), con[0].Fecha_Inicio);
+    const fin = con.reduce((m, p) => { const f = p.Fecha_Fin_Base > p.Fecha_Fin_Plan ? p.Fecha_Fin_Base : p.Fecha_Fin_Plan; return f > m ? f : m; }, "0000");
+    const meses = mesesEntre(ini, fin);
+    const hoyM = R.hoyISO().slice(0, 7);
+    const plan = meses.map((ym) => Math.round(con.reduce((a, p) => a + planAcumulado(p, finDeMes(ym)), 0)));
+    const real = meses.map((ym) => {
+      if (ym > hoyM) return null;
+      const vals = con.map((p) => realAcumulado(p, ym === hoyM ? R.hoyISO() : finDeMes(ym)));
+      return vals.every((v) => v === null) ? null : Math.round(vals.reduce((a, v) => a + (v || 0), 0));
+    });
+    return { labels: meses.map(etiquetaMes), plan, real };
+  }
+  function graficoCurvaS(canvas, d) {
+    grafico(canvas, { type: "line", data: { labels: d.labels, datasets: [
+      { label: "Planeado acumulado", data: d.plan, borderColor: COLORES.azulClaro || "#6BBAEF", backgroundColor: "#6BBAEF", borderDash: [6, 4], pointRadius: 0, tension: 0.2 },
+      { label: "Ejecutado real", data: d.real, borderColor: COLORES.azul, backgroundColor: COLORES.azul, spanGaps: true, tension: 0.2 }] },
+      options: { maintainAspectRatio: false, plugins: { tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${cop(c.raw)}` } } },
+        scales: { y: { beginAtZero: true, ticks: { callback: (v) => (v >= 1e6 ? `$${Math.round(v / 1e6)} M` : cop(v)) } } } } });
+  }
+
+  // ---------- Auditoría ----------
+  const ID_COLS = { Proyectos: "ID_Proyecto", Hitos: "ID_Hito", Seguimientos: "ID_Seguimiento", Riesgos: "ID_Riesgo", Usuarios: "Correo", Compromisos: "ID_Compromiso",
+    Comentarios: "ID_Comentario", Stakeholders: "ID_Stakeholder", Proveedores: "ID_Proveedor", Tickets: "ID_Ticket", Cambios: "ID_Cambio", Lecciones: "ID_Leccion", RACI: "ID_RACI", Dependencias: "ID_Dependencia" };
+  const CAMPO_DESC = ["Nombre", "Compromiso", "Titulo", "Hito", "Descripcion", "Entregable", "Leccion", "Texto", "Valor", "Logros"];
+  const NO_AUDITAR = new Set(["Auditoria", "Archivos", "Filtros"]);
+  const IGNORAR_CAMPOS = new Set(["Actualizado_Por", "Actualizado_El"]);
+  function conAuditoria(api) {
+    const pend = [];
+    let timer = null;
+    const buscar = (tabla, id) => (S.datos && S.datos[tabla] || []).find((r) => String(r[ID_COLS[tabla]]) === String(id));
+    const desc = (o) => { const k = CAMPO_DESC.find((c) => o && o[c]); return k ? String(o[k]).slice(0, 140) : ""; };
+    const corto = (v) => { const t = String(v ?? ""); return t.length > 80 ? t.slice(0, 80) + "…" : t; };
+    const reg = (tabla, id, pid, accion, detalle) => {
+      if (NO_AUDITAR.has(tabla) || !S.usuario) return;
+      pend.push({ Fecha_Hora: ahora(), Usuario: S.usuario.Correo, Tabla: tabla, ID_Registro: String(id || ""), ID_Proyecto: pid || "", Accion: accion, Detalle: String(detalle || "").slice(0, 1500) });
+      clearTimeout(timer); timer = setTimeout(vaciar, 1500);
+    };
+    async function vaciar() {
+      clearTimeout(timer);
+      if (!pend.length) return;
+      const lote = pend.splice(0);
+      try { await api.agregarFilas("Auditoria", lote); S.auditoria = null; } catch (e) { /* la auditoría nunca bloquea el trabajo */ }
+    }
+    const w = { ...api, vaciar };
+    w.agregarFilas = async (tabla, objs) => {
+      const r = await api.agregarFilas(tabla, objs);
+      objs.forEach((o) => reg(tabla, o[ID_COLS[tabla]] || o.Valor || "", tabla === "Proyectos" ? o.ID_Proyecto : o.ID_Proyecto, "Creó", desc(o) || (tabla === "Catalogos" ? `${o.Lista}: ${o.Valor}` : "")));
+      return r;
+    };
+    w.agregarFila = (tabla, obj) => w.agregarFilas(tabla, [obj]);
+    w.actualizarVarios = async (tabla, colId, lista) => {
+      const antes = lista.map(({ id }) => ({ ...(buscar(tabla, id) || {}) }));
+      const r = await api.actualizarVarios(tabla, colId, lista);
+      lista.forEach(({ id, cambios }, i) => {
+        const a = antes[i];
+        const dif = Object.entries(cambios).filter(([k, v]) => !IGNORAR_CAMPOS.has(k) && String(a[k] ?? "") !== String(v ?? ""))
+          .map(([k, v]) => (k === "Asignaciones" || k === "Adjuntos" ? `${k} actualizado` : `${k}: «${corto(a[k])}» → «${corto(v)}»`));
+        if (dif.length) reg(tabla, id, tabla === "Proyectos" ? id : a.ID_Proyecto, "Modificó", `${desc(a) ? desc(a) + " · " : ""}${dif.join(" · ")}`);
+      });
+      return r;
+    };
+    w.actualizarPorId = (tabla, colId, id, cambios) => w.actualizarVarios(tabla, colId, [{ id, cambios }]);
+    w.eliminarFilas = async (tabla, colId, ids) => {
+      const antes = ids.map((id) => buscar(tabla, id) || {});
+      const r = await api.eliminarFilas(tabla, colId, ids);
+      ids.forEach((id, i) => reg(tabla, id, tabla === "Proyectos" ? id : antes[i].ID_Proyecto, "Eliminó", desc(antes[i])));
+      return r;
+    };
+    w.eliminarFila = async (tabla, criterios) => {
+      const r = await api.eliminarFila(tabla, criterios);
+      reg(tabla, "", "", "Eliminó", Object.entries(criterios).map(([k, v]) => `${k}: ${v}`).join(" · "));
+      return r;
+    };
+    return w;
+  }
+  async function cargarAuditoria(forzar) {
+    if (S.auditoria && !forzar) return S.auditoria;
+    try { S.auditoria = (await S.api.leerTabla("Auditoria")).sort((a, b) => String(b.Fecha_Hora).localeCompare(String(a.Fecha_Hora))); }
+    catch (e) { S.auditoria = []; }
+    return S.auditoria;
+  }
+  const NOMBRE_TABLA = { Proyectos: "Proyecto", Hitos: "Hito", Seguimientos: "Seguimiento", Riesgos: "Riesgo", Usuarios: "Usuario", Compromisos: "Compromiso", Comentarios: "Comentario",
+    Stakeholders: "Stakeholder", Proveedores: "Proveedor", Tickets: "Ticket", Cambios: "Cambio", Lecciones: "Lección", RACI: "RACI", Dependencias: "Dependencia", Catalogos: "Catálogo" };
+  const tablaAuditoria = (lista, conProyecto) => lista.length ? `<div class="tabla-scroll"><table><thead><tr><th>Fecha</th><th>Usuario</th>${conProyecto ? "<th>Proyecto</th>" : ""}<th>Qué</th><th>Detalle</th></tr></thead><tbody>
+    ${lista.map((a) => `<tr><td class="nowrap">${fechaHora(a.Fecha_Hora)}</td><td>${esc(nombreUsuario(a.Usuario))}</td>${conProyecto ? `<td>${esc((proyecto(a.ID_Proyecto) || {}).Nombre || a.ID_Proyecto || "—")}</td>` : ""}
+      <td class="nowrap">${pill(a.Accion)} ${esc(NOMBRE_TABLA[a.Tabla] || a.Tabla)}</td><td class="aud-det">${esc(a.Detalle)}</td></tr>`).join("")}</tbody></table></div>` : vacio("Sin cambios registrados todavía. El registro empieza desde esta versión.");
+  function seccionAuditoria(p) {
+    return `<div class="card"><div class="titulo-fila"><h2>Historial de cambios</h2><button class="btn chico" id="aud-recargar">Actualizar</button></div>
+      <p class="sub">Quién cambió qué y cuándo en este proyecto (datos, seguimientos, compromisos, riesgos, stakeholders…).</p><div id="aud-cont">${vacio("Cargando historial…")}</div></div>`;
+  }
+  async function llenarAuditoria(el, filtro, conProyecto) {
+    const c = el.querySelector("#aud-cont");
+    if (!c) return;
+    const lista = (await cargarAuditoria()).filter(filtro).slice(0, 500);
+    if (el.querySelector("#aud-cont")) el.querySelector("#aud-cont").innerHTML = tablaAuditoria(lista, conProyecto);
+  }
+  function vAuditoria(el) {
+    if (!R.puede(S.usuario, "usuarios")) { el.innerHTML = vacio("Sin acceso."); return; }
+    const F = S.audF = S.audF || { usuario: "", tabla: "", texto: "" };
+    el.innerHTML = `<div class="titulo-fila"><h1>Auditoría</h1><button class="btn" id="aud-recargar">Actualizar</button></div>
+      <div class="filtros"><label class="filtro"><span>Usuario</span><select id="aud-u"><option value="">Todos</option>${S.datos.Usuarios.map((u) => `<option value="${esc(u.Correo)}" ${u.Correo === F.usuario ? "selected" : ""}>${esc(u.Nombre || u.Correo)}</option>`).join("")}</select></label>
+        <label class="filtro"><span>Tipo de dato</span><select id="aud-t"><option value="">Todos</option>${Object.entries(NOMBRE_TABLA).map(([k, t]) => `<option value="${k}" ${k === F.tabla ? "selected" : ""}>${t}</option>`).join("")}</select></label>
+        <label class="filtro crece"><span>Buscar</span><input id="aud-x" type="search" value="${esc(F.texto)}" placeholder="Texto del detalle"></label></div>
+      <div class="card"><p class="sub">Últimos 500 movimientos. Se guardan en la hoja Auditoria del Excel.</p><div id="aud-cont">${vacio("Cargando…")}</div></div>`;
+    const filtro = (a) => (!F.usuario || lc(a.Usuario) === lc(F.usuario)) && (!F.tabla || a.Tabla === F.tabla) && (!F.texto || lc(`${a.Detalle} ${a.ID_Registro}`).includes(lc(F.texto)));
+    $("#aud-u").addEventListener("change", (e) => { F.usuario = e.target.value; render(); });
+    $("#aud-t").addEventListener("change", (e) => { F.tabla = e.target.value; render(); });
+    $("#aud-x").addEventListener("change", (e) => { F.texto = e.target.value; render(); });
+    $("#aud-recargar").addEventListener("click", async () => { await cargarAuditoria(true); render(); });
+    llenarAuditoria(el, filtro, true);
+  }
+
+  // ---------- Informe semanal del portafolio ----------
+  function rangoSemana(sem) {
+    const [y, w] = sem.split("-S").map(Number);
+    const ene4 = new Date(y, 0, 4), dia = ene4.getDay() || 7;
+    const lunes = new Date(y, 0, 4 - dia + 1 + (w - 1) * 7);
+    const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const dom = new Date(lunes); dom.setDate(lunes.getDate() + 6);
+    return { ini: iso(lunes), fin: iso(dom) };
+  }
+  function informeSemanal(sem) {
+    const ps = filtrados();
+    const ids = new Set(ps.map((p) => p.ID_Proyecto));
+    const { ini, fin } = rangoSemana(sem);
+    const enSemana = (f) => f && String(f).slice(0, 10) >= ini && String(f).slice(0, 10) <= fin;
+    const k = R.kpis(ps, S.datos.Seguimientos);
+    const activos = ps.filter((p) => p.Estado === "Activo");
+    const t = (v) => esc(v === 0 ? "0" : v || "—");
+    const tabla = (cab, filas, vacioTxt) => filas.length ? `<table class="hv-t"><thead><tr>${cab.map((c) => `<th>${c}</th>`).join("")}</tr></thead><tbody>${filas.join("")}</tbody></table>` : `<p class="hv-vacio">${vacioTxt}</p>`;
+    const segsSem = S.datos.Seguimientos.filter((s) => ids.has(s.ID_Proyecto) && enSemana(s.Fecha_Corte));
+    const variacion = (p) => {
+      const hist = R.seguimientosDe(p.ID_Proyecto, S.datos.Seguimientos).filter((s) => s.Fecha_Corte <= fin);
+      const ult = hist[hist.length - 1], ant = hist.filter((s) => s.Fecha_Corte < ini).pop();
+      return ult && ant ? (Number(ult.Avance_Real) || 0) - (Number(ant.Avance_Real) || 0) : null;
+    };
+    const comps = S.datos.Compromisos.filter((c) => ids.has(c.ID_Proyecto));
+    const vencidos = comps.filter((c) => R.estadoCompromiso(c) === "Vencido");
+    const cerradosSem = comps.filter((c) => R.cerrado(c) && enSemana(c.Fecha_Cierre));
+    const acordadosSem = comps.filter((c) => segsSem.some((s) => s.ID_Seguimiento === c.ID_Seguimiento));
+    const riesgosAltos = S.datos.Riesgos.filter((r) => ids.has(r.ID_Proyecto) && r.Estado === "Abierto" && R.nivelRiesgo(Number(r.Calificacion_Residual) || Number(r.Calificacion_Inherente) || 0) === "Alto");
+    const cambiosSem = (S.datos.Cambios || []).filter((c) => ids.has(c.ID_Proyecto) && (enSemana(c.Fecha) || enSemana(c.Fecha_Decision)));
+    const sobre = capacidad().filter((x) => x.total > 100 && x.asign.some((a) => ids.has(a.p.ID_Proyecto)));
+    const depsRiesgo = (S.datos.Dependencias || []).filter((d) => ids.has(d.ID_Proyecto) && conflictoDep(d));
+    const nomP = (id) => esc((proyecto(id) || {}).Nombre || id);
+    const conteo = ["Verde", "Amarillo", "Rojo"].map((s) => `${s}: ${activos.filter((p) => p.Semaforo === s).length}`).join(" · ");
+    const doc = `${cabDocumento("Informe semanal del portafolio", `Semana ${sem.split("-S")[1]} de ${sem.slice(0, 4)}`, `Del ${fecha(ini)} al ${fecha(fin)} · ${ps.length} proyecto(s) en la selección`)}
+      <section class="hv-kpis">
+        <div><span>Proyectos activos</span><b>${k.activos}</b></div><div><span>Avance real / plan (promedio)</span><b>${pct(k.avanceReal)} / ${pct(k.avancePlan)}</b></div>
+        <div><span>Semáforo</span><b style="font-size:13px">${conteo}</b></div><div><span>Seguimiento al día</span><b>${pct(k.pctAlDia)}</b></div>
+        <div><span>Presupuesto ejecutado</span><b>${pct(k.pctEjecutado)}</b></div><div><span>Compromisos vencidos</span><b>${vencidos.length}</b></div>
+      </section>
+      <h2>1. Estado de los proyectos</h2>
+      ${tabla(["Proyecto", "PM", "Semáforo", "Avance", "Δ semana", "Seguimiento", "Novedad"], activos.sort((a, b) => ({ Rojo: 0, Amarillo: 1, Verde: 2 }[a.Semaforo] ?? 3) - ({ Rojo: 0, Amarillo: 1, Verde: 2 }[b.Semaforo] ?? 3)).map((p) => {
+        const v = variacion(p), e = R.estadoSeguimiento(p, S.datos.Seguimientos);
+        return `<tr><td><b>${t(p.Nombre)}</b>${p.Codigo_Almera ? `<br><small>Almera ${esc(p.Codigo_Almera)}</small>` : ""}</td><td>${t(nombreUsuario(p.PM))}</td><td>${t(p.Semaforo)}</td>
+          <td>${pct(p.Avance_Real)} / ${pct(p.Avance_Planeado)}</td><td>${v === null ? "—" : `${v > 0 ? "+" : ""}${v} pts`}</td><td>${t(e.estado)}</td><td>${t(p.Comentario_Estado)}</td></tr>`;
+      }), "No hay proyectos activos en la selección.")}
+      <h2>2. Seguimientos de la semana</h2>
+      ${tabla(["Proyecto", "Fecha", "Avance", "Logros", "Próximos pasos", "Bloqueos"], segsSem.map((s) => `<tr><td>${nomP(s.ID_Proyecto)}</td><td class="hv-nw">${fecha(s.Fecha_Corte)}</td><td>${pct(s.Avance_Real)}</td><td>${t(s.Logros)}</td><td>${t(s.Proximos_Pasos)}</td><td>${t(s.Bloqueos)}</td></tr>`), "No se reportaron seguimientos esta semana.")}
+      <h2>3. Compromisos</h2>
+      <p class="hv-p"><b>${acordadosSem.length}</b> acordados en la semana · <b>${cerradosSem.length}</b> cerrados en la semana · <b>${vencidos.length}</b> vencidos a la fecha.</p>
+      ${tabla(["Compromiso vencido", "Proyecto", "Responsable", "Fecha límite", "Estado"], vencidos.sort((a, b) => String(a.Fecha_Compromiso).localeCompare(String(b.Fecha_Compromiso))).map((c) => `<tr><td>${t(c.Compromiso)}</td><td>${nomP(c.ID_Proyecto)}</td><td>${t(c.Responsable)}</td><td class="hv-nw">${fecha(c.Fecha_Compromiso)}</td><td>${esc(R.estadoBase(c))}</td></tr>`), "Sin compromisos vencidos.")}
+      ${cerradosSem.length ? tabla(["Cerrado en la semana", "Proyecto", "Responsable", "Cerrado"], cerradosSem.map((c) => `<tr><td>${t(c.Compromiso)}</td><td>${nomP(c.ID_Proyecto)}</td><td>${t(c.Responsable)}</td><td class="hv-nw">${fecha(c.Fecha_Cierre)}</td></tr>`), "") : ""}
+      <h2>4. Riesgos altos abiertos</h2>
+      ${tabla(["Riesgo", "Proyecto", "Nivel", "Mitigación"], riesgosAltos.map((r) => `<tr><td>${t(r.Descripcion)}</td><td>${nomP(r.ID_Proyecto)}</td><td>${R.nivelRiesgo(Number(r.Calificacion_Residual) || Number(r.Calificacion_Inherente) || 0)}</td><td>${t(r.Plan_Mitigacion)}</td></tr>`), "Sin riesgos altos abiertos.")}
+      <h2>5. Control de cambios</h2>
+      ${tabla(["Cambio", "Proyecto", "Tipo", "Estado"], cambiosSem.map((c) => `<tr><td>${t(c.Descripcion)}</td><td>${nomP(c.ID_Proyecto)}</td><td>${t(c.Tipo)}</td><td>${t(c.Estado)}</td></tr>`), "Sin cambios solicitados o decididos en la semana.")}
+      <h2>6. Alertas del portafolio</h2>
+      ${tabla(["Alerta", "Detalle"], [
+        ...sobre.map((x) => `<tr><td>Persona sobreasignada</td><td>${esc(x.nombre)}: ${x.total}% (${x.asign.map((a) => `${esc(a.p.Nombre)} ${a.ded}%`).join(", ")})</td></tr>`),
+        ...depsRiesgo.map((d) => `<tr><td>Dependencia en riesgo</td><td>${esc(conflictoDep(d))}</td></tr>`),
+      ], "Sin alertas de capacidad ni de dependencias.")}
+      <footer class="hv-pie">Fundación Santa Fe de Bogotá · Oficina de Proyectos · Informe semanal ${esc(sem)} · Generado desde el Portafolio PMO</footer>`;
+    mostrarDocumento(`Informe semanal ${sem}`, doc, `Informe semanal portafolio ${sem}`);
   }
 
   // ---------- Tickets del helpdesk ----------
@@ -1777,15 +2290,17 @@
       { seccion: "4. Presupuesto", ayuda: "en pesos colombianos, sin puntos" },
       { k: "Presupuesto", label: "Presupuesto (COP)", tipo: "number", min: 0, def: 0 },
       { k: "Ejecutado", label: "Ejecutado (COP)", tipo: "number", min: 0, def: 0 },
-      { seccion: "5. Proveedores", ayuda: "márcalos o crea uno nuevo aquí mismo" },
+      { seccion: "5. Priorización", ayuda: "califica de 1 (muy bajo) a 5 (muy alto); alimenta el menú Priorización" },
+      ...CRITERIOS.map((c) => ({ k: c.k, label: c.t, tipo: "select", opciones: [[1, "1 · Muy bajo"], [2, "2 · Bajo"], [3, "3 · Medio"], [4, "4 · Alto"], [5, "5 · Muy alto"]] })),
+      { seccion: "6. Proveedores", ayuda: "márcalos o crea uno nuevo aquí mismo" },
       { k: "Proveedores", label: "Proveedor(es) del proyecto", tipo: "checks", vacio: "Aún no hay proveedores. Créalos en Catálogos → Proveedores.",
         opciones: proveedoresActivos(p ? p.Proveedores : "").map((x) => [x.ID_Proveedor, x.Nombre]) },
-      { seccion: "6. Equipo y stakeholders", ayuda: "roles, personas y su dedicación" },
+      { seccion: "7. Equipo y stakeholders", ayuda: "roles, personas y su dedicación" },
       { html: `<div id="fp-equipo"></div>` },
-      { seccion: "7. Enlaces", ayuda: "opcionales; pega la dirección completa" },
+      { seccion: "8. Enlaces", ayuda: "opcionales; pega la dirección completa" },
       { k: "URL_Repositorio", label: "URL del repositorio", tipo: "url", placeholder: "https://github.com/… o https://dev.azure.com/…" },
       { k: "URL_Documentos", label: "URL de documentos", tipo: "url", placeholder: "https://…sharepoint.com/…" },
-      { seccion: "8. Comentario" },
+      { seccion: "9. Comentario" },
       { k: "Comentario_Estado", label: "Comentario de estado", tipo: "textarea", placeholder: "Novedad principal del proyecto" },
     ];
     const valores = p ? { ...p } : { PM: pmFijo ? u.Correo : "" };
@@ -1909,7 +2424,10 @@
         S.vista = "ficha";
         guardar(async () => { await S.api.agregarFila("Proyectos", fila); await guardarEquipo(id); }, `Iniciativa ${fila.ID_Proyecto} registrada`);
       } else {
-        guardar(async () => { await S.api.actualizarPorId("Proyectos", "ID_Proyecto", p.ID_Proyecto, { ...fd, ...sello() }); await guardarEquipo(p.ID_Proyecto); });
+        const seCierra = fd.Estado === "Cerrado" && p.Estado !== "Cerrado";
+        if (seCierra) S.fichaTab = "lecciones";
+        guardar(async () => { await S.api.actualizarPorId("Proyectos", "ID_Proyecto", p.ID_Proyecto, { ...fd, ...sello() }); await guardarEquipo(p.ID_Proyecto); },
+          seCierra ? "Proyecto cerrado. Es buen momento para registrar las lecciones aprendidas." : "Guardado");
       }
     }, (fd) => (fd.Fecha_Inicio && fd.Fecha_Fin_Plan && fd.Fecha_Fin_Plan < fd.Fecha_Inicio ? "La fecha fin no puede ser anterior a la fecha de inicio." : ""),
     !nuevo && R.puede(u, "verTodo") ? { init: (m) => { initProv(m); initEquipo(m); }, eliminar: { texto: "Eliminar proyecto", titulo: `Eliminar ${p.ID_Proyecto}`,
@@ -1928,6 +2446,7 @@
       { k: "Avance_Real", label: "Avance real (%)", tipo: "number", min: 0, max: 100, def: p.Avance_Real },
       { k: "Avance_Planeado", label: "Avance planeado a la fecha (%)", tipo: "number", min: 0, max: 100, def: p.Avance_Planeado, ayuda: "Lo que debería llevar según el plan." },
       { k: "Semaforo", label: "Semáforo", tipo: "select", opciones: S.cat.Semaforo, def: p.Semaforo },
+      { k: "Ejecutado", label: "Presupuesto ejecutado a la fecha (COP)", tipo: "number", min: 0, def: p.Ejecutado, ayuda: "Acumulado; alimenta la curva S." },
       { seccion: "2. Qué pasó en el periodo" },
       { k: "Logros", label: "Logros del periodo", tipo: "textarea", placeholder: "Qué se terminó o avanzó" },
       { k: "Proximos_Pasos", label: "Próximos pasos", tipo: "textarea", placeholder: "Qué sigue hasta el próximo reporte" },
@@ -2029,7 +2548,7 @@
       const idSeg = R.siguienteIdHijo("SEG", S.datos.Seguimientos, "ID_Seguimiento", p.ID_Proyecto);
       const fila = {
         ID_Seguimiento: idSeg, ID_Proyecto: p.ID_Proyecto, Fecha_Corte: fd.Fecha_Corte, Semana: R.semanaISO(fd.Fecha_Corte),
-        Avance_Real: fd.Avance_Real, Semaforo: fd.Semaforo, Logros: fd.Logros, Proximos_Pasos: fd.Proximos_Pasos,
+        Avance_Real: fd.Avance_Real, Semaforo: fd.Semaforo, Ejecutado: fd.Ejecutado, Logros: fd.Logros, Proximos_Pasos: fd.Proximos_Pasos,
         Bloqueos: fd.Bloqueos, Reportado_Por: S.usuario.Correo, Fecha_Acta: fd.Fecha_Acta, URL_Acta: fd.URL_Acta,
         Acta_Archivo: acta ? acta.nombre : "",
       };
@@ -2043,6 +2562,7 @@
         await S.api.actualizarPorId("Proyectos", "ID_Proyecto", p.ID_Proyecto, {
           ...(fd.Avance_Real !== "" ? { Avance_Real: fd.Avance_Real } : {}),
           ...(fd.Avance_Planeado !== "" ? { Avance_Planeado: fd.Avance_Planeado } : {}),
+          ...(fd.Ejecutado !== "" ? { Ejecutado: fd.Ejecutado } : {}),
           ...(fd.Semaforo ? { Semaforo: fd.Semaforo } : {}),
           ...(fd.Bloqueos || fd.Logros ? { Comentario_Estado: fd.Bloqueos ? `Bloqueo: ${fd.Bloqueos}` : fd.Logros } : {}), ...sello(),
         });
@@ -2138,6 +2658,10 @@
     await borrar("Riesgos", "ID_Riesgo", S.datos.Riesgos.filter((r) => r.ID_Proyecto === pid));
     await borrar("Stakeholders", "ID_Stakeholder", (S.datos.Stakeholders || []).filter((x) => x.ID_Proyecto === pid));
     await borrar("Tickets", "ID_Ticket", (S.datos.Tickets || []).filter((x) => x.ID_Proyecto === pid));
+    await borrar("Cambios", "ID_Cambio", (S.datos.Cambios || []).filter((x) => x.ID_Proyecto === pid));
+    await borrar("Lecciones", "ID_Leccion", (S.datos.Lecciones || []).filter((x) => x.ID_Proyecto === pid));
+    await borrar("RACI", "ID_RACI", (S.datos.RACI || []).filter((x) => x.ID_Proyecto === pid));
+    await borrar("Dependencias", "ID_Dependencia", (S.datos.Dependencias || []).filter((x) => x.ID_Proyecto === pid || x.Depende_De === pid));
     await S.api.eliminarFilas("Proyectos", "ID_Proyecto", [pid]);
   }
 
@@ -2204,6 +2728,7 @@
       { k: "Fecha_Corte", label: "Fecha de corte", tipo: "date" },
       { k: "Avance_Real", label: "Avance real (%)", tipo: "number", min: 0, max: 100 },
       { k: "Semaforo", label: "Semáforo", tipo: "select", opciones: S.cat.Semaforo },
+      { k: "Ejecutado", label: "Presupuesto ejecutado a la fecha (COP)", tipo: "number", min: 0 },
       { seccion: "2. Qué pasó en el periodo" },
       { k: "Logros", label: "Logros del periodo", tipo: "textarea" },
       { k: "Proximos_Pasos", label: "Próximos pasos", tipo: "textarea" },
@@ -2249,7 +2774,7 @@
           ID_Compromiso: R.siguienteIdHijo("CMP", S.datos.Compromisos, "ID_Compromiso", s.ID_Proyecto, i), ID_Proyecto: s.ID_Proyecto, ID_Seguimiento: s.ID_Seguimiento,
           Compromiso: c.Compromiso, Responsable: c.Responsable, Fecha_Compromiso: c.Fecha_Compromiso, Estado: "Pendiente", Fecha_Cierre: "", Registrado_Por: S.usuario.Correo })));
         if (esUltimo && p) await S.api.actualizarPorId("Proyectos", "ID_Proyecto", p.ID_Proyecto, {
-          ...(fd.Avance_Real !== "" ? { Avance_Real: fd.Avance_Real } : {}), ...(fd.Semaforo ? { Semaforo: fd.Semaforo } : {}), ...sello() });
+          ...(fd.Avance_Real !== "" ? { Avance_Real: fd.Avance_Real } : {}), ...(fd.Semaforo ? { Semaforo: fd.Semaforo } : {}), ...(fd.Ejecutado !== "" ? { Ejecutado: fd.Ejecutado } : {}), ...sello() });
       }, "Sesión actualizada");
     }, (fd) => (fd.Fecha_Corte && fd.Fecha_Corte > R.hoyISO() ? "La fecha de corte no puede ser futura." : ""), {
       antes: bloqueActa, despues, init,
@@ -2276,7 +2801,7 @@
     S.modo = typeof Office === "undefined" ? "demo" : modoDesdeURL();
     cargando(true, "Conectando con Excel…");
     try {
-      S.api = await DATOS.crear(S.modo);
+      S.api = conAuditoria(await DATOS.crear(S.modo));
       await recargar();
       const correo = leerSesion();
       S.usuario = S.datos.Usuarios.find((x) => lc(x.Correo) === lc(correo) && x.Activo === "Sí") || null;

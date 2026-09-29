@@ -194,6 +194,34 @@ span.chip-proy { cursor: default; }
 .eq-form { margin: 8px 0; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .eq-form .pn-grid { width: 100%; }
 .eq-form > input { flex: 1; min-width: 200px; width: auto; }
+.leccion { border: 1px solid #e3e8ef; border-left: 4px solid var(--amarillo); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; display: grid; gap: 4px; }
+.leccion.positiva { border-left-color: var(--verde); }
+.leccion .titulo-fila { margin-bottom: 2px; }
+.pill.positiva { background: #e3f3ea; color: #1e5e3a; }
+.pill.amejorar { background: #fff4d6; color: #7a5b00; }
+.pill.solicitado { background: #fff4d6; color: #7a5b00; }
+.pill.aprobado { background: #e3f3ea; color: #1e5e3a; }
+.pill.rechazado { background: #fbe3e0; color: #8e2a1f; }
+.pill.creó { background: #e3f3ea; color: #1e5e3a; }
+.pill.modificó { background: #e6f0fd; color: #0d3f86; }
+.pill.eliminó { background: #fbe3e0; color: #8e2a1f; }
+.pill.gananciarápida { background: #e3f3ea; color: #1e5e3a; }
+.pill.proyectomayor { background: #e6f0fd; color: #0d3f86; }
+.pill.relleno { background: #eee; color: #555; }
+.pill.reconsiderar { background: #fbe3e0; color: #8e2a1f; }
+.aud-det { font-size: 12.5px; overflow-wrap: anywhere; min-width: 240px; }
+table.raci th { text-align: center; white-space: normal; min-width: 80px; font-size: 12px; }
+table.raci th:first-child { text-align: left; min-width: 180px; }
+.raci-n { font-size: 11px; opacity: .85; }
+.raci-sel { width: 52px; padding: 4px; text-align: center; font-weight: bold; }
+.raci-sel.v-R, .raci-v.v-R { background: #e6f0fd; color: #0d3f86; }
+.raci-sel.v-A, .raci-v.v-A { background: #104994; color: #fff; }
+.raci-sel.v-C, .raci-v.v-C { background: #fff4d6; color: #7a5b00; }
+.raci-sel.v-I, .raci-v.v-I { background: #eee; color: #555; }
+.raci-v { display: inline-block; min-width: 26px; border-radius: 6px; padding: 2px 6px; }
+ul.deps { list-style: none; padding: 0; margin: 6px 0 0; }
+ul.deps li { padding: 6px 8px; border-left: 3px solid var(--azul-claro); margin-bottom: 6px; background: #fafcff; border-radius: 4px; }
+ul.deps li.dep-alerta { border-left-color: var(--rojo); background: #fdf3f2; }
 .pestanas { display: flex; gap: 2px; border-bottom: 2px solid #dfe6ef; margin: 4px 0 14px; overflow-x: auto; }
 .pestana { background: none; border: 0; border-bottom: 3px solid transparent; margin-bottom: -2px; padding: 9px 14px; font: inherit; color: var(--texto2); cursor: pointer; white-space: nowrap; }
 .pestana:hover { color: var(--azul); }

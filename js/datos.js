@@ -19,21 +19,31 @@
     Proveedores: ["ID_Proveedor", "Nombre", "NIT", "Servicio", "Contacto", "Correo", "Telefono", "Activo"],
     // Tickets de la plataforma helpdesk asociados a cada proyecto.
     Tickets: ["ID_Ticket", "ID_Proyecto", "Numero", "Titulo", "Estado", "Prioridad", "Registrado_Por", "Fecha_Registro"],
+    // Control de cambios (alcance, tiempo, costo, recursos) con aprobación.
+    Cambios: ["ID_Cambio", "ID_Proyecto", "Fecha", "Tipo", "Descripcion", "Justificacion", "Impacto", "Nueva_Fecha_Fin", "Nuevo_Presupuesto", "Estado", "Solicitado_Por", "Decidido_Por", "Fecha_Decision", "Comentario_Decision"],
+    // Lecciones aprendidas.
+    Lecciones: ["ID_Leccion", "ID_Proyecto", "Fecha", "Categoria", "Tipo", "Situacion", "Leccion", "Recomendacion", "Registrado_Por"],
+    // Matriz RACI: una fila por entregable; Asignaciones = JSON { "PM" | ID_Stakeholder: "R" | "A" | "C" | "I" }.
+    RACI: ["ID_RACI", "ID_Proyecto", "Entregable", "Asignaciones"],
+    // Dependencias: ID_Proyecto depende de Depende_De.
+    Dependencias: ["ID_Dependencia", "ID_Proyecto", "Depende_De", "Tipo", "Descripcion"],
+    // Registro de auditoría: quién cambió qué y cuándo.
+    Auditoria: ["Fecha_Hora", "Usuario", "Tabla", "ID_Registro", "ID_Proyecto", "Accion", "Detalle"],
     // Filtros guardados por cada usuario (y los que Admin/PMO comparten con todos).
     Filtros: ["ID_Filtro", "Usuario", "Nombre", "PM", "Proyecto", "Estado", "Metodologia", "Semaforo", "Texto", "Predeterminado", "Compartido"],
   };
-  const SOLO_BAJO_DEMANDA = ["Archivos"];
+  const SOLO_BAJO_DEMANDA = ["Archivos", "Auditoria"];
   const HOJAS_OCULTAS = ["Archivos"];
   const TABLAS = Object.keys(ESTRUCTURA);
   // Columnas agregadas en versiones posteriores: si faltan en el Excel, se crean al final de la tabla.
   const COLUMNAS_NUEVAS = {
-    Proyectos: ["URL_Repositorio", "URL_Documentos", "Proveedores", "Codigo_Almera", "Dedicacion_PM"],
+    Proyectos: ["URL_Repositorio", "URL_Documentos", "Proveedores", "Codigo_Almera", "Dedicacion_PM", "Fecha_Fin_Base", "Presupuesto_Base", "Valor", "Urgencia", "Riesgo_Prio", "Esfuerzo"],
     Stakeholders: ["Dedicacion"],
-    Seguimientos: ["Fecha_Acta", "URL_Acta", "Acta_Archivo"],
+    Seguimientos: ["Fecha_Acta", "URL_Acta", "Acta_Archivo", "Ejecutado"],
     Compromisos: ["Correo_Responsable", "Dias_Alerta"],
     Comentarios: ["Adjuntos"],
   };
-  const COLS_FECHA = ["Fecha_Inicio", "Fecha_Fin_Plan", "Actualizado_El", "Fecha_Plan", "Fecha_Real", "Fecha_Corte", "Fecha_Compromiso", "Fecha_Cierre", "Fecha_Acta"];
+  const COLS_FECHA = ["Fecha_Fin_Base", "Nueva_Fecha_Fin", "Fecha_Decision", "Fecha", "Fecha_Registro", "Fecha_Inicio", "Fecha_Fin_Plan", "Actualizado_El", "Fecha_Plan", "Fecha_Real", "Fecha_Corte", "Fecha_Compromiso", "Fecha_Cierre", "Fecha_Acta"];
 
   // Excel puede convertir "2026-09-28" en número de serie; aquí se devuelve a texto ISO.
   const serialAISO = (v) => new Date(Math.round((v - 25569) * 86400000)).toISOString().slice(0, 10);
@@ -97,16 +107,31 @@
       });
     },
 
+    // Lee una tabla que no se carga con leerTodo (p. ej. Auditoria).
+    async leerTabla(nombre) {
+      return Excel.run(async (ctx) => {
+        const t = ctx.workbook.tables.getItemOrNullObject(nombre);
+        await ctx.sync();
+        if (t.isNullObject) return [];
+        const h = t.getHeaderRowRange().load("values"), b = t.getDataBodyRange().load("values");
+        await ctx.sync();
+        const cols = h.values[0];
+        return b.values.filter((r) => !vacia(r)).map((r) => Object.fromEntries(cols.map((k, i) => [k, normalizar(k, r[i])])));
+      });
+    },
+
     // Agrega una o varias filas en una sola operación.
     async agregarFilas(tabla, objs) {
       return Excel.run(async (ctx) => {
         const t = ctx.workbook.tables.getItem(tabla);
         const h = t.getHeaderRowRange().load("values");
-        const b = t.getDataBodyRange().load("values");
+        const b = t.getDataBodyRange().load("rowCount");               // solo el conteo: no se lee toda la tabla
         await ctx.sync();
         const filas = objs.map((obj) => h.values[0].map((k) => (obj[k] === undefined || obj[k] === null ? "" : obj[k])));
-        if (b.values.length === 1 && vacia(b.values[0])) {           // tabla vacía: se usa la fila en blanco
-          b.values = [filas[0]];
+        let primeraVacia = false;
+        if (b.rowCount === 1) { const r0 = b.getRow(0).load("values"); await ctx.sync(); primeraVacia = vacia(r0.values[0]); }
+        if (primeraVacia) {                                             // tabla vacía: se usa la fila en blanco
+          b.getRow(0).values = [filas[0]];
           if (filas.length > 1) t.rows.add(null, filas.slice(1));
         } else t.rows.add(null, filas);
         await ctx.sync();
@@ -234,7 +259,8 @@
     };
     const archivos = {};
     const api = {
-      async leerTodo() { return copia(db); },
+      async leerTodo() { const r = copia(db); SOLO_BAJO_DEMANDA.forEach((n) => delete r[n]); return r; },
+      async leerTabla(nombre) { return copia(db[nombre] || []); },
       async guardarParte(f) { (archivos[f.ID_Archivo] = archivos[f.ID_Archivo] || [])[f.Parte] = copia(f); return true; },
       async borrarArchivo(id) { delete archivos[id]; return true; },
       async leerParte(id, parte) { const f = (archivos[id] || [])[parte]; if (!f) throw new Error("En modo demostración el acta solo existe mientras la página está abierta."); return f; },
@@ -258,7 +284,7 @@
     return api;
   }
 
-  const OPERACIONES = ["leerTodo", "agregarFila", "agregarFilas", "actualizarPorId", "actualizarVarios", "eliminarFila", "eliminarFilas", "guardarParte", "borrarArchivo", "leerParte"];
+  const OPERACIONES = ["leerTodo", "leerTabla", "agregarFila", "agregarFilas", "actualizarPorId", "actualizarVarios", "eliminarFila", "eliminarFilas", "guardarParte", "borrarArchivo", "leerParte"];
 
   async function puente() {
     let seq = 0;
