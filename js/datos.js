@@ -17,6 +17,8 @@
     Stakeholders: ["ID_Stakeholder", "ID_Proyecto", "Rol", "Nombre", "Cargo", "Area", "Correo", "Telefono", "ID_Proveedor"],
     // Maestro de proveedores; cada proyecto guarda los suyos en Proyectos.Proveedores.
     Proveedores: ["ID_Proveedor", "Nombre", "NIT", "Servicio", "Contacto", "Correo", "Telefono", "Activo"],
+    // Tickets de la plataforma helpdesk asociados a cada proyecto.
+    Tickets: ["ID_Ticket", "ID_Proyecto", "Numero", "Titulo", "Estado", "Prioridad", "Registrado_Por", "Fecha_Registro"],
     // Filtros guardados por cada usuario (y los que Admin/PMO comparten con todos).
     Filtros: ["ID_Filtro", "Usuario", "Nombre", "PM", "Proyecto", "Estado", "Metodologia", "Semaforo", "Texto", "Predeterminado", "Compartido"],
   };
@@ -25,9 +27,10 @@
   const TABLAS = Object.keys(ESTRUCTURA);
   // Columnas agregadas en versiones posteriores: si faltan en el Excel, se crean al final de la tabla.
   const COLUMNAS_NUEVAS = {
-    Proyectos: ["URL_Repositorio", "URL_Documentos", "Proveedores"],
+    Proyectos: ["URL_Repositorio", "URL_Documentos", "Proveedores", "Codigo_Almera"],
     Seguimientos: ["Fecha_Acta", "URL_Acta", "Acta_Archivo"],
     Compromisos: ["Correo_Responsable", "Dias_Alerta"],
+    Comentarios: ["Adjuntos"],
   };
   const COLS_FECHA = ["Fecha_Inicio", "Fecha_Fin_Plan", "Actualizado_El", "Fecha_Plan", "Fecha_Real", "Fecha_Corte", "Fecha_Compromiso", "Fecha_Cierre", "Fecha_Acta"];
 

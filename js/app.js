@@ -88,9 +88,10 @@
     S.cat = {};
     for (const f of S.datos.Catalogos) (S.cat[f.Lista] = S.cat[f.Lista] || []).push(String(f.Valor));
     S.cat.Estado_Compromiso = R.ESTADOS_COMPROMISO.slice();
-    if (!S.cat.Rol_Stakeholder) S.cat.Rol_Stakeholder = ROLES_STK_BASE.slice();
+    Object.entries(CATALOGOS_BASE).forEach(([k, v]) => { if (!S.cat[k]) S.cat[k] = v.slice(); });
   }
-  const ROLES_STK_BASE = ["Sponsor", "Líder funcional", "Product Owner"];
+  // Listas nuevas que se crean solas en la tabla Catalogos la primera vez (luego se editan desde Catálogos).
+  const CATALOGOS_BASE = { Rol_Stakeholder: ["Sponsor", "Líder funcional", "Product Owner"], Estado_Ticket: ["Abierto", "En curso", "Resuelto", "Cerrado"] };
   let sembrado = false;
   // La primera vez, deja en el Excel los roles de stakeholder base para poder editarlos desde Catálogos.
   async function sembrarCatalogos() {
@@ -100,9 +101,10 @@
       try { await S.api.actualizarVarios("Compromisos", "ID_Compromiso", viejos.map((c) => ({ id: c.ID_Compromiso, cambios: { Estado: "Cerrado" } }))); viejos.forEach((c) => { c.Estado = "Cerrado"; }); }
       catch (e) { /* sin permiso de edición: la app igual los trata como cerrados */ }
     }
-    if (sembrado || S.datos.Catalogos.some((f) => f.Lista === "Rol_Stakeholder")) return;
+    const faltan = Object.keys(CATALOGOS_BASE).filter((k) => !S.datos.Catalogos.some((f) => f.Lista === k));
+    if (sembrado || !faltan.length) return;
     sembrado = true;
-    try { await S.api.agregarFilas("Catalogos", ROLES_STK_BASE.map((v) => ({ Lista: "Rol_Stakeholder", Valor: v }))); S.datos = await S.api.leerTodo(); armarCatalogos(); }
+    try { await S.api.agregarFilas("Catalogos", faltan.flatMap((k) => CATALOGOS_BASE[k].map((v) => ({ Lista: k, Valor: v })))); S.datos = await S.api.leerTodo(); armarCatalogos(); }
     catch (e) { /* sin permiso de edición: se usan los valores base en memoria */ }
   }
   async function recargar() {
@@ -586,11 +588,72 @@
   const comentariosDe = (id) => (S.datos.Comentarios || []).filter((x) => x.ID_Compromiso === id).sort((a, b) => (String(a.Fecha_Hora) < String(b.Fecha_Hora) ? -1 : 1));
   const ahora = () => { const d = new Date(); const p = (n) => String(n).padStart(2, "0"); return `${R.hoyISO()} ${p(d.getHours())}:${p(d.getMinutes())}`; };
   const fechaHora = (v) => { const s = String(v || ""); return s.length >= 16 ? `${fecha(s.slice(0, 10))} ${s.slice(11, 16)}` : fecha(s); };
-  function nuevoComentario(c, texto) {
+  function nuevoComentario(c, texto, adjuntos) {
     const lista = S.datos.Comentarios || [];
     const max = lista.filter((x) => x.ID_Compromiso === c.ID_Compromiso).reduce((m, x) => Math.max(m, parseInt(String(x.ID_Comentario).split("-").pop(), 10) || 0), 0);
-    return { ID_Comentario: `COM-${String(c.ID_Compromiso).replace(/^CMP-/, "")}-${max + 1}`, ID_Compromiso: c.ID_Compromiso, ID_Proyecto: c.ID_Proyecto, Fecha_Hora: ahora(), Autor: S.usuario.Correo, Texto: texto };
+    return { ID_Comentario: `COM-${String(c.ID_Compromiso).replace(/^CMP-/, "")}-${max + 1}`, ID_Compromiso: c.ID_Compromiso, ID_Proyecto: c.ID_Proyecto, Fecha_Hora: ahora(), Autor: S.usuario.Correo, Texto: texto, Adjuntos: adjuntos && adjuntos.length ? JSON.stringify(adjuntos) : "" };
   }
+  // ---------- Adjuntos de los comentarios (imágenes pegadas y archivos) ----------
+  const MAX_ADJ = 5 * 1024 * 1024;
+  const adjuntosDe = (x) => { try { return x.Adjuntos ? JSON.parse(x.Adjuntos) : []; } catch (e) { return []; } };
+  const tamano = (n) => (n > 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+  const esImagen = (t) => /^image\//.test(t || "");
+  // Las imágenes grandes (capturas de correo) se reducen para no llenar el Excel.
+  async function prepararArchivo(file) {
+    let bytes = new Uint8Array(await file.arrayBuffer()), tipo = file.type || "application/octet-stream", nombre = file.name || "imagen.png";
+    if (esImagen(tipo) && !/gif|svg/.test(tipo) && bytes.length > 600 * 1024) {
+      try {
+        const img = await createImageBitmap(file);
+        const k = Math.min(1, 1600 / Math.max(img.width, img.height));
+        const cv = document.createElement("canvas"); cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k);
+        cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
+        const blob = await new Promise((ok) => cv.toBlob(ok, "image/jpeg", 0.85));
+        if (blob && blob.size < bytes.length) { bytes = new Uint8Array(await blob.arrayBuffer()); tipo = "image/jpeg"; nombre = nombre.replace(/\.\w+$/, "") + ".jpg"; }
+      } catch (e) { /* se guarda tal cual */ }
+    }
+    return { bytes, tipo, nombre, tam: bytes.length };
+  }
+  async function borrarAdjuntos(comentarios) {
+    for (const x of comentarios) for (const a of adjuntosDe(x)) { try { await S.api.borrarArchivo(a.id); } catch (e) { /* ya no existe */ } }
+  }
+  function htmlAdjuntos(x) {
+    const lista = adjuntosDe(x);
+    if (!lista.length) return "";
+    return `<div class="adjuntos">${lista.map((a) => esImagen(a.t)
+      ? `<button class="adj-img" data-adj="${esc(a.id)}" data-n="${esc(a.n)}" data-t="${esc(a.t)}" title="Ver ${esc(a.n)}"><span class="sub">🖼 Cargando imagen…</span></button>`
+      : `<button class="adj-arch" data-adj="${esc(a.id)}" data-n="${esc(a.n)}" data-t="${esc(a.t)}">📄 ${esc(a.n)} <span class="sub">${tamano(a.s || 0)}</span></button>`).join("")}</div>`;
+  }
+  function descargar(bytes, nombre, tipo) {
+    const url = URL.createObjectURL(new Blob([bytes], { type: tipo }));
+    const a = document.createElement("a"); a.href = url; a.download = nombre; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  }
+  // Carga las miniaturas y enlaza abrir/descargar dentro de un contenedor.
+  function enlazarAdjuntos(cont) {
+    cont.querySelectorAll(".adj-img").forEach(async (b) => {
+      try {
+        const f = await leerArchivo(b.dataset.adj);
+        b.innerHTML = `<img alt="${esc(b.dataset.n)}" src="${URL.createObjectURL(new Blob([f.bytes], { type: f.tipo }))}">`;
+      } catch (e) { b.innerHTML = `<span class="sub">No se pudo cargar ${esc(b.dataset.n)}</span>`; }
+      b.addEventListener("click", () => { const img = b.querySelector("img"); if (img) verImagen(img.src, b.dataset.n); });
+    });
+    cont.querySelectorAll(".adj-arch").forEach((b) => b.addEventListener("click", async () => {
+      const txt = b.innerHTML; b.innerHTML = "Abriendo…";
+      try { const f = await leerArchivo(b.dataset.adj); descargar(f.bytes, f.nombre || b.dataset.n, f.tipo); }
+      catch (e) { toast("No se pudo abrir el archivo: " + e.message, true); }
+      b.innerHTML = txt;
+    }));
+  }
+  function verImagen(src, nombre) {
+    const v = document.createElement("div");
+    v.className = "visor-img"; v.innerHTML = `<div class="visor-img-caja"><div class="titulo-fila"><b>${esc(nombre)}</b><div><a class="btn chico" href="${src}" download="${esc(nombre)}">Descargar</a> <button class="btn chico" id="vi-cerrar">✕</button></div></div><img src="${src}" alt="${esc(nombre)}"></div>`;
+    document.body.appendChild(v);
+    const cerrar = () => v.remove();
+    v.addEventListener("click", (e) => { if (e.target === v) cerrar(); });
+    v.querySelector("#vi-cerrar").addEventListener("click", cerrar);
+  }
+
+  const resumenCom = (x) => { const n = adjuntosDe(x).length; return [x.Texto, n ? `📎 ${n} adjunto(s)` : ""].filter(Boolean).join(" · "); };
   const origen = (c) => {
     if (!c.ID_Seguimiento) return "Registrado en el proyecto";
     const s = S.datos.Seguimientos.find((x) => x.ID_Seguimiento === c.ID_Seguimiento);
@@ -608,7 +671,7 @@
         return `<tr ${conProyecto ? `class="clic" data-pid="${esc(c.ID_Proyecto)}"` : ""}>${conProyecto ? `<td><b>${esc(p.Nombre)}</b></td>` : ""}
           <td>${esc(c.Compromiso)}<div class="sub">${esc(origen(c))}</div></td><td>${esc(c.Responsable)}</td><td>${fecha(c.Fecha_Compromiso)}</td>
           <td>${pillComp(c)}${e === "Cerrado" && c.Fecha_Cierre ? `<div class="sub">${fecha(c.Fecha_Cierre)}</div>` : ""}</td>
-          <td class="opc">${ult ? `<span class="ult-com">${esc(ult.Texto)}</span><div class="sub">${esc(nombreUsuario(ult.Autor))} · ${fechaHora(ult.Fecha_Hora)}</div>` : `<span class="sub">Sin comentarios</span>`}</td>
+          <td class="opc">${ult ? `<span class="ult-com">${esc(resumenCom(ult))}</span><div class="sub">${esc(nombreUsuario(ult.Autor))} · ${fechaHora(ult.Fecha_Hora)}</div>` : `<span class="sub">Sin comentarios</span>`}</td>
           <td class="derecha nowrap"><button class="btn chico ${coms.length ? "" : "primario-suave"}" data-abrir-comp="${esc(c.ID_Compromiso)}">${coms.length ? `Comentarios (${coms.length})` : "Abrir"}</button>
             ${R.puedeEditar(S.usuario, p, "compromisos") ? botonesEstado(c) : ""}</td></tr>`;
       }).join("")}</tbody></table></div>`;
@@ -717,7 +780,7 @@
     const fila = ({ c, e }) => {
       const coms = comentariosDe(c.ID_Compromiso);
       const ult = coms[coms.length - 1];
-      return `<tr><td>${esc(c.Compromiso)}${ult ? `<div class="sub ult-com">💬 ${esc(ult.Texto)}</div>` : ""}</td>
+      return `<tr><td>${esc(c.Compromiso)}${ult ? `<div class="sub ult-com">💬 ${esc(resumenCom(ult))}</div>` : ""}</td>
         <td>${c.ID_Seguimiento ? `Sesión ${fecha(fSes(c))}` : `<span class="sub">Sin sesión</span>`}</td>
         <td>${esc(c.Responsable || "—")}</td><td class="nowrap">${fecha(c.Fecha_Compromiso)}</td>
         <td>${pillComp(c)}${e === "Cerrado" && c.Fecha_Cierre ? `<div class="sub">${fecha(c.Fecha_Cierre)}</div>` : ""}</td>
@@ -794,8 +857,10 @@
         ${c.Fecha_Cierre ? `<div><span class="sub">Cerrado el</span><b>${fecha(c.Fecha_Cierre)}</b></div>` : ""}
       </div>
       <div class="form-seccion">Seguimiento del compromiso <span class="contador">${coms.length}</span></div>
-      <div class="hilo">${coms.map((x) => `<div class="com"><div class="com-cab"><b>${esc(nombreUsuario(x.Autor))}</b><span class="sub">${fechaHora(x.Fecha_Hora)}</span></div><div class="com-texto">${esc(x.Texto)}</div></div>`).join("") || `<div class="vacio">Aún no hay comentarios. Escribe el primero: avances, dudas o bloqueos de este compromiso.</div>`}</div>
-      ${puede ? `<textarea id="d-texto" rows="3" placeholder="Escribe un comentario: qué se avanzó, qué falta, quién debe actuar…"></textarea>
+      <div class="hilo">${coms.map((x) => `<div class="com"><div class="com-cab"><b>${esc(nombreUsuario(x.Autor))}</b><span class="sub">${fechaHora(x.Fecha_Hora)}</span></div>${x.Texto ? `<div class="com-texto">${esc(x.Texto)}</div>` : ""}${htmlAdjuntos(x)}</div>`).join("") || `<div class="vacio">Aún no hay comentarios. Escribe el primero: avances, dudas o bloqueos de este compromiso.</div>`}</div>
+      ${puede ? `<textarea id="d-texto" rows="3" placeholder="Escribe un comentario: qué se avanzó, qué falta, quién debe actuar… (puedes pegar aquí una imagen con Ctrl+V)"></textarea>
+        <div class="adj-barra"><button type="button" class="btn chico" id="d-adjuntar">📎 Adjuntar archivo</button><span class="sub">o pega una imagen del correo con Ctrl+V · máx. 5 MB por archivo</span></div>
+        <div id="d-pend" class="adj-pend"></div>
         <div class="error-campo" id="d-error" role="alert"></div>
         <div class="acciones derecha">
           <button class="btn peligro-suave" id="d-editar">Editar compromiso</button>
@@ -807,20 +872,54 @@
     $("#d-cerrar").addEventListener("click", cerrarModal);
     m.addEventListener("keydown", (ev) => { if (ev.key === "Escape") cerrarModal(); });
     const h = $(".hilo"); h.scrollTop = h.scrollHeight;
+    enlazarAdjuntos(h);
     if (!puede) return;
     const txt = $("#d-texto");
     txt.focus();
     txt.addEventListener("input", () => { $("#d-error").textContent = ""; });
+    // Archivos por adjuntar al próximo comentario.
+    const pend = [];
+    const pintarPend = () => {
+      $("#d-pend").innerHTML = pend.map((a, i) => `<span class="adj-chip">${esImagen(a.tipo) ? `<img src="${a.url}" alt="">` : "📄"} ${esc(a.nombre)} <span class="sub">${tamano(a.tam)}</span><button type="button" class="btn enlace" data-quitar-adj="${i}" aria-label="Quitar">✕</button></span>`).join("");
+      document.querySelectorAll("[data-quitar-adj]").forEach((b) => b.addEventListener("click", () => { pend.splice(Number(b.dataset.quitarAdj), 1); pintarPend(); }));
+    };
+    const agregarArchivos = async (files) => {
+      for (const f of files) {
+        if (f.size > MAX_ADJ * 3) { $("#d-error").textContent = `«${f.name}» pesa más de 5 MB.`; continue; }
+        const a = await prepararArchivo(f);
+        if (a.tam > MAX_ADJ) { $("#d-error").textContent = `«${a.nombre}» pesa más de 5 MB.`; continue; }
+        a.url = esImagen(a.tipo) ? URL.createObjectURL(new Blob([a.bytes], { type: a.tipo })) : "";
+        pend.push(a);
+      }
+      pintarPend();
+    };
+    txt.addEventListener("paste", (ev) => {
+      const files = [...(ev.clipboardData ? ev.clipboardData.items : [])].filter((i) => i.kind === "file").map((i) => i.getAsFile()).filter(Boolean)
+        .map((f, k) => (f.name && f.name !== "image.png" ? f : new File([f], `imagen-pegada-${Date.now()}-${k + 1}.${(f.type.split("/")[1] || "png")}`, { type: f.type })));
+      if (files.length) { ev.preventDefault(); agregarArchivos(files); }
+    });
+    $("#d-adjuntar").addEventListener("click", () => {
+      const i = document.createElement("input"); i.type = "file"; i.multiple = true;
+      i.addEventListener("change", () => agregarArchivos([...i.files])); i.click();
+    });
     const accion = async (texto, estado, exito) => {
       await guardar(async () => {
-        if (estado) await cambiarEstado(c, estado, texto);
-        else await S.api.agregarFila("Comentarios", nuevoComentario(c, texto));
+        const com = nuevoComentario(c, texto);
+        const adj = [];
+        for (let k = 0; k < pend.length; k++) {
+          const a = pend[k], id = `ADJ-${com.ID_Comentario.replace(/^COM-/, "")}-${k + 1}`;
+          await guardarArchivo(id, a.bytes, a.nombre, a.tipo, `el adjunto ${k + 1} de ${pend.length}`);
+          adj.push({ id, n: a.nombre, t: a.tipo, s: a.tam });
+        }
+        if (adj.length) com.Adjuntos = JSON.stringify(adj);
+        if (estado) await S.api.actualizarPorId("Compromisos", "ID_Compromiso", id, { Estado: estado, Fecha_Cierre: estado === "Cerrado" ? R.hoyISO() : "" });
+        await S.api.agregarFila("Comentarios", com);
       }, exito);
       detalleCompromiso(id);   // se vuelve a abrir para seguir la conversación
     };
     $("#d-comentar").addEventListener("click", () => {
       const t = txt.value.trim();
-      if (!t) { $("#d-error").textContent = "Escribe el comentario."; return; }
+      if (!t && !pend.length) { $("#d-error").textContent = "Escribe el comentario o adjunta un archivo."; return; }
       accion(t, null, "Comentario agregado");
     });
     if ($("#d-comentar-cerrar")) $("#d-comentar-cerrar").addEventListener("click", () => accion(txt.value.trim() || "Compromiso cerrado.", "Cerrado", "Compromiso cerrado"));
@@ -834,13 +933,13 @@
   function vProyectos(el) {
     const FL = S.filtrosLista;
     const lista = filtrados().filter((p) => (!FL.semaforo || p.Semaforo === FL.semaforo) &&
-      (!FL.texto || `${p.ID_Proyecto} ${p.Nombre} ${p.Cliente_Area}`.toLowerCase().includes(FL.texto.toLowerCase())))
+      (!FL.texto || `${p.ID_Proyecto} ${p.Nombre} ${p.Cliente_Area} ${p.Codigo_Almera || ""}`.toLowerCase().includes(FL.texto.toLowerCase())))
       .sort((a, b) => String(a.Nombre).localeCompare(String(b.Nombre), "es"));
     el.innerHTML = `
       <div class="titulo-fila"><h1>Proyectos</h1>${R.puede(S.usuario, "crearProyecto") ? `<button class="btn primario" id="b-nuevo">+ Nueva iniciativa</button>` : ""}</div>
       ${barraFiltros()}
       <div class="filtros">
-        <label class="filtro crece"><span>Buscar</span><input id="f-texto" type="search" placeholder="ID, nombre o área" value="${esc(FL.texto)}"></label>
+        <label class="filtro crece"><span>Buscar</span><input id="f-texto" type="search" placeholder="ID, nombre, área o código Almera" value="${esc(FL.texto)}"></label>
         <label class="filtro"><span>Semáforo</span><select id="f-sem"><option value="">Todos</option>${(S.cat.Semaforo || []).map((v) => `<option ${v === FL.semaforo ? "selected" : ""}>${esc(v)}</option>`).join("")}</select></label>
         <span class="sub">${lista.length} resultado(s)</span>
       </div>
@@ -879,12 +978,13 @@
     const abiertosN = comps.filter((x) => x.e !== "Cerrado").length;
     const vencidosN = comps.filter((x) => x.e === "Vencido").length;
     const TABS = [["resumen", "Resumen"], ["compromisos", `Compromisos <span class="contador ${vencidosN ? "rojo" : ""}">${abiertosN}</span>`],
-      ["seguimientos", `Seguimientos <span class="contador">${segs.length}</span>`], ["hitos", `Hitos <span class="contador">${hitos.length}</span>`], ["riesgos", `Riesgos <span class="contador">${riesgos.length}</span>`]];
+      ["seguimientos", `Seguimientos <span class="contador">${segs.length}</span>`], ["hitos", `Hitos <span class="contador">${hitos.length}</span>`], ["riesgos", `Riesgos <span class="contador">${riesgos.length}</span>`],
+      ["tickets", `Tickets <span class="contador">${ticketsDe(p.ID_Proyecto).filter(ticketAbierto).length}</span>`]];
     const tab = TABS.some((t) => t[0] === S.fichaTab) ? S.fichaTab : "resumen";
     const pestanas = `<div class="pestanas" role="tablist">${TABS.map(([id, t]) => `<button class="pestana ${id === tab ? "activa" : ""}" role="tab" aria-selected="${id === tab}" data-tab="${id}">${t}</button>`).join("")}</div>`;
     const cuerpo = {
       resumen: () => `      <div class="card datos">
-        ${dato("Estado", esc(p.Estado))}${dato("Fase", esc(p.Fase))}${dato("Semáforo", chipSemaforo(p.Semaforo))}
+        ${dato("Código Almera", p.Codigo_Almera ? esc(p.Codigo_Almera) : `<span class="sub">Sin registrar</span>`)}${dato("Estado", esc(p.Estado))}${dato("Fase", esc(p.Fase))}${dato("Semáforo", chipSemaforo(p.Semaforo))}
         ${dato("Avance real / plan", barraAvance(p.Avance_Real, p.Avance_Planeado))}
         ${dato("Inicio", fecha(p.Fecha_Inicio))}${dato("Fin planeado", fecha(p.Fecha_Fin_Plan))}
         ${dato("Presupuesto", cop(p.Presupuesto))}${dato("Ejecutado", cop(p.Ejecutado))}
@@ -897,7 +997,8 @@
       <div class="card"><h2>Curva de avance</h2>${segs.length ? `<div class="grafico-alto"><canvas id="g-curva"></canvas></div>` : vacio("Aún no hay seguimientos. La curva aparece con el primer reporte.")}</div>
 `,
       compromisos: () => seccionCompromisos(p, comps, segs, puedeP("compromisos")),
-      seguimientos: () => `      <div class="card"><div class="titulo-fila"><h2>Historial de sesiones de seguimiento</h2>${puedeP("seguimiento") && p.Estado === "Activo" ? `<button class="btn" id="b-seg2">+ Registrar seguimiento</button>` : ""}</div>
+      tickets: () => seccionTickets(p, puedeP("compromisos")),
+      seguimientos: () => `      <div class="card"><div class="titulo-fila"><h2>Historial de sesiones de seguimiento</h2><div class="acciones"><button class="btn chico" id="b-expandir">Expandir compromisos</button><button class="btn chico" id="b-contraer">Contraer</button>${puedeP("seguimiento") && p.Estado === "Activo" ? `<button class="btn" id="b-seg2">+ Registrar seguimiento</button>` : ""}</div></div>
         <p class="sub">Cada fila es una sesión: su avance, lo que pasó, los compromisos que se acordaron y el acta.</p><div class="tabla-scroll"><table class="historial">
         <thead><tr><th>Sesión</th><th>Avance</th><th>Logros y próximos pasos</th><th>Bloqueos</th><th>Compromisos acordados</th><th>Acta</th></tr></thead>
         <tbody>${segs.slice().reverse().map((s) => {
@@ -905,7 +1006,12 @@
           return `<tr><td><b>${fecha(s.Fecha_Corte)}</b><div class="sub">${esc(s.Semana)} · ${esc(nombreUsuario(s.Reportado_Por))}</div></td>
           <td>${pct(s.Avance_Real)}<div>${chipSemaforo(s.Semaforo)}</div></td>
           <td>${esc(s.Logros)}<div class="sub">Sigue: ${esc(s.Proximos_Pasos || "—")}</div></td><td>${esc(s.Bloqueos || "—")}</td>
-          <td>${acordados.length ? `<ul class="mini">${acordados.map((c) => `<li><button class="btn enlace" data-abrir-comp="${esc(c.ID_Compromiso)}">${esc(c.Compromiso)}</button> <span class="sub">${esc(c.Responsable)} · ${fecha(c.Fecha_Compromiso)}</span> ${pillComp(c)}</li>`).join("")}</ul>` : `<span class="sub">Sin compromisos</span>`}
+          <td>${acordados.length ? (() => {
+            const ab = acordados.filter((c) => !R.cerrado(c)).length, ve = acordados.filter((c) => R.estadoCompromiso(c) === "Vencido").length;
+            return `<details class="acordados" data-seg-det="${esc(s.ID_Seguimiento)}" ${(S.segAbiertos || new Set()).has(s.ID_Seguimiento) ? "open" : ""}>
+              <summary><b>${acordados.length} compromiso(s)</b> <span class="sub">· ${ab} abierto(s)${ve ? ` · <span class="baja">${ve} vencido(s)</span>` : ""}</span></summary>
+              <ul class="mini">${acordados.map((c) => `<li><button class="btn enlace" data-abrir-comp="${esc(c.ID_Compromiso)}">${esc(c.Compromiso)}</button> <span class="sub">${esc(c.Responsable)} · ${fecha(c.Fecha_Compromiso)}</span> ${pillComp(c)}</li>`).join("")}</ul></details>`;
+          })() : `<span class="sub">Sin compromisos</span>`}
             ${puedeP("compromisos") ? `<div><button class="btn chico" data-comp-seg="${esc(s.ID_Seguimiento)}">+ Compromiso de esta sesión</button></div>` : ""}</td>
           <td>${s.Fecha_Acta ? fecha(s.Fecha_Acta) : `<span class="sub">Sin fecha</span>`}<div class="celda-acta">${celdaActa(s, puedeP("seguimiento"))}</div>
             ${puedeP("seguimiento") ? `<button class="btn chico enlace-edicion" data-edit-seg="${esc(s.ID_Seguimiento)}">Editar sesión</button>` : ""}</td></tr>`;
@@ -924,10 +1030,11 @@
     }[tab]();
     el.innerHTML = `
       <button class="btn enlace" id="b-volver">← Volver a proyectos</button>
-      <div class="titulo-fila"><div><h1>${esc(p.Nombre)}</h1><div class="sub">${esc(p.ID_Proyecto)} · ${esc(p.Cliente_Area)} · PM ${esc(nombreUsuario(p.PM))}</div></div>
+      <div class="titulo-fila"><div><h1>${esc(p.Nombre)}</h1><div class="sub">${esc(p.ID_Proyecto)}${p.Codigo_Almera ? ` · Almera ${esc(p.Codigo_Almera)}` : ""} · ${esc(p.Cliente_Area)} · PM ${esc(nombreUsuario(p.PM))}</div></div>
         <div class="acciones">
           ${enlace(p.URL_Repositorio, "Repositorio")}${enlace(p.URL_Documentos, "Documentos")}
           ${puedeP("seguimiento") && p.Estado === "Activo" ? `<button class="btn primario" id="b-seg">Registrar seguimiento</button>` : ""}
+          <button class="btn" id="b-hv" title="Documento con todo el historial del proyecto, listo para guardar como PDF">📄 Hoja de vida</button>
           ${puedeP("editarProyecto") ? `<button class="btn" id="b-editar">Editar proyecto</button>` : ""}
         </div></div>
       ${p.Estado === "Activo" && e.estado !== "Al día" ? `<div class="aviso ${e.estado === "Vencido" ? "rojo" : ""}">${e.estado === "Vencido" ? `El seguimiento está vencido desde el ${fecha(e.proximo)}.` : `El próximo seguimiento vence el ${fecha(e.proximo)}.`}${puedeP("seguimiento") ? " Usa «Registrar seguimiento»." : ""}</div>` : ""}
@@ -939,6 +1046,15 @@
     if ($("#b-hito")) $("#b-hito").addEventListener("click", () => formHito(p));
     if ($("#b-comp")) $("#b-comp").addEventListener("click", () => formCompromiso(null, p));
     if ($("#b-seg2")) $("#b-seg2").addEventListener("click", () => formSeguimiento(p));
+    if ($("#b-tk")) $("#b-tk").addEventListener("click", () => formTicket(p));
+    $("#b-hv").addEventListener("click", () => hojaDeVida(p));
+    el.querySelectorAll("[data-tk]").forEach((b) => b.addEventListener("click", () => formTicket(p, ticketsDe(p.ID_Proyecto).find((t) => t.ID_Ticket === b.dataset.tk))));
+    el.querySelectorAll("[data-tkver]").forEach((b) => b.addEventListener("click", () => { S.tkVer = b.dataset.tkver; render(); }));
+    S.segAbiertos = S.segAbiertos || new Set();
+    el.querySelectorAll("[data-seg-det]").forEach((d) => d.addEventListener("toggle", () => { if (d.open) S.segAbiertos.add(d.dataset.segDet); else S.segAbiertos.delete(d.dataset.segDet); }));
+    const todos = (abrir) => el.querySelectorAll("[data-seg-det]").forEach((d) => { d.open = abrir; });
+    if ($("#b-expandir")) $("#b-expandir").addEventListener("click", () => todos(true));
+    if ($("#b-contraer")) $("#b-contraer").addEventListener("click", () => todos(false));
     el.querySelectorAll("[data-tab]").forEach((b) => b.addEventListener("click", () => { S.fichaTab = b.dataset.tab; render(); }));
     el.querySelectorAll("[data-comp-seg]").forEach((b) => b.addEventListener("click", () => formCompromiso(null, p, b.dataset.compSeg)));
     enlazarSeccionCompromisos(el);
@@ -958,38 +1074,64 @@
 
   // ---------- Cronograma ----------
   function vCronograma(el) {
-    const ps = filtrados().filter((p) => (p.Estado === "Activo" || p.Estado === "En pausa") && p.Fecha_Inicio && p.Fecha_Fin_Plan)
-      .sort((a, b) => (a.Fecha_Inicio < b.Fecha_Inicio ? -1 : 1));
-    if (!ps.length) { el.innerHTML = `<h1>Cronograma</h1>${barraFiltros()}${vacio("No hay proyectos activos o en pausa con fechas en la selección.")}`; enlazarFiltros(); return; }
-    const ini = ps.reduce((m, p) => (p.Fecha_Inicio < m ? p.Fecha_Inicio : m), ps[0].Fecha_Inicio).slice(0, 8) + "01";
-    const finMax = ps.reduce((m, p) => (p.Fecha_Fin_Plan > m ? p.Fecha_Fin_Plan : m), ps[0].Fecha_Fin_Plan);
-    const total = Math.max(1, R.difDias(finMax, ini) + 1);
-    const x = (iso) => Math.max(0, Math.min(100, (R.difDias(iso, ini) / total) * 100));
-    const meses = [];
-    for (let d = new Date(ini + "T00:00:00"); d.toISOString().slice(0, 10) <= finMax; d.setMonth(d.getMonth() + 1)) {
-      meses.push({ iso: d.toISOString().slice(0, 10), txt: d.toLocaleDateString("es-CO", { month: "short", year: "2-digit" }) });
-    }
     const hoy = R.hoyISO();
+    const RANGOS = { "12m": "12 meses (3 atrás, 9 adelante)", anio: `Año ${hoy.slice(0, 4)}`, todo: "Todo el portafolio" };
+    const rango = RANGOS[S.cronoRango] ? S.cronoRango : "12m";
+    const todos = filtrados().filter((p) => (p.Estado === "Activo" || p.Estado === "En pausa") && p.Fecha_Inicio && p.Fecha_Fin_Plan);
+    let ini, fin;
+    if (rango === "12m") { ini = R.sumarDias(hoy, -92).slice(0, 8) + "01"; fin = R.sumarDias(ini, 366); fin = fin.slice(0, 8) + "01"; fin = R.sumarDias(fin, -1); }
+    else if (rango === "anio") { ini = `${hoy.slice(0, 4)}-01-01`; fin = `${hoy.slice(0, 4)}-12-31`; }
+    else if (todos.length) {
+      ini = todos.reduce((m, p) => (p.Fecha_Inicio < m ? p.Fecha_Inicio : m), todos[0].Fecha_Inicio).slice(0, 8) + "01";
+      fin = todos.reduce((m, p) => (p.Fecha_Fin_Plan > m ? p.Fecha_Fin_Plan : m), todos[0].Fecha_Fin_Plan);
+    }
+    const ps = todos.filter((p) => p.Fecha_Fin_Plan >= ini && p.Fecha_Inicio <= fin).sort((a, b) => (a.Fecha_Inicio < b.Fecha_Inicio ? -1 : 1));
+    const selRango = `<div class="filtros"><label class="filtro"><span>Periodo</span><select id="crono-rango">${Object.entries(RANGOS).map(([k, t]) => `<option value="${k}" ${k === rango ? "selected" : ""}>${t}</option>`).join("")}</select></label></div>`;
+    if (!ps.length) {
+      el.innerHTML = `<h1>Cronograma</h1>${barraFiltros()}${selRango}${vacio("No hay proyectos activos o en pausa con fechas en este periodo.")}`;
+      enlazarFiltros(); $("#crono-rango").addEventListener("change", (e) => { S.cronoRango = e.target.value; render(); }); return;
+    }
+    const total = Math.max(1, R.difDias(fin, ini) + 1);
+    const x = (iso) => Math.max(0, Math.min(100, (R.difDias(iso, ini) / total) * 100));
+    const MES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+    const meses = [];
+    for (let y = Number(ini.slice(0, 4)), m = Number(ini.slice(5, 7)) - 1; `${y}-${String(m + 1).padStart(2, "0")}-01` <= fin; m === 11 ? (y++, m = 0) : m++) {
+      meses.push({ iso: `${y}-${String(m + 1).padStart(2, "0")}-01`, m, y });
+    }
+    // Menos etiquetas cuando hay muchos meses, para que no se monten.
+    const paso = meses.length <= 13 ? 1 : meses.length <= 26 ? 2 : meses.length <= 40 ? 3 : 6;
+    const anios = [...new Set(meses.map((m) => m.y))].map((y) => {
+      const a = x(`${y}-01-01` < ini ? ini : `${y}-01-01`), b = x(`${y}-12-31` > fin ? fin : `${y}-12-31`);
+      return { y, a, w: Math.max(0, b - a) };
+    });
     const colorHito = (h) => (h.Estado === "Cumplido" ? COLORES.Verde : h.Fecha_Plan < hoy ? COLORES.Rojo : "#888");
+    const recorte = (p) => (p.Fecha_Inicio < ini ? " corta-ini" : "") + (p.Fecha_Fin_Plan > fin ? " corta-fin" : "");
     el.innerHTML = `
       <h1>Cronograma</h1>
       ${barraFiltros()}
+      ${selRango}
       <div class="leyenda"><span><i class="lg-real"></i>Avance real</span><span><i class="lg-plan"></i>Duración planeada</span>
         <span><i class="lg-hito" style="background:${COLORES.Verde}"></i>Hito cumplido</span><span><i class="lg-hito" style="background:${COLORES.Rojo}"></i>Hito atrasado</span>
         <span><i class="lg-hito" style="background:#888"></i>Hito pendiente</span><span><i class="lg-hoy"></i>Hoy</span></div>
       <div class="card gantt">
-        <div class="g-fila g-cab"><div class="g-nombre"></div><div class="g-pista">${meses.map((m) => `<span class="g-mes" style="left:${x(m.iso)}%">${esc(m.txt)}</span>`).join("")}</div></div>
+        <div class="g-fila g-cab"><div class="g-nombre"></div><div class="g-pista g-escala">
+          <div class="g-anios">${anios.map((a) => `<span class="g-anio" style="left:${a.a}%;width:${a.w}%">${a.y}</span>`).join("")}</div>
+          <div class="g-meses">${meses.map((m, i) => `<span class="g-tick ${m.m === 0 ? "enero" : ""}" style="left:${x(m.iso)}%"></span>${i % paso === 0 ? `<span class="g-mes" style="left:${x(m.iso)}%">${MES[m.m]}</span>` : ""}`).join("")}</div>
+        </div></div>
         ${ps.map((p) => {
-          const hs = S.datos.Hitos.filter((h) => h.ID_Proyecto === p.ID_Proyecto);
-          return `<div class="g-fila clic" data-pid="${esc(p.ID_Proyecto)}"><div class="g-nombre"><b>${esc(p.Nombre)}</b><div class="sub">${esc(p.Estado)} · ${pct(p.Avance_Real)}</div></div>
+          const hs = S.datos.Hitos.filter((h) => h.ID_Proyecto === p.ID_Proyecto && h.Fecha_Plan >= ini && h.Fecha_Plan <= fin);
+          return `<div class="g-fila clic" data-pid="${esc(p.ID_Proyecto)}"><div class="g-nombre"><b>${esc(p.Nombre)}</b><div class="sub">${esc(p.Estado)} · ${pct(p.Avance_Real)} · ${fecha(p.Fecha_Inicio)} → ${fecha(p.Fecha_Fin_Plan)}</div></div>
             <div class="g-pista">
-              <div class="g-barra" style="left:${x(p.Fecha_Inicio)}%;width:${Math.max(1, x(p.Fecha_Fin_Plan) - x(p.Fecha_Inicio))}%"><div class="g-real" style="width:${Math.min(100, Number(p.Avance_Real) || 0)}%"></div></div>
+              ${meses.map((m) => `<span class="g-rejilla ${m.m === 0 ? "enero" : ""}" style="left:${x(m.iso)}%"></span>`).join("")}
+              <div class="g-barra${recorte(p)}" style="left:${x(p.Fecha_Inicio)}%;width:${Math.max(1, x(p.Fecha_Fin_Plan) - x(p.Fecha_Inicio))}%" title="${esc(p.Nombre)}: ${fecha(p.Fecha_Inicio)} → ${fecha(p.Fecha_Fin_Plan)}"><div class="g-real" style="width:${Math.min(100, Number(p.Avance_Real) || 0)}%"></div></div>
               ${hs.map((h) => `<span class="g-hito" title="${esc(h.Hito)} · ${fecha(h.Fecha_Plan)} · ${esc(h.Estado)}" style="left:${x(h.Fecha_Plan)}%;background:${colorHito(h)}"></span>`).join("")}
-              <span class="g-hoy" style="left:${x(hoy)}%"></span>
+              ${hoy >= ini && hoy <= fin ? `<span class="g-hoy" style="left:${x(hoy)}%"></span>` : ""}
             </div></div>`;
         }).join("")}
-      </div>`;
+      </div>
+      ${rango !== "todo" && ps.some((p) => recorte(p)) ? `<p class="sub">Las barras con borde punteado siguen antes o después del periodo mostrado. Elige «Todo el portafolio» para verlas completas.</p>` : ""}`;
     enlazarFiltros();
+    $("#crono-rango").addEventListener("change", (e) => { S.cronoRango = e.target.value; render(); });
   }
 
   // ---------- Riesgos ----------
@@ -1037,6 +1179,7 @@
     { lista: "Fase", t: "Fase", campo: "Fase" },
     { lista: "Prioridad", t: "Prioridad", campo: "Prioridad" },
     { lista: "Rol_Stakeholder", t: "Rol del stakeholder", campo: "Rol", tabla: "Stakeholders", idCol: "ID_Stakeholder" },
+    { lista: "Estado_Ticket", t: "Estado del ticket (helpdesk)", campo: "Estado", tabla: "Tickets", idCol: "ID_Ticket" },
   ];
   const filasCat = (c) => (S.datos[c.tabla || "Proyectos"] || []);
   const CATALOGOS_FIJOS = { Estado: "Estado del proyecto", Semaforo: "Semáforo", Frecuencia_Seguimiento: "Frecuencia de seguimiento",
@@ -1054,9 +1197,9 @@
           const valores = S.cat[c.lista] || [];
           return `<div class="card" data-anchor="cat-${c.lista}">
             <h2>${esc(c.t)}</h2>
-            <table><thead><tr><th>Valor</th><th>${c.tabla ? "Personas con este rol" : "Proyectos que lo usan"}</th><th></th></tr></thead>
-              <tbody>${valores.map((v) => `<tr><td>${esc(v)}</td><td>${enUso(c, v)}</td>
-                <td class="derecha nowrap"><button class="btn chico" data-renombrar="${esc(c.lista)}" data-valor="${esc(v)}">Renombrar</button> <button class="btn chico" data-quitar="${esc(c.lista)}" data-valor="${esc(v)}">Quitar</button></td></tr>`).join("") || `<tr><td colspan="3">${vacio("Sin valores.")}</td></tr>`}</tbody></table>
+            <p class="sub">${c.tabla ? "Entre paréntesis: registros que usan cada valor." : "Entre paréntesis: proyectos que usan cada valor."}</p>
+            <ul class="cat-lista">${valores.map((v) => `<li><span class="cat-valor">${esc(v)} <span class="contador" title="En uso">${enUso(c, v)}</span></span>
+              <span class="cat-acc"><button class="btn chico" data-renombrar="${esc(c.lista)}" data-valor="${esc(v)}" title="Renombrar">✎ Renombrar</button><button class="btn chico" data-quitar="${esc(c.lista)}" data-valor="${esc(v)}" title="Quitar">✕</button></span></li>`).join("") || `<li>${vacio("Sin valores.")}</li>`}</ul>
             <form class="cat-agregar" data-lista="${esc(c.lista)}" novalidate>
               <input name="valor" placeholder="Nuevo valor" aria-label="Nuevo valor para ${esc(c.t)}">
               <button class="btn primario" type="submit">Agregar</button>
@@ -1155,15 +1298,25 @@
   // ---------- Actas en PDF guardadas en el Excel ----------
   const MAX_ACTA = 5 * 1024 * 1024;           // 5 MB por acta
   const TAM_PARTE = 30000;                     // caracteres por celda (límite de Excel: 32.767)
-  async function subirActa(idSeg, bytes, nombre) {
+  // Guarda cualquier archivo en la hoja oculta Archivos, en partes de 30.000 caracteres.
+  async function guardarArchivo(id, bytes, nombre, tipo, etiqueta = "el archivo") {
     const b64 = ACTAS.aBase64(bytes);
     const total = Math.max(1, Math.ceil(b64.length / TAM_PARTE));
-    await S.api.borrarArchivo(idSeg);
+    await S.api.borrarArchivo(id);
     for (let i = 0; i < total; i++) {
-      cargando(true, `Guardando el acta en Excel… ${i + 1} de ${total}`);
-      await S.api.guardarParte({ ID_Archivo: idSeg, Parte: i, Total: total, Nombre: nombre, Tipo: "application/pdf", Datos: b64.slice(i * TAM_PARTE, (i + 1) * TAM_PARTE) });
+      cargando(true, `Guardando ${etiqueta} en Excel… ${i + 1} de ${total}`);
+      await S.api.guardarParte({ ID_Archivo: id, Parte: i, Total: total, Nombre: nombre, Tipo: tipo || "application/octet-stream", Datos: b64.slice(i * TAM_PARTE, (i + 1) * TAM_PARTE) });
     }
   }
+  const cacheArchivos = {};
+  async function leerArchivo(id, avance) {
+    if (cacheArchivos[id]) return cacheArchivos[id];
+    const primera = await S.api.leerParte(id, 0);
+    let b64 = primera.Datos;
+    for (let i = 1; i < primera.Total; i++) { if (avance) avance(i + 1, primera.Total); b64 += (await S.api.leerParte(id, i)).Datos; }
+    return (cacheArchivos[id] = { bytes: ACTAS.deBase64(b64), nombre: primera.Nombre, tipo: primera.Tipo });
+  }
+  async function subirActa(idSeg, bytes, nombre) { await guardarArchivo(idSeg, bytes, nombre, "application/pdf", "el acta"); }
   async function verActa(idSeg, nombre) {
     cerrarModal();
     const m = document.createElement("div");
@@ -1314,6 +1467,131 @@
     if (primero) primero.focus();
   }
 
+  // ---------- Hoja de vida del proyecto (PDF con marca FSFB) ----------
+  function hojaDeVida(p) {
+    const pid = p.ID_Proyecto;
+    const segs = R.seguimientosDe(pid, S.datos.Seguimientos);
+    const hitos = S.datos.Hitos.filter((h) => h.ID_Proyecto === pid).sort((a, b) => String(a.Fecha_Plan).localeCompare(String(b.Fecha_Plan)));
+    const riesgos = S.datos.Riesgos.filter((r) => r.ID_Proyecto === pid);
+    const comps = S.datos.Compromisos.filter((c) => c.ID_Proyecto === pid).sort((a, b) => String(a.Fecha_Compromiso || "9999").localeCompare(String(b.Fecha_Compromiso || "9999")));
+    const coms = (S.datos.Comentarios || []).filter((x) => x.ID_Proyecto === pid);
+    const stks = stakeholdersDe(pid);
+    const provs = idsLista(p.Proveedores).map(proveedor).filter(Boolean);
+    const tks = ticketsDe(pid);
+    const e = R.estadoSeguimiento(p, S.datos.Seguimientos);
+    const t = (v) => esc(v === 0 ? "0" : v || "—");
+    const fila = (k, v) => `<tr><th>${k}</th><td>${v}</td></tr>`;
+    const tabla = (cab, filas, vacioTxt) => filas.length ? `<table class="hv-t"><thead><tr>${cab.map((c) => `<th>${c}</th>`).join("")}</tr></thead><tbody>${filas.join("")}</tbody></table>` : `<p class="hv-vacio">${vacioTxt}</p>`;
+    // Cronología: todo lo que ha pasado, en orden.
+    const eventos = [];
+    const ev = (f, tipo, txt) => { if (f) eventos.push({ f: String(f).slice(0, 16), tipo, txt }); };
+    ev(p.Fecha_Inicio, "Inicio", `Inicio del proyecto · PM ${nombreUsuario(p.PM)}`);
+    segs.forEach((x) => ev(x.Fecha_Corte, "Seguimiento", `Avance ${pct(x.Avance_Real)} · semáforo ${x.Semaforo || "—"}${x.Logros ? ` · ${x.Logros}` : ""}${x.Bloqueos ? ` · Bloqueo: ${x.Bloqueos}` : ""}`));
+    hitos.forEach((h) => { if (h.Fecha_Real) ev(h.Fecha_Real, "Hito", `Cumplido: ${h.Hito}`); });
+    comps.forEach((c) => { if (R.cerrado(c) && c.Fecha_Cierre) ev(c.Fecha_Cierre, "Compromiso", `Cerrado: ${c.Compromiso}`); });
+    coms.forEach((x) => { const c = comps.find((y) => y.ID_Compromiso === x.ID_Compromiso); ev(x.Fecha_Hora, "Comentario", `${nombreUsuario(x.Autor)} en «${c ? c.Compromiso : x.ID_Compromiso}»: ${resumenCom(x)}`); });
+    tks.forEach((k) => ev(k.Fecha_Registro, "Ticket", `Ticket ${k.Numero || ""} registrado: ${k.Titulo || ""} (${k.Estado || "Abierto"})`));
+    eventos.sort((a, b) => a.f.localeCompare(b.f));
+    const fechaEv = (f) => (f.length > 10 ? `${fecha(f.slice(0, 10))} ${f.slice(11, 16)}` : fecha(f));
+    const abiertos = comps.filter((c) => !R.cerrado(c)).length;
+    const doc = `
+      <div class="hv-marca" aria-hidden="true"><span>FSFB</span></div>
+      <header class="hv-cab">
+        <div class="hv-logo">Fundación<br>Santa Fe de Bogotá</div>
+        <div class="hv-cab-t"><div class="hv-tipo">Hoja de vida del proyecto</div><h1>${esc(p.Nombre)}</h1>
+          <div class="hv-sub">${esc(pid)}${p.Codigo_Almera ? ` · Almera ${esc(p.Codigo_Almera)}` : ""} · ${esc(p.Cliente_Area || "")}</div></div>
+        <div class="hv-gen">Generado el ${fecha(R.hoyISO())}<br>por ${esc(S.usuario.Nombre || S.usuario.Correo)}</div>
+      </header>
+      <section class="hv-kpis">
+        <div><span>Estado</span><b>${t(p.Estado)}</b></div><div><span>Fase</span><b>${t(p.Fase)}</b></div>
+        <div><span>Semáforo</span><b>${t(p.Semaforo)}</b></div><div><span>Avance real / plan</span><b>${pct(p.Avance_Real)} / ${pct(p.Avance_Planeado)}</b></div>
+        <div><span>Presupuesto ejecutado</span><b>${Number(p.Presupuesto) ? Math.round((Number(p.Ejecutado) || 0) / Number(p.Presupuesto) * 100) + "%" : "—"}</b></div>
+        <div><span>Compromisos abiertos</span><b>${abiertos} de ${comps.length}</b></div>
+      </section>
+      <h2>1. Datos generales</h2>
+      <table class="hv-ficha">${[
+        fila("PM responsable", t(nombreUsuario(p.PM))), fila("Metodología", t(p.Metodologia)), fila("Prioridad", t(p.Prioridad)),
+        fila("Fecha de inicio", fecha(p.Fecha_Inicio)), fila("Fin planeado", fecha(p.Fecha_Fin_Plan)), fila("Frecuencia de seguimiento", t(p.Frecuencia_Seguimiento)),
+        fila("Estado del seguimiento", `${t(e.estado)} · próximo ${fecha(e.proximo)}`), fila("Presupuesto", cop(p.Presupuesto)), fila("Ejecutado", cop(p.Ejecutado)),
+        fila("Repositorio", t(p.URL_Repositorio)), fila("Documentos", t(p.URL_Documentos)), fila("Comentario de estado", t(p.Comentario_Estado)),
+      ].join("")}</table>
+      <h2>2. Stakeholders y proveedores</h2>
+      ${tabla(["Rol", "Nombre", "Cargo / área", "Empresa", "Correo"], stks.map((x) => `<tr><td>${t(x.Rol)}</td><td>${t(x.Nombre)}</td><td>${t([x.Cargo, x.Area].filter(Boolean).join(" · "))}</td><td>${x.ID_Proveedor ? t((proveedor(x.ID_Proveedor) || {}).Nombre) : "Interno"}</td><td>${t(x.Correo)}</td></tr>`), "Sin stakeholders registrados.")}
+      <p class="hv-p"><b>Proveedores:</b> ${provs.length ? provs.map((x) => `${esc(x.Nombre)}${x.Servicio ? ` (${esc(x.Servicio)})` : ""}`).join(" · ") : "ninguno"}</p>
+      <h2>3. Cronología del proyecto</h2>
+      ${tabla(["Fecha", "Tipo", "Qué pasó"], eventos.map((x) => `<tr><td class="hv-nw">${fechaEv(x.f)}</td><td>${x.tipo}</td><td>${esc(x.txt)}</td></tr>`), "Sin eventos registrados.")}
+      <h2>4. Sesiones de seguimiento</h2>
+      ${tabla(["Fecha", "Avance", "Semáforo", "Logros", "Próximos pasos", "Bloqueos", "Acta"], segs.slice().reverse().map((x) => `<tr><td class="hv-nw">${fecha(x.Fecha_Corte)}</td><td>${pct(x.Avance_Real)}</td><td>${t(x.Semaforo)}</td><td>${t(x.Logros)}</td><td>${t(x.Proximos_Pasos)}</td><td>${t(x.Bloqueos)}</td><td>${x.Fecha_Acta ? fecha(x.Fecha_Acta) : "—"}${x.Acta_Archivo ? " · PDF" : ""}</td></tr>`), "Sin seguimientos.")}
+      <h2>5. Compromisos</h2>
+      ${tabla(["Compromiso", "Origen", "Responsable", "Fecha límite", "Estado", "Seguimiento"], comps.map((c) => {
+        const hilo = comentariosDe(c.ID_Compromiso);
+        return `<tr><td>${t(c.Compromiso)}</td><td>${esc(origen(c))}</td><td>${t(c.Responsable)}</td><td class="hv-nw">${fecha(c.Fecha_Compromiso)}</td>
+          <td>${esc(R.estadoCompromiso(c))}${R.cerrado(c) && c.Fecha_Cierre ? `<br><small>cerrado ${fecha(c.Fecha_Cierre)}</small>` : ""}</td>
+          <td>${hilo.length ? hilo.map((x) => `<div class="hv-com"><small>${fechaEv(String(x.Fecha_Hora))} · ${esc(nombreUsuario(x.Autor))}</small><br>${esc(resumenCom(x))}</div>`).join("") : "—"}</td></tr>`;
+      }), "Sin compromisos.")}
+      <h2>6. Hitos</h2>
+      ${tabla(["Hito", "Fecha plan", "Fecha real", "Estado"], hitos.map((h) => `<tr><td>${t(h.Hito)}</td><td>${fecha(h.Fecha_Plan)}</td><td>${h.Fecha_Real ? fecha(h.Fecha_Real) : "—"}</td><td>${t(h.Estado)}</td></tr>`), "Sin hitos.")}
+      <h2>7. Riesgos</h2>
+      ${tabla(["Riesgo", "Tipo", "Estado", "Inherente", "Residual", "Mitigación"], riesgos.map((r) => `<tr><td>${t(r.Descripcion)}</td><td>${t(r.Tipo)}</td><td>${t(r.Estado)}</td><td>${R.nivelRiesgo(Number(r.Calificacion_Inherente) || 0)} (${Number(r.Calificacion_Inherente) || 0})</td><td>${R.nivelRiesgo(Number(r.Calificacion_Residual) || 0)} (${Number(r.Calificacion_Residual) || 0})</td><td>${t(r.Plan_Mitigacion)}</td></tr>`), "Sin riesgos.")}
+      <h2>8. Tickets del helpdesk</h2>
+      ${tabla(["N.º", "Título", "Estado", "Prioridad", "Registrado"], tks.map((k) => `<tr><td>${t(k.Numero)}</td><td>${t(k.Titulo)}</td><td>${t(k.Estado)}</td><td>${t(k.Prioridad)}</td><td>${fecha(k.Fecha_Registro)}</td></tr>`), "Sin tickets.")}
+      <footer class="hv-pie">Fundación Santa Fe de Bogotá · Oficina de Proyectos · Hoja de vida ${esc(pid)} · Documento generado desde el Portafolio PMO</footer>`;
+    cerrarModal();
+    const o = document.createElement("div");
+    o.className = "hv-overlay";
+    o.innerHTML = `<div class="hv-barra no-print"><b>Hoja de vida · ${esc(p.Nombre)}</b><div class="acciones">
+      <button class="btn primario" id="hv-imprimir">🖨 Imprimir / Guardar como PDF</button><button class="btn" id="hv-cerrar">Cerrar</button></div>
+      <div class="sub">En la ventana de impresión elige «Guardar como PDF» como destino.</div></div>
+      <div class="hv-hoja"><article class="hv">${doc}</article></div>`;
+    document.body.appendChild(o);
+    document.body.classList.add("con-hv");
+    const cerrar = () => { o.remove(); document.body.classList.remove("con-hv"); };
+    o.querySelector("#hv-cerrar").addEventListener("click", cerrar);
+    o.querySelector("#hv-imprimir").addEventListener("click", () => {
+      const tituloAnt = document.title;
+      document.title = `Hoja de vida ${pid} - ${p.Nombre}`;
+      window.print();
+      setTimeout(() => { document.title = tituloAnt; }, 1000);
+    });
+  }
+
+  // ---------- Tickets del helpdesk ----------
+  const ticketsDe = (pid) => (S.datos.Tickets || []).filter((t) => t.ID_Proyecto === pid);
+  const ticketAbierto = (t) => !/^(resuelto|cerrado)$/i.test(String(t.Estado || ""));
+  function seccionTickets(p, puede) {
+    const ver = S.tkVer || "abiertos";
+    const todos = ticketsDe(p.ID_Proyecto);
+    const ordenP = { Alta: 0, Media: 1, Baja: 2 };
+    const lista = todos.filter((t) => ver === "todos" || ticketAbierto(t))
+      .sort((a, b) => (ticketAbierto(b) - ticketAbierto(a)) || ((ordenP[a.Prioridad] ?? 9) - (ordenP[b.Prioridad] ?? 9)) || String(a.Numero).localeCompare(String(b.Numero), "es", { numeric: true }));
+    const n = todos.filter(ticketAbierto).length;
+    return `<div class="card"><div class="titulo-fila"><h2>Tickets del helpdesk</h2>${puede ? `<button class="btn primario" id="b-tk">+ Ticket</button>` : ""}</div>
+      <p class="sub">Los tickets que se están manejando en la plataforma helpdesk para este proyecto. Los estados se configuran en Catálogos.</p>
+      <div class="seg barra-comp"><button class="btn chico ${ver === "abiertos" ? "primario" : ""}" data-tkver="abiertos">Abiertos (${n})</button><button class="btn chico ${ver === "todos" ? "primario" : ""}" data-tkver="todos">Todos (${todos.length})</button></div>
+      ${lista.length ? `<div class="tabla-scroll"><table><thead><tr><th>N.º ticket</th><th>Título</th><th>Estado</th><th>Prioridad</th><th class="opc">Registrado</th><th></th></tr></thead>
+        <tbody>${lista.map((t) => `<tr><td><b>${esc(t.Numero || "—")}</b></td><td>${esc(t.Titulo)}</td><td>${pill(t.Estado || "Abierto")}</td><td>${esc(t.Prioridad || "—")}</td>
+          <td class="opc sub">${t.Fecha_Registro ? fecha(t.Fecha_Registro) : ""} ${esc(nombreUsuario(t.Registrado_Por))}</td>
+          <td class="derecha">${puede ? `<button class="btn chico" data-tk="${esc(t.ID_Ticket)}">Editar</button>` : ""}</td></tr>`).join("")}</tbody></table></div>`
+        : vacio(todos.length ? "No hay tickets abiertos. Mira «Todos»." : `Aún no hay tickets.${puede ? " Registra el primero con «+ Ticket»." : ""}`)}</div>`;
+  }
+  function formTicket(p, t) {
+    const nuevo = !t;
+    const campos = [
+      { k: "Numero", label: "N.º de ticket", placeholder: "Ej.: 45872" },
+      { k: "Estado", label: "Estado", tipo: "select", opciones: S.cat.Estado_Ticket, def: (S.cat.Estado_Ticket || [])[0] },
+      { k: "Titulo", label: "Título", placeholder: "Asunto del ticket en el helpdesk", ancho: true },
+      { k: "Prioridad", label: "Prioridad", tipo: "select", opciones: S.cat.Prioridad, def: "Media" },
+    ];
+    modal(nuevo ? `Nuevo ticket · ${p.Nombre}` : `Ticket ${t.Numero || ""}`, campos, nuevo ? {} : t, (fd) => {
+      if (nuevo) {
+        const id = R.siguienteIdHijo("TK", S.datos.Tickets || [], "ID_Ticket", p.ID_Proyecto);
+        guardar(() => S.api.agregarFila("Tickets", { ID_Ticket: id, ID_Proyecto: p.ID_Proyecto, ...fd, Registrado_Por: S.usuario.Correo, Fecha_Registro: R.hoyISO() }), "Ticket registrado");
+      } else guardar(() => S.api.actualizarPorId("Tickets", "ID_Ticket", t.ID_Ticket, fd), "Ticket actualizado");
+    }, (fd) => (nuevo && fd.Numero && ticketsDe(p.ID_Proyecto).some((x) => String(x.Numero) === String(fd.Numero)) ? "Ese número de ticket ya está registrado en este proyecto." : ""),
+    nuevo ? {} : { eliminar: { texto: "Eliminar ticket", mensaje: `Se quitará el ticket ${t.Numero || ""} de este proyecto.`,
+      accion: () => guardar(() => S.api.eliminarFilas("Tickets", "ID_Ticket", [t.ID_Ticket]), "Ticket eliminado") } });
+  }
+
   // ---------- Stakeholders y proveedores ----------
   const proveedores = () => (S.datos.Proveedores || []).slice().sort((a, b) => String(a.Nombre).localeCompare(String(b.Nombre), "es"));
   const proveedor = (id) => (S.datos.Proveedores || []).find((x) => x.ID_Proveedor === id);
@@ -1399,6 +1677,7 @@
     const campos = [
       { seccion: "1. Datos generales" },
       { k: "Nombre", label: "Nombre de la iniciativa", placeholder: "Ej.: Migración del ERP", ancho: true },
+      { k: "Codigo_Almera", label: "Código Almera", placeholder: "Código del proyecto en Almera" },
       { k: "Cliente_Area", label: "Cliente / área", tipo: "select", opciones: S.cat.Cliente_Area },
       { k: "PM", label: "PM responsable", tipo: "select", opciones: pms, bloqueado: pmFijo,
         ayuda: pmFijo ? "Quedas como PM de esta iniciativa." : "Solo aparecen usuarios con rol PM. El PM verá este proyecto." },
@@ -1418,7 +1697,7 @@
       { seccion: "4. Presupuesto", ayuda: "en pesos colombianos, sin puntos" },
       { k: "Presupuesto", label: "Presupuesto (COP)", tipo: "number", min: 0, def: 0 },
       { k: "Ejecutado", label: "Ejecutado (COP)", tipo: "number", min: 0, def: 0 },
-      { seccion: "5. Proveedores", ayuda: "se administran en Catálogos → Proveedores" },
+      { seccion: "5. Proveedores", ayuda: "márcalos o crea uno nuevo aquí mismo" },
       { k: "Proveedores", label: "Proveedor(es) del proyecto", tipo: "checks", vacio: "Aún no hay proveedores. Créalos en Catálogos → Proveedores.",
         opciones: proveedoresActivos(p ? p.Proveedores : "").map((x) => [x.ID_Proveedor, x.Nombre]) },
       { seccion: "6. Enlaces", ayuda: "opcionales; pega la dirección completa" },
@@ -1428,6 +1707,43 @@
       { k: "Comentario_Estado", label: "Comentario de estado", tipo: "textarea", placeholder: "Novedad principal del proyecto" },
     ];
     const valores = p ? { ...p } : { PM: pmFijo ? u.Correo : "" };
+    // Crear un proveedor sin salir del formulario: se guarda de inmediato y queda marcado.
+    const initProv = (m) => {
+      const checks = m.querySelector('[data-checks="Proveedores"]');
+      if (!checks) return;
+      checks.insertAdjacentHTML("afterend", `<div class="prov-nuevo">
+        <button type="button" class="btn chico" id="pn-abrir">+ Crear proveedor nuevo</button>
+        <div id="pn-form" hidden><div class="pn-grid">
+          <input id="pn-nombre" placeholder="Nombre del proveedor *" aria-label="Nombre del proveedor">
+          <input id="pn-servicio" placeholder="Servicio / producto" aria-label="Servicio">
+          <input id="pn-contacto" placeholder="Persona de contacto" aria-label="Contacto">
+          <input id="pn-correo" type="email" placeholder="Correo" aria-label="Correo"></div>
+          <div class="acciones"><button type="button" class="btn primario chico" id="pn-crear">Crear y marcar</button><button type="button" class="btn chico" id="pn-cancelar">Cancelar</button></div>
+          <div class="error-campo" id="pn-error"></div></div></div>`);
+      const f = m.querySelector("#pn-form"), ab = m.querySelector("#pn-abrir");
+      ab.addEventListener("click", () => { f.hidden = false; ab.hidden = true; m.querySelector("#pn-nombre").focus(); });
+      m.querySelector("#pn-cancelar").addEventListener("click", () => { f.hidden = true; ab.hidden = false; });
+      m.querySelector("#pn-crear").addEventListener("click", async () => {
+        const v = (k) => m.querySelector("#pn-" + k).value.trim();
+        const err = m.querySelector("#pn-error");
+        if (!v("nombre")) { err.textContent = "Escribe el nombre del proveedor."; return; }
+        if ((S.datos.Proveedores || []).some((x) => lc(x.Nombre) === lc(v("nombre")))) { err.textContent = "Ya existe un proveedor con ese nombre: márcalo en la lista."; return; }
+        if (v("correo") && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v("correo"))) { err.textContent = "Correo no válido."; return; }
+        const max = (S.datos.Proveedores || []).reduce((mx, x) => Math.max(mx, parseInt(String(x.ID_Proveedor).slice(4), 10) || 0), 0);
+        const fila = { ID_Proveedor: `PRV-${String(max + 1).padStart(4, "0")}`, Nombre: v("nombre"), NIT: "", Servicio: v("servicio"), Contacto: v("contacto"), Correo: v("correo"), Telefono: "", Activo: "Sí" };
+        cargando(true, "Creando proveedor…");
+        try {
+          await S.api.agregarFila("Proveedores", fila);
+          (S.datos.Proveedores = S.datos.Proveedores || []).push(fila);
+          const vacioTxt = checks.querySelector(".sub"); if (vacioTxt) vacioTxt.remove();
+          checks.insertAdjacentHTML("beforeend", `<label class="check"><input type="checkbox" value="${esc(fila.ID_Proveedor)}" checked> ${esc(fila.Nombre)}</label>`);
+          ["nombre", "servicio", "contacto", "correo"].forEach((k) => { m.querySelector("#pn-" + k).value = ""; });
+          err.textContent = ""; f.hidden = true; ab.hidden = false;
+          toast(`Proveedor «${fila.Nombre}» creado y marcado`);
+        } catch (e) { err.textContent = "No se pudo crear: " + e.message; }
+        finally { cargando(false); }
+      });
+    };
     modal(nuevo ? "Nueva iniciativa" : `Editar ${p.ID_Proyecto}`, campos, valores, (fd) => {
       if (pmFijo) fd.PM = nuevo ? u.Correo : p.PM;
       if (!frecuenciaLibre) fd.Frecuencia_Seguimiento = nuevo ? "Semanal" : p.Frecuencia_Seguimiento;
@@ -1441,9 +1757,9 @@
         guardar(() => S.api.actualizarPorId("Proyectos", "ID_Proyecto", p.ID_Proyecto, { ...fd, ...sello() }));
       }
     }, (fd) => (fd.Fecha_Inicio && fd.Fecha_Fin_Plan && fd.Fecha_Fin_Plan < fd.Fecha_Inicio ? "La fecha fin no puede ser anterior a la fecha de inicio." : ""),
-    !nuevo && R.puede(u, "verTodo") ? { eliminar: { texto: "Eliminar proyecto", titulo: `Eliminar ${p.ID_Proyecto}`,
+    !nuevo && R.puede(u, "verTodo") ? { init: initProv, eliminar: { texto: "Eliminar proyecto", titulo: `Eliminar ${p.ID_Proyecto}`,
       mensaje: `Se borrará «${p.Nombre}» con todos sus seguimientos, compromisos, hitos, riesgos, stakeholders y actas. No se puede deshacer. Si solo terminó, mejor cambia su estado a Cerrado o Cancelado.`,
-      accion: () => { S.vista = "proyectos"; guardar(() => eliminarProyecto(p.ID_Proyecto), `Proyecto ${p.ID_Proyecto} eliminado`); } } } : {});
+      accion: () => { S.vista = "proyectos"; guardar(() => eliminarProyecto(p.ID_Proyecto), `Proyecto ${p.ID_Proyecto} eliminado`); } } } : { init: initProv });
   }
 
   function formSeguimiento(p) {
@@ -1659,12 +1975,14 @@
     const segs = S.datos.Seguimientos.filter((s) => s.ID_Proyecto === pid);
     for (const s of segs.filter((x) => x.Acta_Archivo)) await S.api.borrarArchivo(s.ID_Seguimiento);
     const borrar = (tabla, col, filas) => (filas.length ? S.api.eliminarFilas(tabla, col, filas.map((f) => f[col])) : null);
+    await borrarAdjuntos((S.datos.Comentarios || []).filter((x) => x.ID_Proyecto === pid));
     await borrar("Comentarios", "ID_Comentario", (S.datos.Comentarios || []).filter((x) => x.ID_Proyecto === pid));
     await borrar("Compromisos", "ID_Compromiso", S.datos.Compromisos.filter((c) => c.ID_Proyecto === pid));
     await borrar("Seguimientos", "ID_Seguimiento", segs);
     await borrar("Hitos", "ID_Hito", S.datos.Hitos.filter((h) => h.ID_Proyecto === pid));
     await borrar("Riesgos", "ID_Riesgo", S.datos.Riesgos.filter((r) => r.ID_Proyecto === pid));
     await borrar("Stakeholders", "ID_Stakeholder", (S.datos.Stakeholders || []).filter((x) => x.ID_Proyecto === pid));
+    await borrar("Tickets", "ID_Ticket", (S.datos.Tickets || []).filter((x) => x.ID_Proyecto === pid));
     await S.api.eliminarFilas("Proyectos", "ID_Proyecto", [pid]);
   }
 
@@ -1715,6 +2033,7 @@
       }, "Compromiso actualizado");
     }, null, { ...autollenar, eliminar: { texto: "Eliminar compromiso", mensaje: `Se borrará «${c.Compromiso}»${coms.length ? ` con sus ${coms.length} comentario(s)` : ""}.`,
       accion: () => guardar(async () => {
+        await borrarAdjuntos(coms);
         if (coms.length) await S.api.eliminarFilas("Comentarios", "ID_Comentario", coms.map((x) => x.ID_Comentario));
         await S.api.eliminarFilas("Compromisos", "ID_Compromiso", [c.ID_Compromiso]);
       }, "Compromiso eliminado") } });
@@ -1785,6 +2104,7 @@
           if (s.Acta_Archivo) await S.api.borrarArchivo(s.ID_Seguimiento);
           const idsC = new Set(comps.map((c) => c.ID_Compromiso));
           const comsS = (S.datos.Comentarios || []).filter((x) => idsC.has(x.ID_Compromiso));
+          await borrarAdjuntos(comsS);
           if (comsS.length) await S.api.eliminarFilas("Comentarios", "ID_Comentario", comsS.map((x) => x.ID_Comentario));
           if (comps.length) await S.api.eliminarFilas("Compromisos", "ID_Compromiso", comps.map((c) => c.ID_Compromiso));
           await S.api.eliminarFilas("Seguimientos", "ID_Seguimiento", [s.ID_Seguimiento]);
