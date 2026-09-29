@@ -224,6 +224,17 @@ ul.deps li { padding: 6px 8px; border-left: 3px solid var(--azul-claro); margin-
 ul.deps li.dep-alerta { border-left-color: var(--rojo); background: #fdf3f2; }
 tr.inactivo td { opacity: .6; }
 .aviso-dup { border-left: 4px solid var(--amarillo); }
+.tabla-riesgos td { font-size: 13px; }
+.rg-desc { margin: 4px 0 2px; }
+.rg-planes { max-width: 340px; font-size: 12.5px; }
+.rg-planes div + div { margin-top: 4px; }
+.calif-viva { background: var(--suave); border-radius: 6px; padding: 6px 10px; font-size: 13px; }
+.carga-riesgos { max-height: 50vh; overflow: auto; margin-top: 10px; }
+.carga-riesgos input[type=checkbox] { width: auto; }
+.pill.enseguimiento { background: #e6f0fd; color: #0d3f86; }
+.pill.materializado { background: #fbe3e0; color: #8e2a1f; }
+.pill.amenaza { background: #fdf1e3; color: #8a5a1c; }
+.pill.oportunidad { background: #e3f3ea; color: #1e5e3a; }
 .pestanas { display: flex; gap: 2px; border-bottom: 2px solid #dfe6ef; margin: 4px 0 14px; overflow-x: auto; }
 .pestana { background: none; border: 0; border-bottom: 3px solid transparent; margin-bottom: -2px; padding: 9px 14px; font: inherit; color: var(--texto2); cursor: pointer; white-space: nowrap; }
 .pestana:hover { color: var(--azul); }

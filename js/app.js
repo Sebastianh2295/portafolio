@@ -107,6 +107,8 @@
     for (const f of S.datos.Catalogos) (S.cat[f.Lista] = S.cat[f.Lista] || []).push(String(f.Valor));
     S.cat.Estado_Compromiso = R.ESTADOS_COMPROMISO.slice();
     Object.entries(CATALOGOS_BASE).forEach(([k, v]) => { if (!S.cat[k]) S.cat[k] = v.slice(); });
+    S.cat.Estado_Riesgo = [...new Set([...ESTADOS_RIESGO, ...(S.cat.Estado_Riesgo || [])])];
+    S.cat.Tipo_Riesgo = [...new Set(["Amenaza", "Oportunidad", ...(S.cat.Tipo_Riesgo || [])])];
   }
   // Listas nuevas que se crean solas en la tabla Catalogos la primera vez (luego se editan desde Catálogos).
   const CATALOGOS_BASE = { Rol_Stakeholder: ["Sponsor", "Líder funcional", "Product Owner"], Estado_Ticket: ["Abierto", "En curso", "Resuelto", "Cerrado"],
@@ -1003,7 +1005,7 @@
     const abiertosN = comps.filter((x) => x.e !== "Cerrado").length;
     const vencidosN = comps.filter((x) => x.e === "Vencido").length;
     const TABS = [["resumen", "Resumen"], ["compromisos", `Compromisos <span class="contador ${vencidosN ? "rojo" : ""}">${abiertosN}</span>`],
-      ["seguimientos", `Seguimientos <span class="contador">${segs.length}</span>`], ["hitos", `Hitos <span class="contador">${hitos.length}</span>`], ["riesgos", `Riesgos <span class="contador">${riesgos.length}</span>`],
+      ["seguimientos", `Seguimientos <span class="contador">${segs.length}</span>`], ["hitos", `Hitos <span class="contador">${hitos.length}</span>`], ["riesgos", `Riesgos <span class="contador">${riesgos.filter(riesgoActivo).length}</span>`],
       ["tickets", `Tickets <span class="contador">${ticketsDe(p.ID_Proyecto).filter(ticketAbierto).length}</span>`],
       ["cambios", `Cambios${cambiosDe(p.ID_Proyecto).some((c) => c.Estado === "Solicitado") ? ` <span class="contador rojo">${cambiosDe(p.ID_Proyecto).filter((c) => c.Estado === "Solicitado").length}</span>` : ""}`],
       ["raci", "RACI"], ["lecciones", `Lecciones <span class="contador">${leccionesDe(p.ID_Proyecto).length}</span>`], ["auditoria", "Historial de cambios"]];
@@ -1055,11 +1057,7 @@
         <tbody>${hitos.map((h) => { const est = h.Estado !== "Cumplido" && h.Fecha_Plan < hoy ? "Atrasado" : h.Estado; return `<tr><td>${esc(h.Hito)}</td><td>${fecha(h.Fecha_Plan)}</td><td>${h.Fecha_Real ? fecha(h.Fecha_Real) : "—"}</td><td>${pill(est)}</td>
           <td class="derecha">${puedeP("hitos") ? `<button class="btn chico" data-hito="${esc(h.ID_Hito)}">Editar</button>` : ""}</td></tr>`; }).join("") || `<tr><td colspan="5">${vacio("Sin hitos. Agrega los hitos clave del proyecto con «+ Hito».")}</td></tr>`}</tbody></table></div></div>
 `,
-      riesgos: () => `      <div class="card"><div class="titulo-fila"><h2>Riesgos</h2>${puedeP("riesgos") ? `<button class="btn" id="b-riesgo">+ Riesgo</button>` : ""}</div><div class="tabla-scroll"><table>
-        <thead><tr><th>Riesgo</th><th class="opc">Tipo</th><th>Estado</th><th>Inherente</th><th>Residual</th><th class="opc">Mitigación</th><th></th></tr></thead>
-        <tbody>${riesgos.map((r) => `<tr><td>${esc(r.Descripcion)}</td><td class="opc">${esc(r.Tipo)}</td><td>${esc(r.Estado)}</td>
-          <td>${nivel(r.Calificacion_Inherente)}</td><td>${nivel(r.Calificacion_Residual)}</td><td class="opc">${esc(r.Plan_Mitigacion)}</td>
-          <td class="derecha">${puedeP("riesgos") ? `<button class="btn chico" data-riesgo="${esc(r.ID_Riesgo)}">Editar</button>` : ""}</td></tr>`).join("") || `<tr><td colspan="7">${vacio("Sin riesgos registrados.")}</td></tr>`}</tbody></table></div></div>`,
+      riesgos: () => seccionRiesgos(p, puedeP("riesgos")),
     }[tab]();
     el.innerHTML = `
       <button class="btn enlace" id="b-volver">← Volver a proyectos</button>
@@ -1107,6 +1105,8 @@
     el.querySelectorAll("[data-comp-seg]").forEach((b) => b.addEventListener("click", () => formCompromiso(null, p, b.dataset.compSeg)));
     enlazarSeccionCompromisos(el);
     if ($("#b-riesgo")) $("#b-riesgo").addEventListener("click", () => formRiesgo(p));
+    if ($("#b-rg-carga")) $("#b-rg-carga").addEventListener("click", () => cargarRiesgosExcel(p));
+    el.querySelectorAll("[data-rgver]").forEach((b) => b.addEventListener("click", () => { S.rgVer = b.dataset.rgver; render(); }));
     if ($("#b-stk")) $("#b-stk").addEventListener("click", () => formStakeholder(p));
     el.querySelectorAll("[data-stk]").forEach((b) => b.addEventListener("click", () => formStakeholder(p, (S.datos.Stakeholders || []).find((x) => x.ID_Stakeholder === b.dataset.stk))));
     el.querySelectorAll("[data-rol-stk]").forEach((b) => b.addEventListener("click", () => formStakeholder(p, null, b.dataset.rolStk)));
@@ -1189,7 +1189,7 @@
   // ---------- Riesgos ----------
   function vRiesgos(el) {
     const ids = new Set(filtrados().map((p) => p.ID_Proyecto));
-    const abiertos = S.datos.Riesgos.filter((r) => ids.has(r.ID_Proyecto) && r.Estado === "Abierto");
+    const abiertos = S.datos.Riesgos.filter((r) => ids.has(r.ID_Proyecto) && riesgoActivo(r));
     const res = S.riesgoVista === "residual";
     const P = res ? "Probabilidad_Residual" : "Probabilidad_Inherente";
     const I = res ? "Impacto_Residual" : "Impacto_Inherente";
@@ -1210,13 +1210,13 @@
       <div class="filtros"><div class="seg" role="group" aria-label="Tipo de calificación">
         <button class="btn ${!res ? "primario" : ""}" data-rv="inherente">Inherente</button>
         <button class="btn ${res ? "primario" : ""}" data-rv="residual">Residual</button></div>
-        <span class="sub">${abiertos.length} riesgo(s) abierto(s) · Bajo ≤ 6 · Medio 7–12 · Alto > 12</span></div>
+        <span class="sub">${abiertos.length} riesgo(s) activo(s) (todos menos Cerrado) · Bajo ≤ 6 · Medio 7–12 · Alto > 12</span></div>
       <div class="grid2">
         <div class="card"><h2>Mapa de calor (${res ? "residual" : "inherente"})</h2>
           <div class="heatmap">${celdas}</div><div class="sub centro">Horizontal: impacto (1 a 5) · Vertical: probabilidad (1 a 5)</div></div>
         <div class="card"><h2>Riesgos abiertos más críticos</h2><div class="tabla-scroll"><table>
           <thead><tr><th>Proyecto</th><th>Riesgo</th><th>Calificación</th></tr></thead>
-          <tbody>${orden.slice(0, 10).map((r) => `<tr class="clic" data-pid="${esc(r.ID_Proyecto)}"><td>${esc((proyecto(r.ID_Proyecto) || {}).Nombre)}</td><td>${esc(r.Descripcion)}</td><td>${nivel(r[C])}</td></tr>`).join("") || `<tr><td colspan="3">${vacio("Sin riesgos abiertos en la selección.")}</td></tr>`}</tbody>
+          <tbody>${orden.slice(0, 10).map((r) => `<tr class="clic" data-pid="${esc(r.ID_Proyecto)}"><td>${esc((proyecto(r.ID_Proyecto) || {}).Nombre)}</td><td>${esc(r.Descripcion)}<div class="sub">${esc(r.Estado)} · ${esc(r.Responsable || "")} · ${esc(origenRiesgo(r))}</div></td><td>${nivel(r[C])}</td></tr>`).join("") || `<tr><td colspan="3">${vacio("Sin riesgos abiertos en la selección.")}</td></tr>`}</tbody>
         </table></div></div>
       </div>`;
     enlazarFiltros();
@@ -1580,7 +1580,9 @@
       <h2>6. Hitos</h2>
       ${tabla(["Hito", "Fecha plan", "Fecha real", "Estado"], hitos.map((h) => `<tr><td>${t(h.Hito)}</td><td>${fecha(h.Fecha_Plan)}</td><td>${h.Fecha_Real ? fecha(h.Fecha_Real) : "—"}</td><td>${t(h.Estado)}</td></tr>`), "Sin hitos.")}
       <h2>7. Riesgos</h2>
-      ${tabla(["Riesgo", "Tipo", "Estado", "Inherente", "Residual", "Mitigación"], riesgos.map((r) => `<tr><td>${t(r.Descripcion)}</td><td>${t(r.Tipo)}</td><td>${t(r.Estado)}</td><td>${R.nivelRiesgo(Number(r.Calificacion_Inherente) || 0)} (${Number(r.Calificacion_Inherente) || 0})</td><td>${R.nivelRiesgo(Number(r.Calificacion_Residual) || 0)} (${Number(r.Calificacion_Residual) || 0})</td><td>${t(r.Plan_Mitigacion)}</td></tr>`), "Sin riesgos.")}
+      ${tabla(["No.", "Riesgo", "Responsable", "Inherente", "Planes", "Residual", "Origen"], riesgos.slice().sort((a, b) => numRiesgo(a) - numRiesgo(b)).map((r) => `<tr><td>${numRiesgo(r)}</td><td><small>${t(r.Tipo)} · ${t(r.Estado)}</small><br>${t(r.Descripcion)}</td><td>${t(r.Responsable)}</td>
+        <td class="hv-nw">${califTxt(r.Probabilidad_Inherente, r.Impacto_Inherente)}</td><td>${r.Plan_Mitigacion ? `<b>Mitigación:</b> ${t(r.Plan_Mitigacion)}` : ""}${r.Plan_Contingencia ? `<br><b>Contingencia:</b> ${t(r.Plan_Contingencia)}` : ""}</td>
+        <td class="hv-nw">${califTxt(r.Probabilidad_Residual, r.Impacto_Residual)}</td><td>${esc(origenRiesgo(r))}</td></tr>`), "Sin riesgos.")}
       <h2>8. Control de cambios</h2>
       ${(() => { const lb = lineaBase(p); return lb.tiene ? `<p class="hv-p"><b>Línea base:</b> fin ${fecha(lb.fb)} → actual ${fecha(p.Fecha_Fin_Plan)}${lb.dias !== null ? ` (${lb.dias > 0 ? "+" : ""}${lb.dias} días)` : ""} · presupuesto ${lb.pb !== null ? cop(lb.pb) : "—"} → actual ${cop(p.Presupuesto)}${lb.pctCosto !== null ? ` (${lb.pctCosto > 0 ? "+" : ""}${lb.pctCosto}%)` : ""}</p>` : ""; })()}
       ${tabla(["Fecha", "Tipo", "Cambio", "Impacto", "Estado"], cambiosDe(pid).map((c) => `<tr><td class="hv-nw">${fecha(c.Fecha)}</td><td>${t(c.Tipo)}</td><td>${t(c.Descripcion)}</td><td>${t(c.Impacto)}${c.Nueva_Fecha_Fin ? `<br><small>Nueva fecha fin ${fecha(c.Nueva_Fecha_Fin)}</small>` : ""}${num0(c.Nuevo_Presupuesto) !== null ? `<br><small>Nuevo presupuesto ${cop(c.Nuevo_Presupuesto)}</small>` : ""}</td><td>${t(c.Estado)}${c.Fecha_Decision ? `<br><small>${fecha(c.Fecha_Decision)}</small>` : ""}</td></tr>`), "Sin cambios registrados.")}
@@ -2040,7 +2042,7 @@
     const vencidos = comps.filter((c) => R.estadoCompromiso(c) === "Vencido");
     const cerradosSem = comps.filter((c) => R.cerrado(c) && enSemana(c.Fecha_Cierre));
     const acordadosSem = comps.filter((c) => segsSem.some((s) => s.ID_Seguimiento === c.ID_Seguimiento));
-    const riesgosAltos = S.datos.Riesgos.filter((r) => ids.has(r.ID_Proyecto) && r.Estado === "Abierto" && R.nivelRiesgo(Number(r.Calificacion_Residual) || Number(r.Calificacion_Inherente) || 0) === "Alto");
+    const riesgosAltos = S.datos.Riesgos.filter((r) => ids.has(r.ID_Proyecto) && riesgoActivo(r) && R.nivelRiesgo(Number(r.Calificacion_Residual) || Number(r.Calificacion_Inherente) || 0) === "Alto");
     const cambiosSem = (S.datos.Cambios || []).filter((c) => ids.has(c.ID_Proyecto) && (enSemana(c.Fecha) || enSemana(c.Fecha_Decision)));
     const sobre = capacidad().filter((x) => x.total > x.cap && x.asign.some((a) => ids.has(a.p.ID_Proyecto)));
     const depsRiesgo = (S.datos.Dependencias || []).filter((d) => ids.has(d.ID_Proyecto) && conflictoDep(d));
@@ -2064,7 +2066,7 @@
       <p class="hv-p"><b>${acordadosSem.length}</b> acordados en la semana · <b>${cerradosSem.length}</b> cerrados en la semana · <b>${vencidos.length}</b> vencidos a la fecha.</p>
       ${tabla(["Compromiso vencido", "Proyecto", "Responsable", "Fecha límite", "Estado"], vencidos.sort((a, b) => String(a.Fecha_Compromiso).localeCompare(String(b.Fecha_Compromiso))).map((c) => `<tr><td>${t(c.Compromiso)}</td><td>${nomP(c.ID_Proyecto)}</td><td>${t(c.Responsable)}</td><td class="hv-nw">${fecha(c.Fecha_Compromiso)}</td><td>${esc(R.estadoBase(c))}</td></tr>`), "Sin compromisos vencidos.")}
       ${cerradosSem.length ? tabla(["Cerrado en la semana", "Proyecto", "Responsable", "Cerrado"], cerradosSem.map((c) => `<tr><td>${t(c.Compromiso)}</td><td>${nomP(c.ID_Proyecto)}</td><td>${t(c.Responsable)}</td><td class="hv-nw">${fecha(c.Fecha_Cierre)}</td></tr>`), "") : ""}
-      <h2>4. Riesgos altos abiertos</h2>
+      <h2>4. Riesgos altos activos</h2>
       ${tabla(["Riesgo", "Proyecto", "Nivel", "Mitigación"], riesgosAltos.map((r) => `<tr><td>${t(r.Descripcion)}</td><td>${nomP(r.ID_Proyecto)}</td><td>${R.nivelRiesgo(Number(r.Calificacion_Residual) || Number(r.Calificacion_Inherente) || 0)}</td><td>${t(r.Plan_Mitigacion)}</td></tr>`), "Sin riesgos altos abiertos.")}
       <h2>5. Control de cambios</h2>
       ${tabla(["Cambio", "Proyecto", "Tipo", "Estado"], cambiosSem.map((c) => `<tr><td>${t(c.Descripcion)}</td><td>${nomP(c.ID_Proyecto)}</td><td>${t(c.Tipo)}</td><td>${t(c.Estado)}</td></tr>`), "Sin cambios solicitados o decididos en la semana.")}
@@ -2235,6 +2237,150 @@
     };
     no.addEventListener("change", act); no.addEventListener("input", () => { if (recursoPor({ nombre: no.value })) act(); else if (aviso) aviso.innerHTML = no.value.trim() ? "Persona nueva: se agregará a Recursos al guardar." : ""; });
     if (no.value) act();
+  }
+
+  // ---------- Riesgos: formato FSFB, origen y carga masiva desde Excel ----------
+  const PROB_TXT = { 1: "1 (Muy baja)", 2: "2 (Baja)", 3: "3 (Moderada)", 4: "4 (Alta)", 5: "5 (Muy alta)" };
+  const IMP_TXT = { 1: "1 (Insignificante)", 2: "2 (Menor)", 3: "3 (Moderado)", 4: "4 (Mayor)", 5: "5 (Catastrófico)" };
+  const ESTADOS_RIESGO = ["Abierto", "En seguimiento", "Materializado", "Cerrado"];
+  const riesgoActivo = (r) => r.Estado !== "Cerrado";
+  const riesgosDe = (pid) => S.datos.Riesgos.filter((r) => r.ID_Proyecto === pid);
+  const numRiesgo = (r) => parseInt(String(r.ID_Riesgo).split("-").pop(), 10) || 0;
+  const califTxt = (p, i) => { const c = R.calificacion(p, i); return c ? `${c} · ${R.nivelRiesgo(c)}` : "—"; };
+  const origenRiesgo = (r) => {
+    const s = r.ID_Seguimiento && S.datos.Seguimientos.find((x) => x.ID_Seguimiento === r.ID_Seguimiento);
+    return [r.Origen, s ? `Sesión del ${fecha(s.Fecha_Corte)}` : "", !s && r.Fecha_Identificacion ? fecha(r.Fecha_Identificacion) : ""].filter(Boolean).join(" · ") || "Sin origen registrado";
+  };
+  function seccionRiesgos(p, puede) {
+    const ver = S.rgVer || "activos";
+    const todos = riesgosDe(p.ID_Proyecto).sort((a, b) => numRiesgo(a) - numRiesgo(b));
+    const lista = todos.filter((r) => ver === "todos" || riesgoActivo(r));
+    const segs = R.seguimientosDe(p.ID_Proyecto, S.datos.Seguimientos);
+    return `<div class="card"><div class="titulo-fila"><h2>Registro de riesgos</h2>${puede ? `<div class="acciones">
+        <a class="btn" href="assets/Plantilla_Riesgos.xlsx" download="Plantilla_Riesgos.xlsx" title="Formato FSFB con listas desplegables">⬇ Plantilla Excel</a>
+        <button class="btn" id="b-rg-carga">📥 Cargar desde Excel</button><button class="btn primario" id="b-riesgo">+ Riesgo</button></div>` : ""}</div>
+      <p class="sub">Formato FSFB: probabilidad e impacto de 1 a 5, calificación = probabilidad × impacto (Bajo ≤ 6 · Medio 7–12 · Alto > 12), antes y después de mitigar. Cada riesgo indica en qué sesión o instancia se identificó.</p>
+      <div class="seg barra-comp"><button class="btn chico ${ver === "activos" ? "primario" : ""}" data-rgver="activos">Activos (${todos.filter(riesgoActivo).length})</button><button class="btn chico ${ver === "todos" ? "primario" : ""}" data-rgver="todos">Todos (${todos.length})</button></div>
+      ${lista.length ? `<div class="tabla-scroll"><table class="tabla-riesgos"><thead><tr><th>No.</th><th>Riesgo</th><th>Inherente</th><th class="opc">Planes</th><th>Residual</th><th>Origen</th><th></th></tr></thead><tbody>
+        ${lista.map((r) => `<tr><td>${numRiesgo(r)}</td>
+          <td>${pill(r.Tipo || "Amenaza")} ${pill(r.Estado || "Abierto")}<div class="rg-desc">${esc(r.Descripcion)}</div><div class="sub">Responsable: ${esc(r.Responsable || "—")}</div></td>
+          <td class="nowrap"><div class="sub">P ${esc(r.Probabilidad_Inherente || "—")} × I ${esc(r.Impacto_Inherente || "—")}</div>${nivel(r.Calificacion_Inherente)}</td>
+          <td class="opc rg-planes">${r.Plan_Mitigacion ? `<div><b>Mitigación:</b> ${esc(r.Plan_Mitigacion)}</div>` : ""}${r.Plan_Contingencia ? `<div><b>Contingencia:</b> ${esc(r.Plan_Contingencia)}</div>` : ""}${!r.Plan_Mitigacion && !r.Plan_Contingencia ? "—" : ""}</td>
+          <td class="nowrap"><div class="sub">P ${esc(r.Probabilidad_Residual || "—")} × I ${esc(r.Impacto_Residual || "—")}</div>${r.Calificacion_Residual ? nivel(r.Calificacion_Residual) : "—"}</td>
+          <td class="sub">${esc(origenRiesgo(r))}</td>
+          <td class="derecha">${puede ? `<button class="btn chico" data-riesgo="${esc(r.ID_Riesgo)}">Editar</button>` : ""}</td></tr>`).join("")}</tbody></table></div>`
+        : vacio(todos.length ? "No hay riesgos activos. Mira «Todos»." : `Sin riesgos registrados.${puede ? " Agrégalos uno a uno o cárgalos desde el Excel del comité." : ""}`)}
+      ${segs.length ? "" : ""}</div>`;
+  }
+  // Campos de origen comunes al formulario y a la carga masiva.
+  const opcionesSesion = (pid) => R.seguimientosDe(pid, S.datos.Seguimientos).slice().reverse().map((s) => [s.ID_Seguimiento, `Sesión del ${fecha(s.Fecha_Corte)}${s.Fecha_Acta && s.Fecha_Acta !== s.Fecha_Corte ? ` (acta ${fecha(s.Fecha_Acta)})` : ""}`]);
+
+  // Lee el Excel del formato FSFB (o parecido): encabezados en cualquier fila de las primeras 15.
+  let cargaXlsx = null;
+  function libXlsx() {
+    if (window.XLSX) return Promise.resolve(window.XLSX);
+    if (!cargaXlsx) cargaXlsx = new Promise((ok, falla) => {
+      const s = document.createElement("script");
+      s.src = new URL("lib/xlsx.full.min.js", location.href).href;
+      s.onload = () => ok(window.XLSX); s.onerror = () => falla(new Error("No se pudo cargar el lector de Excel."));
+      document.head.appendChild(s);
+    });
+    return cargaXlsx;
+  }
+  const COLS_RIESGO = [
+    ["No", /^no\.?$|^n[°º]|^numero|^#$/], ["Tipo", /^tipo/], ["Estado", /^estado/], ["Responsable", /^responsable/], ["Descripcion", /descripcion|^riesgo$/],
+    ["Probabilidad_Inherente", /probabilidad.*inherente|^probabilidad$/], ["Impacto_Inherente", /impacto.*inherente|^impacto$/],
+    ["Plan_Mitigacion", /mitigacion/], ["Plan_Contingencia", /contingencia/],
+    ["Probabilidad_Residual", /probabilidad.*residual/], ["Impacto_Residual", /impacto.*residual/],
+  ];
+  const num15 = (v) => { const m = String(v ?? "").match(/[1-5]/); return m ? Number(m[0]) : ""; };
+  async function leerExcelRiesgos(file) {
+    const X = await libXlsx();
+    const wb = X.read(new Uint8Array(await file.arrayBuffer()), { type: "array" });
+    const hoja = wb.Sheets[wb.SheetNames.find((n) => /riesgo/i.test(n)) || wb.SheetNames[0]];
+    const filas = X.utils.sheet_to_json(hoja, { header: 1, raw: false, defval: "" });
+    const iCab = filas.slice(0, 15).findIndex((f) => f.some((c) => /descripci/i.test(normTxt(c))));
+    if (iCab < 0) throw new Error("No encontré la columna «Descripción del riesgo». Usa la plantilla del formato.");
+    const cab = filas[iCab].map(normTxt);
+    const idx = {};
+    COLS_RIESGO.forEach(([k, re]) => { const i = cab.findIndex((c, j) => re.test(c) && !Object.values(idx).includes(j)); if (i >= 0) idx[k] = i; });
+    const titulo = filas.slice(0, iCab).map((f) => f.filter(Boolean).join(" ")).join(" ").trim();
+    const riesgos = filas.slice(iCab + 1).map((f) => {
+      const g = (k) => (idx[k] === undefined ? "" : String(f[idx[k]] ?? "").trim());
+      if (!g("Descripcion")) return null;
+      return {
+        Tipo: /oportunidad/i.test(g("Tipo")) ? "Oportunidad" : "Amenaza",
+        Estado: ESTADOS_RIESGO.find((e) => normTxt(e) === normTxt(g("Estado"))) || g("Estado") || "Abierto",
+        Responsable: g("Responsable"), Descripcion: g("Descripcion"),
+        Probabilidad_Inherente: num15(g("Probabilidad_Inherente")), Impacto_Inherente: num15(g("Impacto_Inherente")),
+        Plan_Mitigacion: g("Plan_Mitigacion"), Plan_Contingencia: g("Plan_Contingencia"),
+        Probabilidad_Residual: num15(g("Probabilidad_Residual")), Impacto_Residual: num15(g("Impacto_Residual")),
+      };
+    }).filter(Boolean);
+    // Del título «Registro de riesgos — Comité Operativo – Proyecto Kardex — 29/09/2026» salen la instancia y la fecha.
+    const fechaT = ACTAS.fechaISO(titulo);
+    const partes = titulo.replace(/registro de riesgos/i, "").split(/[—–-]/).map((t) => t.trim()).filter((t) => t && !/^proyecto\b/i.test(t) && !/\d{1,2}\/\d{1,2}\/\d{4}/.test(t) && !/^\[/.test(t));
+    return { titulo, riesgos, fecha: fechaT, instancia: partes[0] || "" };
+  }
+  function cargarRiesgosExcel(p) {
+    const i = document.createElement("input");
+    i.type = "file"; i.accept = ".xlsx,.xls,.csv";
+    i.addEventListener("change", async () => {
+      const f = i.files[0];
+      if (!f) return;
+      cargando(true, "Leyendo el Excel…");
+      let datos;
+      try { datos = await leerExcelRiesgos(f); } catch (e) { cargando(false); toast(e.message, true); return; }
+      cargando(false);
+      if (!datos.riesgos.length) { toast("El archivo no tiene riesgos con descripción.", true); return; }
+      previsualizarRiesgos(p, datos, f.name);
+    });
+    i.click();
+  }
+  function previsualizarRiesgos(p, datos, nombreArchivo) {
+    const existentes = riesgosDe(p.ID_Proyecto);
+    const dupDe = (r) => existentes.find((x) => normTxt(x.Descripcion) === normTxt(r.Descripcion));
+    const sesiones = opcionesSesion(p.ID_Proyecto);
+    const segFecha = datos.fecha && R.seguimientosDe(p.ID_Proyecto, S.datos.Seguimientos).find((s) => s.Fecha_Corte === datos.fecha || s.Fecha_Acta === datos.fecha);
+    const campos = [
+      { k: "ID_Seguimiento", label: "¿De qué sesión salieron?", tipo: "select", opciones: sesiones, textoVacio: "No salieron de una sesión registrada", ancho: true,
+        ayuda: segFecha ? "Encontré una sesión con la misma fecha del archivo y la dejé elegida." : "Si no está la sesión, déjalo así e indica la instancia." },
+      { k: "Origen", label: "Instancia donde se identificaron", placeholder: "Ej.: Comité Operativo, Kickoff, Comité directivo" },
+      { k: "Fecha_Identificacion", label: "Fecha de identificación", tipo: "date" },
+    ];
+    const filas = datos.riesgos.map((r, k) => {
+      const d = dupDe(r);
+      return `<tr><td><input type="checkbox" class="rg-ok" data-k="${k}" ${d ? "" : "checked"} aria-label="Importar riesgo ${k + 1}"></td>
+        <td>${pill(r.Tipo)} ${pill(r.Estado)}<div class="rg-desc">${esc(r.Descripcion)}</div><div class="sub">${esc(r.Responsable || "Sin responsable")}</div>
+          ${d ? `<div class="baja">Ya existe en el proyecto (${esc(d.ID_Riesgo)}). <label class="check"><input type="checkbox" class="rg-act" data-k="${k}"> Actualizar el existente</label></div>` : ""}</td>
+        <td class="nowrap">${califTxt(r.Probabilidad_Inherente, r.Impacto_Inherente)}</td><td class="nowrap">${califTxt(r.Probabilidad_Residual, r.Impacto_Residual)}</td></tr>`;
+    }).join("");
+    const antes = `<div class="resumen-filtro"><b>${esc(nombreArchivo)}</b>${datos.titulo ? `<br><span class="sub">${esc(datos.titulo)}</span>` : ""}<br>${datos.riesgos.length} riesgo(s) encontrados. Desmarca los que no quieras cargar.</div>`;
+    const despues = `<div class="tabla-scroll carga-riesgos"><table><thead><tr><th></th><th>Riesgo</th><th>Inherente</th><th>Residual</th></tr></thead><tbody>${filas}</tbody></table></div>`;
+    modal(`Cargar riesgos · ${p.Nombre}`, campos, { ID_Seguimiento: segFecha ? segFecha.ID_Seguimiento : "", Origen: datos.instancia, Fecha_Identificacion: datos.fecha || R.hoyISO() }, (fd, extra) => {
+      const nuevos = [], actualizar = [];
+      extra.sel.forEach((k) => {
+        const r = datos.riesgos[k];
+        const fila = { ...r, ID_Seguimiento: fd.ID_Seguimiento, Origen: fd.Origen, Fecha_Identificacion: fd.Fecha_Identificacion,
+          Calificacion_Inherente: R.calificacion(r.Probabilidad_Inherente, r.Impacto_Inherente) || "", Calificacion_Residual: R.calificacion(r.Probabilidad_Residual, r.Impacto_Residual) || "" };
+        const d = dupDe(r);
+        if (d && extra.act.includes(k)) actualizar.push({ id: d.ID_Riesgo, cambios: fila });
+        else if (!d || !extra.act.includes(k)) nuevos.push(fila);
+      });
+      guardar(async () => {
+        if (nuevos.length) await S.api.agregarFilas("Riesgos", nuevos.map((r, j) => ({ ID_Riesgo: R.siguienteIdHijo("RSG", S.datos.Riesgos, "ID_Riesgo", p.ID_Proyecto, j), ID_Proyecto: p.ID_Proyecto, ...r })));
+        if (actualizar.length) await S.api.actualizarVarios("Riesgos", "ID_Riesgo", actualizar);
+      }, `${nuevos.length} riesgo(s) cargado(s)${actualizar.length ? ` y ${actualizar.length} actualizado(s)` : ""}`);
+    }, null, { antes, despues,
+      init: (m) => m.querySelectorAll(".rg-act").forEach((c) => c.addEventListener("change", () => { if (c.checked) m.querySelector(`.rg-ok[data-k="${c.dataset.k}"]`).checked = true; })),
+      recoger: (m) => {
+        const sel = [...m.querySelectorAll(".rg-ok:checked")].map((c) => Number(c.dataset.k));
+        if (!sel.length) return { error: "Marca al menos un riesgo para cargar." };
+        const act = [...m.querySelectorAll(".rg-act:checked")].map((c) => Number(c.dataset.k));
+        const soloDup = sel.filter((k) => dupDe(datos.riesgos[k]) && !act.includes(k));
+        if (soloDup.length) return { error: `${soloDup.length} riesgo(s) marcado(s) ya existen: desmárcalos o elige «Actualizar el existente».` };
+        return { datos: { sel, act } };
+      } });
   }
 
   // ---------- Tickets del helpdesk ----------
@@ -2775,30 +2921,46 @@
   }
 
   function formRiesgo(p, r) {
-    const esc5 = [[1, "1 · Muy baja"], [2, "2 · Baja"], [3, "3 · Media"], [4, "4 · Alta"], [5, "5 · Muy alta"]];
+    const probs = Object.entries(PROB_TXT).map(([k, t]) => [Number(k), t]);
+    const imps = Object.entries(IMP_TXT).map(([k, t]) => [Number(k), t]);
     const campos = [
       { seccion: "1. Riesgo" },
       { k: "Tipo", label: "Tipo", tipo: "select", opciones: S.cat.Tipo_Riesgo, def: "Amenaza" },
       { k: "Estado", label: "Estado", tipo: "select", opciones: S.cat.Estado_Riesgo, def: "Abierto" },
-      { k: "Responsable", label: "Responsable", def: S.usuario.Nombre || S.usuario.Correo },
+      { k: "Responsable", label: "Responsable", def: S.usuario.Nombre || S.usuario.Correo, placeholder: "Elige del directorio de recursos", ayuda: " " },
       { k: "Descripcion", label: "Descripción del riesgo", tipo: "textarea", placeholder: "Si ocurre X, entonces Y" },
-      { seccion: "2. Antes de mitigar (inherente)" },
-      { k: "Probabilidad_Inherente", label: "Probabilidad", tipo: "select", opciones: esc5 },
-      { k: "Impacto_Inherente", label: "Impacto", tipo: "select", opciones: esc5 },
-      { seccion: "3. Planes" },
+      { seccion: "2. ¿Dónde se identificó?" },
+      { k: "ID_Seguimiento", label: "Sesión de seguimiento", tipo: "select", opciones: opcionesSesion(p.ID_Proyecto), textoVacio: "No salió de una sesión registrada" },
+      { k: "Origen", label: "Instancia o fuente", placeholder: "Ej.: Comité Operativo, Kickoff, revisión técnica" },
+      { k: "Fecha_Identificacion", label: "Fecha de identificación", tipo: "date", def: R.hoyISO() },
+      { seccion: "3. Antes de mitigar (inherente)" },
+      { k: "Probabilidad_Inherente", label: "Probabilidad (inherente)", tipo: "select", opciones: probs },
+      { k: "Impacto_Inherente", label: "Impacto (inherente)", tipo: "select", opciones: imps },
+      { html: `<div class="calif-viva" id="cv-inh"></div>` },
+      { seccion: "4. Planes" },
       { k: "Plan_Mitigacion", label: "Plan de mitigación", tipo: "textarea", placeholder: "Qué hacemos para que no ocurra o afecte menos" },
       { k: "Plan_Contingencia", label: "Plan de contingencia", tipo: "textarea", placeholder: "Qué hacemos si ocurre" },
-      { seccion: "4. Después de mitigar (residual)" },
-      { k: "Probabilidad_Residual", label: "Probabilidad", tipo: "select", opciones: esc5 },
-      { k: "Impacto_Residual", label: "Impacto", tipo: "select", opciones: esc5 },
+      { seccion: "5. Después de mitigar (residual)" },
+      { k: "Probabilidad_Residual", label: "Probabilidad (residual)", tipo: "select", opciones: probs },
+      { k: "Impacto_Residual", label: "Impacto (residual)", tipo: "select", opciones: imps },
+      { html: `<div class="calif-viva" id="cv-res"></div>` },
     ];
-    modal(r ? "Editar riesgo" : `Nuevo riesgo · ${p.Nombre}`, campos, r || {}, (fd) => {
-      ["Probabilidad_Inherente", "Impacto_Inherente", "Probabilidad_Residual", "Impacto_Residual"].forEach((k) => { fd[k] = Number(fd[k]); });
-      fd.Calificacion_Inherente = R.calificacion(fd.Probabilidad_Inherente, fd.Impacto_Inherente);
-      fd.Calificacion_Residual = R.calificacion(fd.Probabilidad_Residual, fd.Impacto_Residual);
+    const init = (m) => {
+      selectorPersona(m, '[name="Responsable"]', {}, m.querySelector('[name="Responsable"]').parentElement.querySelector(".sub"));
+      const calc = () => {
+        const v = (k) => Number(m.querySelector(`[name="${k}"]`).value) || 0;
+        m.querySelector("#cv-inh").innerHTML = `Calificación inherente: <b>${califTxt(v("Probabilidad_Inherente"), v("Impacto_Inherente"))}</b>`;
+        m.querySelector("#cv-res").innerHTML = `Calificación residual: <b>${califTxt(v("Probabilidad_Residual"), v("Impacto_Residual"))}</b>`;
+      };
+      m.querySelectorAll("select").forEach((x) => x.addEventListener("change", calc)); calc();
+    };
+    modal(r ? `Editar riesgo ${numRiesgo(r)}` : `Nuevo riesgo · ${p.Nombre}`, campos, r || {}, (fd) => {
+      ["Probabilidad_Inherente", "Impacto_Inherente", "Probabilidad_Residual", "Impacto_Residual"].forEach((k) => { fd[k] = fd[k] === "" ? "" : Number(fd[k]); });
+      fd.Calificacion_Inherente = R.calificacion(fd.Probabilidad_Inherente, fd.Impacto_Inherente) || "";
+      fd.Calificacion_Residual = R.calificacion(fd.Probabilidad_Residual, fd.Impacto_Residual) || "";
       if (r) guardar(() => S.api.actualizarPorId("Riesgos", "ID_Riesgo", r.ID_Riesgo, fd));
       else guardar(() => S.api.agregarFila("Riesgos", { ID_Riesgo: R.siguienteIdHijo("RSG", S.datos.Riesgos, "ID_Riesgo", p.ID_Proyecto), ID_Proyecto: p.ID_Proyecto, ...fd }), "Riesgo agregado");
-    }, null, r ? { eliminar: { texto: "Eliminar riesgo", mensaje: `Se borrará el riesgo «${r.Descripcion}».`, accion: () => guardar(() => S.api.eliminarFilas("Riesgos", "ID_Riesgo", [r.ID_Riesgo]), "Riesgo eliminado") } } : {});
+    }, null, r ? { init, eliminar: { texto: "Eliminar riesgo", mensaje: `Se borrará el riesgo «${r.Descripcion}».`, accion: () => guardar(() => S.api.eliminarFilas("Riesgos", "ID_Riesgo", [r.ID_Riesgo]), "Riesgo eliminado") } } : { init });
   }
 
   function formUsuario(uEdit) {
