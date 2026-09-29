@@ -45,8 +45,9 @@
       "En la pestaña Compromisos creas, ordenas y filtras los compromisos; cada uno puede estar atado a una sesión o solo al proyecto. Ábrelo para comentar hasta cerrarlo."],
     cronograma: ["Línea de tiempo de los proyectos activos y en pausa.",
       "La barra oscura es el avance real; los rombos son hitos. La línea dorada es hoy."],
-    riesgos: ["Mapa de calor de riesgos abiertos por probabilidad e impacto.",
-      "Cambia entre inherente (antes de mitigar) y residual (después de mitigar)."],
+    riesgos: ["Todos los riesgos del portafolio: los indicadores de arriba y las casillas del mapa de calor funcionan como filtros.",
+      "Cada tarjeta muestra el riesgo antes (inherente) y después de mitigar (residual); el estado se cambia ahí mismo.",
+      "Filtra por estado, nivel, responsable u origen, o busca por texto."],
     catalogos: ["Valores de los desplegables de los formularios.",
       "Agrega o quita valores; los proyectos que ya usan un valor lo conservan.",
       "Aquí también configuras los roles de stakeholder (Sponsor, Líder funcional, Product Owner…) y el maestro de proveedores."],
@@ -1106,7 +1107,7 @@
     enlazarSeccionCompromisos(el);
     if ($("#b-riesgo")) $("#b-riesgo").addEventListener("click", () => formRiesgo(p));
     if ($("#b-rg-carga")) $("#b-rg-carga").addEventListener("click", () => cargarRiesgosExcel(p));
-    el.querySelectorAll("[data-rgver]").forEach((b) => b.addEventListener("click", () => { S.rgVer = b.dataset.rgver; render(); }));
+    if (tab === "riesgos") enlazarPanelRiesgos(el, "p:" + p.ID_Proyecto, null);
     if ($("#b-stk")) $("#b-stk").addEventListener("click", () => formStakeholder(p));
     el.querySelectorAll("[data-stk]").forEach((b) => b.addEventListener("click", () => formStakeholder(p, (S.datos.Stakeholders || []).find((x) => x.ID_Stakeholder === b.dataset.stk))));
     el.querySelectorAll("[data-rol-stk]").forEach((b) => b.addEventListener("click", () => formStakeholder(p, null, b.dataset.rolStk)));
@@ -1189,38 +1190,11 @@
   // ---------- Riesgos ----------
   function vRiesgos(el) {
     const ids = new Set(filtrados().map((p) => p.ID_Proyecto));
-    const abiertos = S.datos.Riesgos.filter((r) => ids.has(r.ID_Proyecto) && riesgoActivo(r));
-    const res = S.riesgoVista === "residual";
-    const P = res ? "Probabilidad_Residual" : "Probabilidad_Inherente";
-    const I = res ? "Impacto_Residual" : "Impacto_Inherente";
-    const C = res ? "Calificacion_Residual" : "Calificacion_Inherente";
-    let celdas = "";
-    for (let pr = 5; pr >= 1; pr--) {
-      celdas += `<div class="hm-eje">${pr}</div>`;
-      for (let im = 1; im <= 5; im++) {
-        const n = abiertos.filter((r) => Number(r[P]) === pr && Number(r[I]) === im).length;
-        celdas += `<div class="hm-celda riesgo-${R.nivelRiesgo(pr * im).toLowerCase()}" title="Probabilidad ${pr} × Impacto ${im}: ${n} riesgo(s)">${n || ""}</div>`;
-      }
-    }
-    celdas += `<div></div>${[1, 2, 3, 4, 5].map((i) => `<div class="hm-eje">${i}</div>`).join("")}`;
-    const orden = abiertos.slice().sort((a, b) => (Number(b[C]) || 0) - (Number(a[C]) || 0));
-    el.innerHTML = `
-      <h1>Riesgos</h1>
-      ${barraFiltros()}
-      <div class="filtros"><div class="seg" role="group" aria-label="Tipo de calificación">
-        <button class="btn ${!res ? "primario" : ""}" data-rv="inherente">Inherente</button>
-        <button class="btn ${res ? "primario" : ""}" data-rv="residual">Residual</button></div>
-        <span class="sub">${abiertos.length} riesgo(s) activo(s) (todos menos Cerrado) · Bajo ≤ 6 · Medio 7–12 · Alto > 12</span></div>
-      <div class="grid2">
-        <div class="card"><h2>Mapa de calor (${res ? "residual" : "inherente"})</h2>
-          <div class="heatmap">${celdas}</div><div class="sub centro">Horizontal: impacto (1 a 5) · Vertical: probabilidad (1 a 5)</div></div>
-        <div class="card"><h2>Riesgos abiertos más críticos</h2><div class="tabla-scroll"><table>
-          <thead><tr><th>Proyecto</th><th>Riesgo</th><th>Calificación</th></tr></thead>
-          <tbody>${orden.slice(0, 10).map((r) => `<tr class="clic" data-pid="${esc(r.ID_Proyecto)}"><td>${esc((proyecto(r.ID_Proyecto) || {}).Nombre)}</td><td>${esc(r.Descripcion)}<div class="sub">${esc(r.Estado)} · ${esc(r.Responsable || "")} · ${esc(origenRiesgo(r))}</div></td><td>${nivel(r[C])}</td></tr>`).join("") || `<tr><td colspan="3">${vacio("Sin riesgos abiertos en la selección.")}</td></tr>`}</tbody>
-        </table></div></div>
-      </div>`;
+    const todos = S.datos.Riesgos.filter((r) => ids.has(r.ID_Proyecto));
+    el.innerHTML = `<h1>Riesgos del portafolio</h1>${barraFiltros()}
+      ${panelRiesgos("global", todos, { conProyecto: true, puedeFn: (r) => R.puedeEditar(S.usuario, proyecto(r.ID_Proyecto) || {}, "riesgos") })}`;
     enlazarFiltros();
-    el.querySelectorAll("[data-rv]").forEach((b) => b.addEventListener("click", () => { S.riesgoVista = b.dataset.rv; render(); }));
+    enlazarPanelRiesgos(el, "global", (r) => formRiesgo(proyecto(r.ID_Proyecto), r));
   }
 
   // ---------- Catálogos ----------
@@ -1474,7 +1448,7 @@
       }
       if (c.tipo === "textarea") return `<textarea name="${c.k}" rows="3" placeholder="${esc(c.placeholder || "")}" ${dis}>${esc(v)}</textarea>`;
       const dl = c.sugerencias ? `<datalist id="dl-${c.k}">${c.sugerencias.map((o) => `<option value="${esc(o)}">`).join("")}</datalist>` : "";
-      return dl + `<input name="${c.k}" ${c.sugerencias ? `list="dl-${c.k}" autocomplete="off"` : ""} type="${c.tipo || "text"}" value="${esc(v)}" placeholder="${esc(c.placeholder || "")}" ${c.min !== undefined ? `min="${c.min}"` : ""} ${c.max !== undefined ? `max="${c.max}"` : ""} ${dis}>`;
+      return dl + `<input name="${c.k}" ${c.recurso ? "data-recurso" : ""} ${c.sugerencias ? `list="dl-${c.k}" autocomplete="off"` : ""} type="${c.tipo || "text"}" value="${esc(v)}" placeholder="${esc(c.placeholder || "")}" ${c.min !== undefined ? `min="${c.min}"` : ""} ${c.max !== undefined ? `max="${c.max}"` : ""} ${dis}>`;
     };
     const cuerpo = campos.map((c) => (c.html ? `<div class="ancho form-html">${c.html}</div>` : c.seccion
       ? `<div class="form-seccion">${esc(c.seccion)}${c.ayuda ? `<span class="sub"> · ${esc(c.ayuda)}</span>` : ""}</div>`
@@ -2226,8 +2200,7 @@
   function selectorPersona(m, nombreSel, relleno, avisoSel) {
     const no = m.querySelector(nombreSel);
     if (!no) return;
-    no.setAttribute("list", "dl-recursos"); no.setAttribute("autocomplete", "off");
-    if (!m.querySelector("#dl-recursos")) no.insertAdjacentHTML("afterend", datalistRecursos("dl-recursos"));
+    no.setAttribute("data-recurso", ""); no.setAttribute("autocomplete", "off");
     const aviso = !avisoSel ? null : typeof avisoSel === "string" ? m.querySelector(avisoSel) : avisoSel;
     const act = () => {
       const r = recursoPor({ nombre: no.value });
@@ -2252,25 +2225,11 @@
     return [r.Origen, s ? `Sesión del ${fecha(s.Fecha_Corte)}` : "", !s && r.Fecha_Identificacion ? fecha(r.Fecha_Identificacion) : ""].filter(Boolean).join(" · ") || "Sin origen registrado";
   };
   function seccionRiesgos(p, puede) {
-    const ver = S.rgVer || "activos";
-    const todos = riesgosDe(p.ID_Proyecto).sort((a, b) => numRiesgo(a) - numRiesgo(b));
-    const lista = todos.filter((r) => ver === "todos" || riesgoActivo(r));
-    const segs = R.seguimientosDe(p.ID_Proyecto, S.datos.Seguimientos);
     return `<div class="card"><div class="titulo-fila"><h2>Registro de riesgos</h2>${puede ? `<div class="acciones">
         <a class="btn" href="assets/Plantilla_Riesgos.xlsx" download="Plantilla_Riesgos.xlsx" title="Formato FSFB con listas desplegables">⬇ Plantilla Excel</a>
         <button class="btn" id="b-rg-carga">📥 Cargar desde Excel</button><button class="btn primario" id="b-riesgo">+ Riesgo</button></div>` : ""}</div>
-      <p class="sub">Formato FSFB: probabilidad e impacto de 1 a 5, calificación = probabilidad × impacto (Bajo ≤ 6 · Medio 7–12 · Alto > 12), antes y después de mitigar. Cada riesgo indica en qué sesión o instancia se identificó.</p>
-      <div class="seg barra-comp"><button class="btn chico ${ver === "activos" ? "primario" : ""}" data-rgver="activos">Activos (${todos.filter(riesgoActivo).length})</button><button class="btn chico ${ver === "todos" ? "primario" : ""}" data-rgver="todos">Todos (${todos.length})</button></div>
-      ${lista.length ? `<div class="tabla-scroll"><table class="tabla-riesgos"><thead><tr><th>No.</th><th>Riesgo</th><th>Inherente</th><th class="opc">Planes</th><th>Residual</th><th>Origen</th><th></th></tr></thead><tbody>
-        ${lista.map((r) => `<tr><td>${numRiesgo(r)}</td>
-          <td>${pill(r.Tipo || "Amenaza")} ${pill(r.Estado || "Abierto")}<div class="rg-desc">${esc(r.Descripcion)}</div><div class="sub">Responsable: ${esc(r.Responsable || "—")}</div></td>
-          <td class="nowrap"><div class="sub">P ${esc(r.Probabilidad_Inherente || "—")} × I ${esc(r.Impacto_Inherente || "—")}</div>${nivel(r.Calificacion_Inherente)}</td>
-          <td class="opc rg-planes">${r.Plan_Mitigacion ? `<div><b>Mitigación:</b> ${esc(r.Plan_Mitigacion)}</div>` : ""}${r.Plan_Contingencia ? `<div><b>Contingencia:</b> ${esc(r.Plan_Contingencia)}</div>` : ""}${!r.Plan_Mitigacion && !r.Plan_Contingencia ? "—" : ""}</td>
-          <td class="nowrap"><div class="sub">P ${esc(r.Probabilidad_Residual || "—")} × I ${esc(r.Impacto_Residual || "—")}</div>${r.Calificacion_Residual ? nivel(r.Calificacion_Residual) : "—"}</td>
-          <td class="sub">${esc(origenRiesgo(r))}</td>
-          <td class="derecha">${puede ? `<button class="btn chico" data-riesgo="${esc(r.ID_Riesgo)}">Editar</button>` : ""}</td></tr>`).join("")}</tbody></table></div>`
-        : vacio(todos.length ? "No hay riesgos activos. Mira «Todos»." : `Sin riesgos registrados.${puede ? " Agrégalos uno a uno o cárgalos desde el Excel del comité." : ""}`)}
-      ${segs.length ? "" : ""}</div>`;
+      <p class="sub">Formato FSFB: probabilidad × impacto (1 a 5) antes y después de mitigar. Usa los indicadores y el mapa para filtrar; cambia el estado directamente en cada tarjeta.</p></div>
+      ${panelRiesgos("p:" + p.ID_Proyecto, riesgosDe(p.ID_Proyecto), { conProyecto: false, puedeFn: () => puede })}`;
   }
   // Campos de origen comunes al formulario y a la carga masiva.
   const opcionesSesion = (pid) => R.seguimientosDe(pid, S.datos.Seguimientos).slice().reverse().map((s) => [s.ID_Seguimiento, `Sesión del ${fecha(s.Fecha_Corte)}${s.Fecha_Acta && s.Fecha_Acta !== s.Fecha_Corte ? ` (acta ${fecha(s.Fecha_Acta)})` : ""}`]);
@@ -2351,7 +2310,7 @@
     const filas = datos.riesgos.map((r, k) => {
       const d = dupDe(r);
       return `<tr><td><input type="checkbox" class="rg-ok" data-k="${k}" ${d ? "" : "checked"} aria-label="Importar riesgo ${k + 1}"></td>
-        <td>${pill(r.Tipo)} ${pill(r.Estado)}<div class="rg-desc">${esc(r.Descripcion)}</div><div class="sub">${esc(r.Responsable || "Sin responsable")}</div>
+        <td>${pill(r.Tipo)} ${pill(r.Estado)}<div class="rg-desc">${esc(r.Descripcion)}</div><div class="sub">${r.Responsable ? `${esc(r.Responsable)} ${recursoPor({ nombre: r.Responsable }) ? "· ✓ en Recursos" : "· se agregará a Recursos"}` : "Sin responsable"}</div>
           ${d ? `<div class="baja">Ya existe en el proyecto (${esc(d.ID_Riesgo)}). <label class="check"><input type="checkbox" class="rg-act" data-k="${k}"> Actualizar el existente</label></div>` : ""}</td>
         <td class="nowrap">${califTxt(r.Probabilidad_Inherente, r.Impacto_Inherente)}</td><td class="nowrap">${califTxt(r.Probabilidad_Residual, r.Impacto_Residual)}</td></tr>`;
     }).join("");
@@ -2368,6 +2327,10 @@
         else if (!d || !extra.act.includes(k)) nuevos.push(fila);
       });
       guardar(async () => {
+        for (const n of [...new Set([...nuevos, ...actualizar.map((a) => a.cambios)].map((x) => x.Responsable).filter(Boolean))]) {
+          const rec = await asegurarRecurso({ Nombre: n });
+          if (rec) [...nuevos, ...actualizar.map((a) => a.cambios)].forEach((x) => { if (normTxt(x.Responsable) === normTxt(n)) x.Responsable = rec.Nombre; });
+        }
         if (nuevos.length) await S.api.agregarFilas("Riesgos", nuevos.map((r, j) => ({ ID_Riesgo: R.siguienteIdHijo("RSG", S.datos.Riesgos, "ID_Riesgo", p.ID_Proyecto, j), ID_Proyecto: p.ID_Proyecto, ...r })));
         if (actualizar.length) await S.api.actualizarVarios("Riesgos", "ID_Riesgo", actualizar);
       }, `${nuevos.length} riesgo(s) cargado(s)${actualizar.length ? ` y ${actualizar.length} actualizado(s)` : ""}`);
@@ -2381,6 +2344,175 @@
         if (soloDup.length) return { error: `${soloDup.length} riesgo(s) marcado(s) ya existen: desmárcalos o elige «Actualizar el existente».` };
         return { datos: { sel, act } };
       } });
+  }
+
+  // ---------- Selector de recursos (lista desplegable con búsqueda) ----------
+  // Cualquier <input data-recurso> se vuelve un buscador de la tabla Recursos al enfocarlo.
+  function comboRecurso(input) {
+    if (input._combo) return;
+    input._combo = true;
+    input.setAttribute("autocomplete", "off");
+    input.removeAttribute("list");
+    const caja = document.createElement("div");
+    caja.className = "combo";
+    input.parentNode.insertBefore(caja, input);
+    caja.appendChild(input);
+    const lista = document.createElement("ul");
+    lista.className = "combo-lista"; lista.hidden = true; lista.setAttribute("role", "listbox");
+    caja.appendChild(lista);
+    let items = [], activo = -1;
+    const elegir = (r, nuevo) => {
+      input.value = r ? r.Nombre : nuevo;
+      input.dataset.idRecurso = r ? r.ID_Recurso : "";
+      lista.hidden = true;
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+    const pintar = () => {
+      const q = normTxt(input.value);
+      const rs = recursos().filter((r) => r.Activo !== "No" && (!q || normTxt(`${r.Nombre} ${r.Correo} ${r.Cargo} ${empresaDe(r)}`).includes(q))).slice(0, 8);
+      const exacto = rs.some((r) => normTxt(r.Nombre) === q);
+      items = [...rs.map((r) => ({ r })), ...(q && !exacto ? [{ nuevo: input.value.trim() }] : [])];
+      activo = items.length ? 0 : -1;
+      lista.innerHTML = items.map((it, i) => it.r
+        ? `<li role="option" data-i="${i}" class="${i === activo ? "activo" : ""}"><b>${esc(it.r.Nombre)}</b><span class="sub">${esc([it.r.Cargo, empresaDe(it.r), it.r.Correo].filter(Boolean).join(" · "))}</span></li>`
+        : `<li role="option" data-i="${i}" class="nuevo ${i === activo ? "activo" : ""}">+ Agregar «${esc(it.nuevo)}» como recurso nuevo</li>`).join("")
+        || `<li class="vacio-combo">No hay recursos${q ? " con ese texto" : ""}. Escribe el nombre para crearlo.</li>`;
+      lista.hidden = false;
+    };
+    const marcar = () => lista.querySelectorAll("li[data-i]").forEach((li) => li.classList.toggle("activo", Number(li.dataset.i) === activo));
+    input.addEventListener("focus", pintar);
+    input.addEventListener("input", pintar);
+    input.addEventListener("keydown", (e) => {
+      if (lista.hidden) return;
+      if (e.key === "ArrowDown") { e.preventDefault(); activo = Math.min(items.length - 1, activo + 1); marcar(); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); activo = Math.max(0, activo - 1); marcar(); }
+      else if (e.key === "Enter" && activo >= 0) { e.preventDefault(); const it = items[activo]; elegir(it.r, it.nuevo); }
+      else if (e.key === "Escape") { e.stopPropagation(); lista.hidden = true; }
+    });
+    lista.addEventListener("mousedown", (e) => {
+      const li = e.target.closest("li[data-i]");
+      if (!li) return;
+      e.preventDefault();
+      const it = items[Number(li.dataset.i)];
+      elegir(it.r, it.nuevo);
+    });
+    input.addEventListener("blur", () => setTimeout(() => { lista.hidden = true; }, 150));
+  }
+  document.addEventListener("focusin", (e) => { if (e.target.matches && e.target.matches("input[data-recurso]")) comboRecurso(e.target); });
+
+  // ---------- Riesgos interactivos: indicadores, mapa de calor que filtra, tarjetas y filtros ----------
+  const califActual = (r) => Number(r.Calificacion_Residual) || Number(r.Calificacion_Inherente) || 0;
+  const nivelActual = (r) => (califActual(r) ? R.nivelRiesgo(califActual(r)) : "Sin calificar");
+  function panelRiesgos(clave, todos, { conProyecto, puedeFn }) {
+    S.rgF = S.rgF || {};
+    const F = (S.rgF[clave] = S.rgF[clave] || { estado: "activos", nivel: "", resp: "", origen: "", q: "", celda: "", vista: "inherente", orden: "calif", extra: "" });
+    const res = F.vista === "residual";
+    const P = res ? "Probabilidad_Residual" : "Probabilidad_Inherente", I = res ? "Impacto_Residual" : "Impacto_Inherente";
+    const base = todos.filter((r) => F.estado === "todos" || (F.estado === "activos" ? riesgoActivo(r) : r.Estado === F.estado));
+    const kpi = {
+      activos: todos.filter(riesgoActivo).length,
+      altos: todos.filter((r) => riesgoActivo(r) && nivelActual(r) === "Alto").length,
+      mater: todos.filter((r) => r.Estado === "Materializado").length,
+      sinPlan: todos.filter((r) => riesgoActivo(r) && !String(r.Plan_Mitigacion || "").trim()).length,
+      sinResp: todos.filter((r) => riesgoActivo(r) && !String(r.Responsable || "").trim()).length,
+    };
+    let lista = base.filter((r) => (!F.nivel || nivelActual(r) === F.nivel) && (!F.resp || normTxt(r.Responsable) === normTxt(F.resp)) &&
+      (!F.origen || origenRiesgo(r) === F.origen) && (!F.q || normTxt(`${r.Descripcion} ${r.Plan_Mitigacion} ${r.Plan_Contingencia} ${r.Responsable}`).includes(normTxt(F.q))) &&
+      (!F.celda || `${Number(r[P])}-${Number(r[I])}` === F.celda) &&
+      (F.extra !== "sinPlan" || !String(r.Plan_Mitigacion || "").trim()) && (F.extra !== "sinResp" || !String(r.Responsable || "").trim()));
+    const ORD = { calif: (a, b) => califActual(b) - califActual(a) || numRiesgo(a) - numRiesgo(b), num: (a, b) => (conProyecto ? String(a.ID_Proyecto).localeCompare(String(b.ID_Proyecto)) : 0) || numRiesgo(a) - numRiesgo(b),
+      reciente: (a, b) => String(b.Fecha_Identificacion || "").localeCompare(String(a.Fecha_Identificacion || "")) || numRiesgo(b) - numRiesgo(a) };
+    lista = lista.slice().sort(ORD[F.orden] || ORD.calif);
+    // Mapa de calor sobre los riesgos del estado elegido (sin el filtro de celda).
+    const enMapa = base;
+    let celdas = "";
+    for (let pr = 5; pr >= 1; pr--) {
+      celdas += `<div class="hm-eje" title="${esc(PROB_TXT[pr])}">${pr}</div>`;
+      for (let im = 1; im <= 5; im++) {
+        const n = enMapa.filter((r) => Number(r[P]) === pr && Number(r[I]) === im).length;
+        const k = `${pr}-${im}`;
+        celdas += `<button class="hm-celda riesgo-${R.nivelRiesgo(pr * im).toLowerCase()} ${F.celda === k ? "sel" : ""} ${n ? "" : "cero"}" data-celda="${k}" title="Probabilidad ${PROB_TXT[pr]} × Impacto ${IMP_TXT[im]} = ${pr * im}: ${n} riesgo(s)" ${n ? "" : "disabled"}>${n || ""}</button>`;
+      }
+    }
+    celdas += `<div></div>${[1, 2, 3, 4, 5].map((i) => `<div class="hm-eje" title="${esc(IMP_TXT[i])}">${i}</div>`).join("")}`;
+    const responsables = [...new Set(todos.map((r) => r.Responsable).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
+    const origenes = [...new Set(todos.map(origenRiesgo))].sort();
+    const chip = (grupo, v, t, n) => `<button class="btn chico ${F[grupo] === v ? "primario" : ""}" data-rgf="${grupo}" data-v="${esc(v)}">${t}${n !== undefined ? ` (${n})` : ""}</button>`;
+    const kpiB = (id, t, n, cls) => `<button class="kpi rg-kpi ${cls || ""} ${F.extra === id || (id === "altos" && F.nivel === "Alto") ? "sel" : ""}" data-rgkpi="${id}"><span class="kpi-t">${t}</span><span class="kpi-v">${n}</span></button>`;
+    const tarjeta = (r) => {
+      const ci = R.calificacion(r.Probabilidad_Inherente, r.Impacto_Inherente), cr = R.calificacion(r.Probabilidad_Residual, r.Impacto_Residual);
+      const baja = ci && cr ? Math.round((1 - cr / ci) * 100) : null;
+      const puede = puedeFn(r);
+      const p = proyecto(r.ID_Proyecto) || {};
+      return `<div class="rg-card nivel-${normTxt(nivelActual(r)).replace(/\s/g, "")}">
+        <div class="rg-top"><span class="rg-num">#${numRiesgo(r)}</span>${pill(r.Tipo || "Amenaza")}
+          ${puede ? `<select class="rg-estado" data-rgest="${esc(r.ID_Riesgo)}" aria-label="Estado del riesgo">${S.cat.Estado_Riesgo.map((e) => `<option ${e === (r.Estado || "Abierto") ? "selected" : ""}>${esc(e)}</option>`).join("")}</select>` : pill(r.Estado || "Abierto")}
+          ${conProyecto ? `<button class="btn enlace rg-proy" data-pid="${esc(r.ID_Proyecto)}">${esc(p.Nombre || r.ID_Proyecto)}</button>` : ""}
+          <span class="rg-acc">${puede ? `<button class="btn chico" data-riesgo="${esc(r.ID_Riesgo)}" data-rpid="${esc(r.ID_Proyecto)}">Editar</button>` : ""}</span></div>
+        <div class="rg-desc">${esc(r.Descripcion)}</div>
+        <div class="rg-evol">
+          <span class="rg-cal ${ci ? R.nivelRiesgo(ci).toLowerCase() : ""}" title="Antes de mitigar: probabilidad ${esc(PROB_TXT[r.Probabilidad_Inherente] || "—")} × impacto ${esc(IMP_TXT[r.Impacto_Inherente] || "—")}">Inherente <b>${ci || "—"}</b> ${ci ? R.nivelRiesgo(ci) : ""}</span>
+          <span class="rg-flecha">→</span>
+          <span class="rg-cal ${cr ? R.nivelRiesgo(cr).toLowerCase() : "vacia"}" title="Después de mitigar: probabilidad ${esc(PROB_TXT[r.Probabilidad_Residual] || "—")} × impacto ${esc(IMP_TXT[r.Impacto_Residual] || "—")}">Residual <b>${cr || "—"}</b> ${cr ? R.nivelRiesgo(cr) : ""}</span>
+          ${baja !== null ? `<span class="sub">${baja > 0 ? `la mitigación lo baja ${baja}%` : baja < 0 ? "⚠ el residual es mayor" : "sin reducción"}</span>` : ""}
+        </div>
+        <div class="rg-meta"><span>👤 ${r.Responsable ? esc(r.Responsable) : `<span class="baja">Sin responsable</span>`}</span><span>📍 ${esc(origenRiesgo(r))}</span></div>
+        ${r.Plan_Mitigacion || r.Plan_Contingencia ? `<details class="rg-planes"><summary>Planes de mitigación y contingencia</summary>
+          ${r.Plan_Mitigacion ? `<div><b>Mitigación:</b> ${esc(r.Plan_Mitigacion)}</div>` : ""}${r.Plan_Contingencia ? `<div><b>Contingencia:</b> ${esc(r.Plan_Contingencia)}</div>` : ""}</details>`
+          : riesgoActivo(r) ? `<div class="baja sub">⚠ Sin plan de mitigación</div>` : ""}
+      </div>`;
+    };
+    const hayFiltro = F.nivel || F.resp || F.origen || F.q || F.celda || F.extra;
+    return `
+      <div class="kpis rg-kpis">${kpiB("activos", "Activos", kpi.activos)}${kpiB("altos", "Nivel alto (hoy)", kpi.altos, kpi.altos ? "alerta" : "")}${kpiB("mater", "Materializados", kpi.mater, kpi.mater ? "alerta" : "")}${kpiB("sinPlan", "Sin plan de mitigación", kpi.sinPlan, kpi.sinPlan ? "alerta" : "")}${kpiB("sinResp", "Sin responsable", kpi.sinResp, kpi.sinResp ? "alerta" : "")}</div>
+      <div class="rg-layout">
+        <div class="card rg-mapa"><div class="titulo-fila"><h2>Mapa de calor</h2>
+          <div class="seg">${chip("vista", "inherente", "Inherente")}${chip("vista", "residual", "Residual")}</div></div>
+          <div class="heatmap">${celdas}</div>
+          <div class="sub centro">→ Impacto · ↑ Probabilidad. Haz clic en una casilla para ver esos riesgos.</div>
+          <div class="hm-ley"><span class="riesgo-bajo">Bajo ≤ 6</span><span class="riesgo-medio">Medio 7–12</span><span class="riesgo-alto">Alto &gt; 12</span></div>
+        </div>
+        <div class="card rg-lista">
+          <div class="rg-filtros">
+            <div class="seg">${chip("estado", "activos", "Activos", todos.filter(riesgoActivo).length)}${S.cat.Estado_Riesgo.filter((e) => todos.some((r) => r.Estado === e)).map((e) => chip("estado", e, e, todos.filter((r) => r.Estado === e).length)).join("")}${chip("estado", "todos", "Todos", todos.length)}</div>
+            <div class="seg">${["Alto", "Medio", "Bajo"].map((n) => chip("nivel", n, n)).join("")}</div>
+            <div class="rg-filtros-2">
+              <label class="filtro crece"><span>Buscar</span><input type="search" data-rgin="q" value="${esc(F.q)}" placeholder="Texto del riesgo o de los planes"></label>
+              <label class="filtro"><span>Responsable</span><select data-rgin="resp"><option value="">Todos</option>${responsables.map((x) => `<option ${x === F.resp ? "selected" : ""}>${esc(x)}</option>`).join("")}</select></label>
+              <label class="filtro"><span>Origen</span><select data-rgin="origen"><option value="">Todos</option>${origenes.map((x) => `<option ${x === F.origen ? "selected" : ""}>${esc(x)}</option>`).join("")}</select></label>
+              <label class="filtro"><span>Ordenar</span><select data-rgin="orden"><option value="calif" ${F.orden === "calif" ? "selected" : ""}>Más críticos primero</option><option value="num" ${F.orden === "num" ? "selected" : ""}>Por número</option><option value="reciente" ${F.orden === "reciente" ? "selected" : ""}>Más recientes</option></select></label>
+            </div>
+            <div class="sub">${lista.length} de ${todos.length} riesgo(s)${F.celda ? ` · casilla P${F.celda.split("-")[0]} × I${F.celda.split("-")[1]}` : ""} ${hayFiltro ? `<button class="btn enlace" data-rglimpiar="1">Quitar filtros</button>` : ""}</div>
+          </div>
+          ${lista.length ? `<div class="rg-cards">${lista.map(tarjeta).join("")}</div>` : vacio(todos.length ? "Ningún riesgo coincide con los filtros." : "Aún no hay riesgos registrados.")}
+        </div>
+      </div>`;
+  }
+  function enlazarPanelRiesgos(el, clave, alEditar) {
+    const F = S.rgF[clave];
+    el.querySelectorAll("[data-rgf]").forEach((b) => b.addEventListener("click", () => {
+      const g = b.dataset.rgf, v = b.dataset.v;
+      F[g] = g === "nivel" && F.nivel === v ? "" : v;
+      if (g === "vista") F.celda = "";
+      render();
+    }));
+    el.querySelectorAll("[data-celda]").forEach((b) => b.addEventListener("click", () => { F.celda = F.celda === b.dataset.celda ? "" : b.dataset.celda; render(); }));
+    el.querySelectorAll("[data-rgkpi]").forEach((b) => b.addEventListener("click", () => {
+      const k = b.dataset.rgkpi;
+      if (k === "activos") Object.assign(F, { estado: "activos", nivel: "", extra: "", celda: "" });
+      else if (k === "altos") Object.assign(F, { estado: "activos", nivel: F.nivel === "Alto" ? "" : "Alto", extra: "" });
+      else if (k === "mater") Object.assign(F, { estado: "Materializado", nivel: "", extra: "" });
+      else Object.assign(F, { estado: "activos", extra: F.extra === k ? "" : k });
+      render();
+    }));
+    el.querySelectorAll("[data-rgin]").forEach((i) => i.addEventListener("change", () => { F[i.dataset.rgin] = i.value; render(); }));
+    const l = el.querySelector("[data-rglimpiar]");
+    if (l) l.addEventListener("click", () => { Object.assign(F, { nivel: "", resp: "", origen: "", q: "", celda: "", extra: "" }); render(); });
+    el.querySelectorAll("[data-rgest]").forEach((s) => s.addEventListener("change", () => {
+      const r = S.datos.Riesgos.find((x) => x.ID_Riesgo === s.dataset.rgest);
+      guardar(() => S.api.actualizarPorId("Riesgos", "ID_Riesgo", r.ID_Riesgo, { Estado: s.value }), `Riesgo #${numRiesgo(r)}: ${s.value}`);
+    }));
+    if (alEditar) el.querySelectorAll(".rg-card [data-riesgo]").forEach((b) => b.addEventListener("click", () => alEditar(S.datos.Riesgos.find((x) => x.ID_Riesgo === b.dataset.riesgo))));
   }
 
   // ---------- Tickets del helpdesk ----------
@@ -2792,7 +2924,7 @@
       <div><span class="sub">Frecuencia</span><b>${esc(p.Frecuencia_Seguimiento)}</b></div></div>`;
     const filaComp = (c = {}) => `<div class="comp-fila">
       <input class="c-texto" placeholder="Compromiso (qué se hará)" aria-label="Compromiso" value="${esc(c.Compromiso || "")}">
-      <input class="c-resp" placeholder="Responsable" aria-label="Responsable" list="dl-recursos" autocomplete="off" value="${esc(c.Responsable || "")}">
+      <input class="c-resp" placeholder="Responsable (de Recursos)" aria-label="Responsable" data-recurso autocomplete="off" value="${esc(c.Responsable || "")}">
       <input class="c-fecha" type="date" aria-label="Fecha límite" value="${esc(c.Fecha_Compromiso || "")}" title="${esc(c.Fecha_Texto && !c.Fecha_Compromiso ? `En el acta: ${c.Fecha_Texto}` : "")}">
       <button type="button" class="btn chico c-quitar" aria-label="Quitar compromiso">✕</button></div>`;
     const despues = `
@@ -2958,8 +3090,9 @@
       ["Probabilidad_Inherente", "Impacto_Inherente", "Probabilidad_Residual", "Impacto_Residual"].forEach((k) => { fd[k] = fd[k] === "" ? "" : Number(fd[k]); });
       fd.Calificacion_Inherente = R.calificacion(fd.Probabilidad_Inherente, fd.Impacto_Inherente) || "";
       fd.Calificacion_Residual = R.calificacion(fd.Probabilidad_Residual, fd.Impacto_Residual) || "";
-      if (r) guardar(() => S.api.actualizarPorId("Riesgos", "ID_Riesgo", r.ID_Riesgo, fd));
-      else guardar(() => S.api.agregarFila("Riesgos", { ID_Riesgo: R.siguienteIdHijo("RSG", S.datos.Riesgos, "ID_Riesgo", p.ID_Proyecto), ID_Proyecto: p.ID_Proyecto, ...fd }), "Riesgo agregado");
+      const resp = async () => { if (fd.Responsable) { const rec = await asegurarRecurso({ Nombre: fd.Responsable }); if (rec) fd.Responsable = rec.Nombre; } };
+      if (r) guardar(async () => { await resp(); await S.api.actualizarPorId("Riesgos", "ID_Riesgo", r.ID_Riesgo, fd); });
+      else guardar(async () => { await resp(); await S.api.agregarFila("Riesgos", { ID_Riesgo: R.siguienteIdHijo("RSG", S.datos.Riesgos, "ID_Riesgo", p.ID_Proyecto), ID_Proyecto: p.ID_Proyecto, ...fd }); }, "Riesgo agregado");
     }, null, r ? { init, eliminar: { texto: "Eliminar riesgo", mensaje: `Se borrará el riesgo «${r.Descripcion}».`, accion: () => guardar(() => S.api.eliminarFilas("Riesgos", "ID_Riesgo", [r.ID_Riesgo]), "Riesgo eliminado") } } : { init });
   }
 
@@ -3025,7 +3158,7 @@
       { k: "Compromiso", label: "Compromiso", tipo: "textarea", placeholder: "Qué se hará" },
       { k: "ID_Seguimiento", label: "¿De qué sesión salió?", tipo: "select", opciones: sesiones, ancho: true, textoVacio: "Sin sesión (solo del proyecto)",
         ayuda: sesiones.length ? "Elige la sesión de seguimiento donde se acordó, o déjalo sin sesión." : "Este proyecto aún no tiene sesiones; quedará atado solo al proyecto." },
-      { k: "Responsable", label: "Responsable", sugerencias: personas, placeholder: "Escribe o elige" },
+      { k: "Responsable", label: "Responsable", recurso: true, placeholder: "Busca en Recursos o escribe un nombre nuevo" },
       { k: "Correo_Responsable", label: "Correo del responsable", tipo: "email", placeholder: "Se llena solo si la persona está registrada", ayuda: "Para enviarle recordatorios." },
       { k: "Fecha_Compromiso", label: "Fecha límite", tipo: "date" },
       { k: "Dias_Alerta", label: "Avisar con (días de anticipación)", tipo: "number", min: 0, max: 60, def: R.DIAS_COMPROMISO_POR_VENCER, ayuda: "Desde ese día aparece en «Por vencer» y en la campana 🔔." },
