@@ -132,15 +132,36 @@
     const faltan = Object.keys(CATALOGOS_BASE).filter((k) => !S.datos.Catalogos.some((f) => f.Lista === k));
     if (sembrado || !faltan.length) return;
     sembrado = true;
-    try { await S.api.agregarFilas("Catalogos", faltan.flatMap((k) => CATALOGOS_BASE[k].map((v) => ({ Lista: k, Valor: v })))); S.datos = await S.api.leerTodo(); armarCatalogos(); }
+    try { await S.api.agregarFilas("Catalogos", faltan.flatMap((k) => CATALOGOS_BASE[k].map((v) => ({ Lista: k, Valor: v })))); armarCatalogos(); }
     catch (e) { /* sin permiso de edición: se usan los valores base en memoria */ }
+  }
+  function refrescarUsuario() {
+    if (S.usuario) S.usuario = S.datos.Usuarios.find((x) => lc(x.Correo) === lc(S.usuario.Correo) && x.Activo === "Sí") || null;
   }
   async function recargar() {
     S.datos = await S.api.leerTodo();
+    S.cargadoEl = Date.now();
     armarCatalogos();
     await sembrarCatalogos();
-    if (S.usuario) S.usuario = S.datos.Usuarios.find((x) => lc(x.Correo) === lc(S.usuario.Correo) && x.Activo === "Sí") || null;
+    refrescarUsuario();
   }
+  // Para ver lo que otros cambiaron: al volver a la ventana, si los datos tienen más de 2 minutos, se releen en segundo plano.
+  let refrescando = false;
+  async function refrescoSilencioso() {
+    if (refrescando || !S.api || !S.usuario || Date.now() - (S.cargadoEl || 0) < 120000) return;
+    if ($("#modal, #cargando, #recordatorio, #paleta, .hv-overlay")) return;
+    refrescando = true;
+    try {
+      const nuevos = await S.api.leerTodo();
+      if ($("#modal, #cargando, #recordatorio, #paleta, .hv-overlay")) return;   // el usuario empezó a editar: se deja para después
+      S.datos = nuevos; S.cargadoEl = Date.now();
+      armarCatalogos(); refrescarUsuario();
+      const y = window.scrollY; render(); window.scrollTo(0, y);
+    } catch (e) { /* sin conexión momentánea: se intenta en el próximo regreso */ }
+    finally { refrescando = false; }
+  }
+  window.addEventListener("focus", refrescoSilencioso);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) refrescoSilencioso(); });
   const visibles = () => R.visibles(S.usuario, S.datos.Proyectos);
   function filtrados() {
     const F = S.filtros;
@@ -156,13 +177,15 @@
     cargando(true, "Guardando en Excel…");
     try {
       await accion();
-      if (S.api.vaciar) await S.api.vaciar();
-      await recargar();
+      // Los cambios ya quedaron en memoria (ver conAuditoria): no se relee todo el Excel.
+      armarCatalogos();
+      refrescarUsuario();
       cerrarModal();
       render();
       toast(exito);
     } catch (e) {
       toast("No se pudo guardar: " + e.message, true);
+      S.cargadoEl = 0;   // por si quedó a medias: la próxima vez se relee todo
     } finally {
       cargando(false);
     }
@@ -880,7 +903,6 @@
           o.remove();
           try {
             await S.api.agregarFilas("Comentarios", items.map((x) => nuevoComentario(x.c, `Recordatorio enviado por correo${m.para.length ? ` a ${m.para.join(", ")}` : ""}${m.cc.length ? ` con copia a ${m.cc.join(", ")}` : ""}.`)));
-            await recargar();
           } catch (e) { toast("No se pudo registrar la constancia: " + e.message, true); }
           resolver(m);
         });
@@ -2058,7 +2080,7 @@
 
   // ---------- Auditoría ----------
   const ID_COLS = { Proyectos: "ID_Proyecto", Hitos: "ID_Hito", Seguimientos: "ID_Seguimiento", Riesgos: "ID_Riesgo", Usuarios: "Correo", Compromisos: "ID_Compromiso",
-    Comentarios: "ID_Comentario", Stakeholders: "ID_Stakeholder", Proveedores: "ID_Proveedor", Recursos: "ID_Recurso", Tickets: "ID_Ticket", Cambios: "ID_Cambio", Lecciones: "ID_Leccion", RACI: "ID_RACI", Dependencias: "ID_Dependencia" };
+    Comentarios: "ID_Comentario", Stakeholders: "ID_Stakeholder", Proveedores: "ID_Proveedor", Recursos: "ID_Recurso", Demandas: "ID_Demanda", Tickets: "ID_Ticket", Cambios: "ID_Cambio", Lecciones: "ID_Leccion", RACI: "ID_RACI", Dependencias: "ID_Dependencia" };
   const CAMPO_DESC = ["Nombre", "Compromiso", "Titulo", "Hito", "Descripcion", "Entregable", "Leccion", "Texto", "Valor", "Logros"];
   const NO_AUDITAR = new Set(["Auditoria", "Archivos", "Filtros"]);
   const IGNORAR_CAMPOS = new Set(["Actualizado_Por", "Actualizado_El"]);
@@ -2071,7 +2093,7 @@
     const reg = (tabla, id, pid, accion, detalle) => {
       if (NO_AUDITAR.has(tabla) || !S.usuario) return;
       pend.push({ Fecha_Hora: ahora(), Usuario: S.usuario.Correo, Tabla: tabla, ID_Registro: String(id || ""), ID_Proyecto: pid || "", Accion: accion, Detalle: String(detalle || "").slice(0, 1500) });
-      clearTimeout(timer); timer = setTimeout(vaciar, 1500);
+      clearTimeout(timer); timer = setTimeout(vaciar, 600);
     };
     async function vaciar() {
       clearTimeout(timer);
@@ -2079,9 +2101,41 @@
       const lote = pend.splice(0);
       try { await api.agregarFilas("Auditoria", lote); S.auditoria = null; } catch (e) { /* la auditoría nunca bloquea el trabajo */ }
     }
+    // Tras escribir en Excel, el mismo cambio se aplica a S.datos: así no hay que releer todo el libro en cada guardado.
+    const val = (v) => (v === null || v === undefined ? "" : v);
+    const local = {
+      agregar(tabla, objs) {
+        if (!S.datos) return;
+        S.datos[tabla] = S.datos[tabla] || [];
+        const modelo = S.datos[tabla][0] || {};
+        objs.forEach((o) => {
+          const fila = Object.fromEntries(Object.keys(modelo).map((k) => [k, ""]));
+          Object.entries(o).forEach(([k, v]) => { fila[k] = val(v); });
+          S.datos[tabla].push(fila);
+        });
+      },
+      actualizar(tabla, colId, lista) {
+        if (!S.datos || !S.datos[tabla]) return;
+        lista.forEach(({ id, cambios }) => {
+          const f = S.datos[tabla].find((r) => String(r[colId]) === String(id));
+          if (f) Object.entries(cambios).forEach(([k, v]) => { f[k] = val(v); });
+        });
+      },
+      eliminar(tabla, colId, ids) {
+        if (!S.datos || !S.datos[tabla]) return;
+        const set = new Set(ids.map(String));
+        S.datos[tabla] = S.datos[tabla].filter((r) => !set.has(String(r[colId])));
+      },
+      eliminarUna(tabla, criterios) {
+        if (!S.datos || !S.datos[tabla]) return;
+        const i = S.datos[tabla].findIndex((r) => Object.entries(criterios).every(([k, v]) => String(r[k]) === String(v)));
+        if (i >= 0) S.datos[tabla].splice(i, 1);
+      },
+    };
     const w = { ...api, vaciar };
     w.agregarFilas = async (tabla, objs) => {
       const r = await api.agregarFilas(tabla, objs);
+      local.agregar(tabla, objs);
       objs.forEach((o) => reg(tabla, o[ID_COLS[tabla]] || o.Valor || "", tabla === "Proyectos" ? o.ID_Proyecto : o.ID_Proyecto, "Creó", desc(o) || (tabla === "Catalogos" ? `${o.Lista}: ${o.Valor}` : "")));
       return r;
     };
@@ -2089,6 +2143,7 @@
     w.actualizarVarios = async (tabla, colId, lista) => {
       const antes = lista.map(({ id }) => ({ ...(buscar(tabla, id) || {}) }));
       const r = await api.actualizarVarios(tabla, colId, lista);
+      local.actualizar(tabla, colId, lista);
       lista.forEach(({ id, cambios }, i) => {
         const a = antes[i];
         const dif = Object.entries(cambios).filter(([k, v]) => !IGNORAR_CAMPOS.has(k) && String(a[k] ?? "") !== String(v ?? ""))
@@ -2101,11 +2156,13 @@
     w.eliminarFilas = async (tabla, colId, ids) => {
       const antes = ids.map((id) => buscar(tabla, id) || {});
       const r = await api.eliminarFilas(tabla, colId, ids);
+      local.eliminar(tabla, colId, ids);
       ids.forEach((id, i) => reg(tabla, id, tabla === "Proyectos" ? id : antes[i].ID_Proyecto, "Eliminó", desc(antes[i])));
       return r;
     };
     w.eliminarFila = async (tabla, criterios) => {
       const r = await api.eliminarFila(tabla, criterios);
+      local.eliminarUna(tabla, criterios);
       reg(tabla, "", "", "Eliminó", Object.entries(criterios).map(([k, v]) => `${k}: ${v}`).join(" · "));
       return r;
     };
@@ -2238,8 +2295,7 @@
     const r = { ID_Recurso: nuevoIdRecurso(), Nombre: String(d.Nombre).trim(), Correo: d.Correo || "", Cargo: d.Cargo || "", Area: d.Area || "", Telefono: d.Telefono || "",
       ID_Proveedor: d.ID_Proveedor || "", Capacidad: 100, Activo: "Sí" };
     await S.api.agregarFila("Recursos", r);
-    (S.datos.Recursos = S.datos.Recursos || []).push(r);
-    return r;
+    return S.datos.Recursos.find((x) => x.ID_Recurso === r.ID_Recurso) || r;
   }
   // Primera vez: arma el directorio con las personas que ya existen (usuarios, stakeholders, responsables y contactos de proveedores).
   let recursosMigrados = false;
@@ -3673,7 +3729,7 @@
         cargando(true, "Creando rol…");
         try {
           await S.api.agregarFila("Catalogos", { Lista: "Rol_Stakeholder", Valor: rol });
-          S.datos.Catalogos.push({ Lista: "Rol_Stakeholder", Valor: rol }); (S.cat.Rol_Stakeholder = S.cat.Rol_Stakeholder || []).push(rol);
+          (S.cat.Rol_Stakeholder = S.cat.Rol_Stakeholder || []).push(rol);
           $m("#eq-rol").innerHTML = opcionesRol(); $m("#eq-rol").value = rol;
           $m("#rol-nombre").value = ""; $m("#rol-form").hidden = true; $m("#eq-form").hidden = false; err.textContent = "";
           toast(`Rol «${rol}» creado`);
@@ -3716,7 +3772,6 @@
         cargando(true, "Creando proveedor…");
         try {
           await S.api.agregarFila("Proveedores", fila);
-          (S.datos.Proveedores = S.datos.Proveedores || []).push(fila);
           const vacioTxt = checks.querySelector(".sub"); if (vacioTxt) vacioTxt.remove();
           checks.insertAdjacentHTML("beforeend", `<label class="check"><input type="checkbox" value="${esc(fila.ID_Proveedor)}" checked> ${esc(fila.Nombre)}</label>`);
           ["nombre", "servicio", "contacto", "correo"].forEach((k) => { m.querySelector("#pn-" + k).value = ""; });

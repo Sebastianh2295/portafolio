@@ -91,14 +91,17 @@
     if (cambios) await ctx.sync();
   }
 
+  let estructuraRevisada = false;   // tablas y columnas faltantes: se revisan solo en la primera lectura
   const OpsExcel = {
     async leerTodo() {
       return Excel.run(async (ctx) => {
         const lista = ctx.workbook.tables.load("items/name");
         await ctx.sync();
         let existentes = lista.items.map((t) => t.name);
-        try { await crearTablasFaltantes(ctx, existentes); existentes = TABLAS; await crearColumnasFaltantes(ctx); }
-        catch (e) { /* usuario sin permiso de edición: se lee lo que exista */ }
+        if (!estructuraRevisada || TABLAS.some((n) => !existentes.includes(n) && ESTRUCTURA[n])) {
+          try { await crearTablasFaltantes(ctx, existentes); existentes = TABLAS; await crearColumnasFaltantes(ctx); estructuraRevisada = true; }
+          catch (e) { /* usuario sin permiso de edición: se lee lo que exista */ }
+        }
         const cargas = TABLAS.filter((n) => existentes.includes(n) && !SOLO_BAJO_DEMANDA.includes(n)).map((n) => {
           const t = ctx.workbook.tables.getItem(n);
           return { n, h: t.getHeaderRowRange().load("values"), b: t.getDataBodyRange().load("values") };
@@ -149,18 +152,18 @@
     // Actualiza varias filas buscándolas por ID (nunca por posición: la tabla pudo ser ordenada).
     async actualizarVarios(tabla, colId, cambiosPorId) {
       return Excel.run(async (ctx) => {
+        // Solo se leen los encabezados y la columna ID; se escriben únicamente las celdas que cambian.
         const t = ctx.workbook.tables.getItem(tabla);
         const h = t.getHeaderRowRange().load("values");
-        const b = t.getDataBodyRange().load("values");
+        const ids = t.columns.getItem(colId).getDataBodyRange().load("values");
         await ctx.sync();
         const cols = h.values[0];
-        const iId = cols.indexOf(colId);
+        const cuerpo = t.getDataBodyRange();
         for (const { id, cambios } of cambiosPorId) {
-          const idx = b.values.findIndex((r) => String(r[iId]) === String(id));
+          const idx = ids.values.findIndex((r) => String(r[0]) === String(id));
           if (idx < 0) throw new Error(`No se encontró ${id} en ${tabla}. Recargue e intente de nuevo.`);
-          const fila = b.values[idx].slice();
-          cols.forEach((k, i) => { if (k in cambios) fila[i] = cambios[k] === null ? "" : cambios[k]; });
-          b.getRow(idx).values = [fila];
+          const fila = cuerpo.getRow(idx);
+          cols.forEach((k, i) => { if (k in cambios) fila.getCell(0, i).values = [[cambios[k] === null || cambios[k] === undefined ? "" : cambios[k]]]; });
         }
         await ctx.sync();
         return true;
