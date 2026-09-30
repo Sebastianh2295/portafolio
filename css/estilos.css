@@ -646,6 +646,29 @@ td .vacio { padding: 14px; }
 .barra-migas .migas { padding: 0; }
 .btn-exportar .ico { width: 16px; height: 16px; color: #1D6F42; }
 @media (max-width: 760px) { .barra-migas { padding: 10px 12px 0; } .btn-exportar span { display: none; } }
+/* Backlog de demanda */
+.dem-barra { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: flex-end; margin-bottom: 8px; }
+.dem-barra .filtro { min-width: 140px; }
+.kanban { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(230px, 1fr); gap: 10px; overflow-x: auto; padding-bottom: 6px; }
+.kb-col { background: var(--superficie-2); border: 1px solid var(--borde); border-radius: 8px; padding: 8px; min-height: 160px; display: flex; flex-direction: column; gap: 8px; }
+.kb-col.sobre { outline: 2px dashed var(--azul); background: var(--suave); }
+.kb-cab { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px; }
+.kb-lista { display: grid; gap: 8px; }
+.kb-vacio { color: var(--texto2); font-size: 12px; text-align: center; padding: 16px 4px; border: 1px dashed var(--borde); border-radius: 6px; }
+.dem-card { background: var(--superficie); border: 1px solid var(--borde); border-left: 4px solid var(--azul-claro); border-radius: 8px; padding: 8px 10px; box-shadow: var(--sombra-1); cursor: pointer; display: grid; gap: 4px; }
+.dem-card:hover { border-color: var(--azul); }
+.dem-card.oblig { border-left-color: var(--rojo); }
+.dem-card.arrastrando { opacity: .5; }
+.dem-top { display: flex; align-items: center; gap: 6px; }
+.dem-almera { font-weight: 700; color: var(--azul); font-size: 12.5px; }
+.dem-pts { margin-left: auto; font-weight: 700; background: var(--suave); color: var(--azul); border-radius: 10px; padding: 0 8px; font-size: 12px; }
+.dem-nombre { font-weight: 600; }
+.dem-pie { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.dem-decision { display: grid; gap: 8px; margin-bottom: 8px; }
+.pill.recibida { background: #eef3fa; color: #104994; } .pill.enanálisis { background: #e6f0fd; color: #0d3f86; }
+.pill.priorizada { background: #ede7f6; color: #4a2a8a; } .pill.encomité { background: #fff4d6; color: #7a5b00; }
+.pill.aprobada { background: #e3f3ea; color: #1e5e3a; } .pill.convertida { background: #d7ecff; color: #0b3d75; }
+.pill.aplazada { background: #eee; color: #555; } .pill.rechazada { background: #fbe3e0; color: #8e2a1f; }
 /* ---------- Hoja de vida (vista e impresión) ---------- */
 .hv-overlay { position: fixed; inset: 0; z-index: 60; background: #dde3ea; overflow: auto; }
 .hv-barra { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; background: #fff; padding: 10px 16px; border-bottom: 1px solid var(--linea); }

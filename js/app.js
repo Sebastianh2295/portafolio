@@ -13,6 +13,7 @@
     { id: "dashboard", t: "Dashboard" },
     { id: "avances", t: "Avances de la semana" },
     { id: "seguimiento", t: "Seguimiento y compromisos" },
+    { id: "backlog", t: "Backlog de demanda" },
     { id: "proyectos", t: "Proyectos" },
     { id: "cronograma", t: "Cronograma" },
     { id: "riesgos", t: "Riesgos" },
@@ -54,6 +55,9 @@
     capacidad: ["Cuánto está dedicada cada persona sumando todos sus proyectos activos o en pausa.",
       "La dedicación del PM se pone en «Editar proyecto»; la de cada stakeholder, en su ficha o en la sección Equipo del formulario.",
       "Más de 100% = sobreasignado. Haz clic en un proyecto para ir a su ficha."],
+    backlog: ["Iniciativas que asigna Gestión de la Demanda en Almera, antes de ser proyectos. El código Almera es la llave.",
+      "Flujo: Recibida → En análisis → Priorizada → En comité → (Aprobada / Aplazada / Rechazada) → Convertida en proyecto.",
+      "Ranking: obligatorias primero y luego por puntaje. En el tablero arrastras las tarjetas entre estados; la decisión la registra el comité."],
     recursos: ["Directorio único de personas: internas y de proveedores, sin duplicados.",
       "Al agregar stakeholders, equipo o responsables de compromisos eliges a la persona de aquí y sus datos se llenan solos.",
       "Si aparecen «Posibles duplicados», usa «Fusionar» para dejar un solo registro."],
@@ -113,7 +117,8 @@
   }
   // Listas nuevas que se crean solas en la tabla Catalogos la primera vez (luego se editan desde Catálogos).
   const CATALOGOS_BASE = { Rol_Stakeholder: ["Sponsor", "Líder funcional", "Product Owner"], Estado_Ticket: ["Abierto", "En curso", "Resuelto", "Cerrado"],
-    Tipo_Cambio: ["Alcance", "Tiempo", "Costo", "Recursos", "Calidad"], Categoria_Leccion: ["Planeación", "Técnica", "Proveedores", "Comunicación", "Equipo", "Calidad", "Gestión del cambio"] };
+    Tipo_Cambio: ["Alcance", "Tiempo", "Costo", "Recursos", "Calidad"], Tipo_Demanda: ["Proyecto nuevo", "Mejora / evolutivo", "Regulatorio / obligatorio", "Mantenimiento", "Innovación"], Categoria_Demanda: ["Estratégico", "Operativo", "Cumplimiento"],
+    Categoria_Leccion: ["Planeación", "Técnica", "Proveedores", "Comunicación", "Equipo", "Calidad", "Gestión del cambio"] };
   let sembrado = false;
   // La primera vez, deja en el Excel los roles de stakeholder base para poder editarlos desde Catálogos.
   async function sembrarCatalogos() {
@@ -272,7 +277,7 @@
       cargando(true, "Leyendo Excel…");
       try { await recargar(); render(); toast("Datos actualizados"); } catch (e) { toast(e.message, true); } finally { cargando(false); }
     });
-    const vistas = { dashboard: vDashboard, avances: vAvances, seguimiento: vSeguimiento, proyectos: vProyectos, ficha: vFicha, recursos: vRecursos, capacidad: vCapacidad, priorizacion: vPriorizacion, lecciones: vLecciones, auditoria: vAuditoria, cronograma: vCronograma, riesgos: vRiesgos, catalogos: vCatalogos, usuarios: vUsuarios };
+    const vistas = { dashboard: vDashboard, avances: vAvances, seguimiento: vSeguimiento, proyectos: vProyectos, ficha: vFicha, backlog: vBacklog, recursos: vRecursos, capacidad: vCapacidad, priorizacion: vPriorizacion, lecciones: vLecciones, auditoria: vAuditoria, cronograma: vCronograma, riesgos: vRiesgos, catalogos: vCatalogos, usuarios: vUsuarios };
     const el = $("#vista");
     (vistas[S.vista] || vDashboard)(el);
     el.insertAdjacentHTML("afterbegin", ayuda(S.vista));
@@ -1358,6 +1363,8 @@
     { lista: "Estado_Ticket", t: "Estado del ticket (helpdesk)", campo: "Estado", tabla: "Tickets", idCol: "ID_Ticket" },
     { lista: "Tipo_Cambio", t: "Tipo de cambio", campo: "Tipo", tabla: "Cambios", idCol: "ID_Cambio" },
     { lista: "Categoria_Leccion", t: "Categoría de lección aprendida", campo: "Categoria", tabla: "Lecciones", idCol: "ID_Leccion" },
+    { lista: "Tipo_Demanda", t: "Tipo de demanda", campo: "Tipo", tabla: "Demandas", idCol: "ID_Demanda" },
+    { lista: "Categoria_Demanda", t: "Categoría de demanda", campo: "Categoria", tabla: "Demandas", idCol: "ID_Demanda" },
     { lista: "Copia_Recordatorios", t: "Copia fija de recordatorios (correos)", campo: "", tabla: "__ninguna", correo: true },
   ];
   const filasCat = (c) => (S.datos[c.tabla || "Proyectos"] || []);
@@ -2697,6 +2704,7 @@
     compromiso: '<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>',
     ticket: '<path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M13 5v2M13 17v2M13 11v2"/>',
     ir: '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
+    backlog: '<path d="M3 5h18M3 12h18M3 19h12"/><circle cx="19" cy="19" r="2"/>',
     exportar: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>',
   };
   const ico = (n, cls = "") => `<svg class="ico ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONOS[n] || ""}</svg>`;
@@ -2718,7 +2726,7 @@
   // Menú agrupado como en las suites empresariales.
   const GRUPOS_NAV = [
     ["Inicio", ["dashboard", "avances", "seguimiento"]],
-    ["Portafolio", ["proyectos", "cronograma", "riesgos", "priorizacion"]],
+    ["Portafolio", ["backlog", "proyectos", "cronograma", "riesgos", "priorizacion"]],
     ["Personas", ["recursos", "capacidad"]],
     ["Conocimiento", ["lecciones"]],
     ["Administración", ["catalogos", "usuarios", "auditoria"]],
@@ -2755,6 +2763,7 @@
     const nom = (pid) => (proyecto(pid) || {}).Nombre || pid;
     VISTAS.filter((v) => !v.permiso || R.puede(S.usuario, v.permiso)).forEach((v) => out.push({ tipo: "Ir a", ico: v.id, t: v.t, sub: "Pantalla", ir: () => ir(v.id) }));
     visibles().forEach((p) => out.push({ tipo: "Proyectos", ico: "proyectos", t: p.Nombre, sub: [p.ID_Proyecto, p.Codigo_Almera ? `Almera ${p.Codigo_Almera}` : "", nombreUsuario(p.PM), p.Estado].filter(Boolean).join(" · "), ir: () => { S.fichaTab = "resumen"; ir("ficha", p.ID_Proyecto); } }));
+    demandas().forEach((d) => out.push({ tipo: "Demandas", ico: "backlog", t: `${d.Codigo_Almera} · ${d.Nombre}`, sub: `${d.Estado || "Recibida"} · ${d.Area || ""} · puntaje ${puntajeDemanda(d) ?? "—"}`, ir: () => { ir("backlog"); formDemanda(d); } }));
     recursos().forEach((r) => out.push({ tipo: "Personas", ico: "recursos", t: r.Nombre, sub: [r.Cargo, empresaDe(r), r.Correo].filter(Boolean).join(" · "), ir: () => { S.recQ = r.Nombre; ir("recursos"); } }));
     S.datos.Compromisos.filter((c) => ids.has(c.ID_Proyecto)).forEach((c) => out.push({ tipo: "Compromisos", ico: "compromiso", t: c.Compromiso, sub: `${nom(c.ID_Proyecto)} · ${c.Responsable || "sin responsable"} · ${R.estadoCompromiso(c)}`, peso: R.cerrado(c) ? 1 : 0,
       ir: () => { S.fichaTab = "compromisos"; ir("ficha", c.ID_Proyecto); detalleCompromiso(c.ID_Compromiso); } }));
@@ -2779,7 +2788,7 @@
     const cerrar = () => o.remove();
     const pintar = () => {
       const terms = normTxt(q.value).split(" ").filter(Boolean);
-      const orden = ["Ir a", "Proyectos", "Personas", "Compromisos", "Riesgos", "Tickets", "Lecciones"];
+      const orden = ["Ir a", "Proyectos", "Demandas", "Personas", "Compromisos", "Riesgos", "Tickets", "Lecciones"];
       vis = (terms.length ? indice.filter((x) => { const h = normTxt(`${x.t} ${x.sub}`); return terms.every((t) => h.includes(t)); }) : indice.filter((x) => x.tipo === "Ir a" || x.tipo === "Proyectos"))
         .sort((a, b) => orden.indexOf(a.tipo) - orden.indexOf(b.tipo) || (a.peso || 0) - (b.peso || 0));
       const porTipo = {}; vis.forEach((x) => { (porTipo[x.tipo] = porTipo[x.tipo] || []).push(x); });
@@ -2990,6 +2999,15 @@
   ];
   // Qué exporta cada pantalla.
   const EXPORTADORES = {
+    backlog: () => exportarExcel("Backlog de demanda", [{ nombre: "Backlog", columnas: [
+      { t: "#", v: (d) => demandasFiltradas().indexOf(d) + 1, tipo: "num", ancho: 6 }, { t: "Código Almera", v: (d) => d.Codigo_Almera, ancho: 16 }, { t: "Iniciativa", v: (d) => d.Nombre, ancho: 34 },
+      { t: "Necesidad", v: (d) => d.Descripcion, ancho: 40 }, { t: "Beneficio", v: (d) => d.Beneficio, ancho: 36 }, { t: "Área", v: (d) => d.Area }, { t: "Solicitante", v: (d) => d.Solicitante }, { t: "Sponsor", v: (d) => d.Sponsor },
+      { t: "Tipo", v: (d) => d.Tipo }, { t: "Categoría", v: (d) => d.Categoria, ancho: 14 }, { t: "Talla", v: (d) => d.Tamano, ancho: 8 }, { t: "Obligatorio", v: (d) => d.Obligatorio, ancho: 11 },
+      ...CRITERIOS_DEM.map((c) => ({ t: c.t, v: (d) => d[c.k], tipo: "num", ancho: 14 })), { t: "Puntaje", v: (d) => puntajeDemanda(d) ?? "", tipo: "num" },
+      { t: "Estado", v: (d) => d.Estado || "Recibida", ancho: 13 }, { t: "PM asignado", v: (d) => nombreUsuario(d.PM_Asignado) }, { t: "Costo estimado", v: (d) => d.Costo_Estimado, tipo: "cop" },
+      { t: "Recibida", v: (d) => d.Fecha_Recepcion, tipo: "fecha" }, { t: "Fecha deseada", v: (d) => d.Fecha_Deseada, tipo: "fecha" }, { t: "Días de antigüedad", v: (d) => antiguedad(d), tipo: "num" },
+      { t: "Decisión", v: (d) => d.Fecha_Decision, tipo: "fecha" }, { t: "Decidido por", v: (d) => d.Decidido_Por }, { t: "Observaciones", v: (d) => d.Comentario_Decision, ancho: 36 }, { t: "Proyecto", v: (d) => d.ID_Proyecto, ancho: 12 }],
+      filas: demandasFiltradas() }], [(S.demF || {}).estado ? `Estado: ${S.demF.estado}` : "", (S.demF || {}).tipo ? `Tipo: ${S.demF.tipo}` : "", (S.demF || {}).area ? `Área: ${S.demF.area}` : "", (S.demF || {}).pm ? `PM: ${nombreUsuario(S.demF.pm)}` : "", (S.demF || {}).q ? `Búsqueda: «${S.demF.q}»` : ""].filter(Boolean)),
     dashboard: () => {
       const ps = filtrados(), k = R.kpis(ps, S.datos.Seguimientos);
       return exportarExcel("Dashboard", [
@@ -3114,6 +3132,241 @@
       ], [`Proyecto: ${p.Nombre} (${pid})`]);
     },
   };
+
+  // ---------- Backlog de demanda (iniciativas asignadas por Gestión de la Demanda vía Almera) ----------
+  const ESTADOS_DEMANDA = ["Recibida", "En análisis", "Priorizada", "En comité", "Aprobada", "Convertida", "Aplazada", "Rechazada"];
+  const ABIERTOS_DEMANDA = ["Recibida", "En análisis", "Priorizada", "En comité", "Aprobada"];
+  const DECISIONES = ["Aprobada", "Aplazada", "Rechazada"];
+  // Criterios de priorización (1 a 5). "inv" = a menor valor, mejor. Los pesos se ajustan en la app.
+  const CRITERIOS_DEM = [
+    { k: "Valor", t: "Valor / beneficio para la institución", peso: 25 },
+    { k: "Alineacion", t: "Alineación estratégica", peso: 20 },
+    { k: "Impacto_Paciente", t: "Impacto en paciente / seguridad", peso: 15 },
+    { k: "Urgencia", t: "Urgencia", peso: 15 },
+    { k: "Riesgo_Prio", t: "Complejidad / riesgo de ejecución", peso: 10, inv: true },
+    { k: "Esfuerzo", t: "Esfuerzo / costo", peso: 15, inv: true },
+  ];
+  const pesosDemanda = () => {
+    const guardados = {};
+    (S.datos.Catalogos || []).filter((c) => c.Lista === "Peso_Prioridad").forEach((c) => { const [k, v] = String(c.Valor).split(":"); if (k && !Number.isNaN(Number(v))) guardados[k] = Number(v); });
+    return Object.fromEntries(CRITERIOS_DEM.map((c) => [c.k, guardados[c.k] ?? c.peso]));
+  };
+  // Puntaje 0 a 100; lo regulatorio / obligatorio va primero en el ranking.
+  function puntajeDemanda(d) {
+    const w = pesosDemanda(), total = Object.values(w).reduce((a, b) => a + b, 0) || 1;
+    if (CRITERIOS_DEM.some((c) => !num0(d[c.k]))) return null;
+    const v = CRITERIOS_DEM.reduce((a, c) => a + w[c.k] * (c.inv ? 6 - Number(d[c.k]) : Number(d[c.k])), 0) / total;
+    return Math.round(((v - 1) / 4) * 100);
+  }
+  const demandas = () => (S.datos.Demandas || []);
+  const obligatoria = (d) => d.Obligatorio === "Sí";
+  const diasEn = (d) => R.difDias(R.hoyISO(), String(d.Fecha_Estado || d.Fecha_Recepcion || R.hoyISO()).slice(0, 10));
+  const antiguedad = (d) => R.difDias(R.hoyISO(), String(d.Fecha_Recepcion || R.hoyISO()).slice(0, 10));
+  const ordenRanking = (a, b) => (obligatoria(b) - obligatoria(a)) || ((puntajeDemanda(b) ?? -1) - (puntajeDemanda(a) ?? -1)) || String(a.Fecha_Recepcion).localeCompare(String(b.Fecha_Recepcion));
+  const puedeDemanda = () => R.puede(S.usuario, "crearProyecto");
+  const decideDemanda = () => R.puede(S.usuario, "verTodo");
+  function demandasFiltradas() {
+    const F = S.demF = S.demF || { estado: "abiertas", tipo: "", area: "", pm: "", q: "" };
+    return demandas().filter((d) => (F.estado === "todas" || (F.estado === "abiertas" ? ABIERTOS_DEMANDA.includes(d.Estado || "Recibida") : (d.Estado || "Recibida") === F.estado)) &&
+      (!F.tipo || d.Tipo === F.tipo) && (!F.area || d.Area === F.area) && (!F.pm || lc(d.PM_Asignado) === lc(F.pm)) &&
+      (!F.q || normTxt(`${d.Codigo_Almera} ${d.Nombre} ${d.Descripcion} ${d.Solicitante} ${d.Sponsor}`).includes(normTxt(F.q))))
+      .sort(ordenRanking);
+  }
+  function vBacklog(el) {
+    const F = S.demF = S.demF || { estado: "abiertas", tipo: "", area: "", pm: "", q: "" };
+    const vista = S.demVista || "ranking";
+    const todas = demandas(), lista = demandasFiltradas();
+    const abiertas = todas.filter((d) => ABIERTOS_DEMANDA.includes(d.Estado || "Recibida"));
+    const decididas = todas.filter((d) => ["Aprobada", "Convertida", "Rechazada"].includes(d.Estado));
+    const tasa = decididas.length ? Math.round(decididas.filter((d) => d.Estado !== "Rechazada").length / decididas.length * 100) : null;
+    const viejas = abiertas.filter((d) => antiguedad(d) > 30).length;
+    const pms = usuariosConRol("PM").map((u) => [u.Correo, u.Nombre || u.Correo]);
+    const kpi = (t, v, d, cls) => `<div class="kpi estatico ${cls || ""}"><span class="kpi-t">${t}</span><span class="kpi-v">${v}</span>${d ? `<span class="kpi-d">${d}</span>` : ""}</div>`;
+    const tarjeta = (d) => { const pts = puntajeDemanda(d); return `<div class="dem-card ${obligatoria(d) ? "oblig" : ""}" draggable="${puedeDemanda()}" data-dem="${esc(d.ID_Demanda)}">
+      <div class="dem-top"><span class="dem-almera">${esc(d.Codigo_Almera || "Sin código")}</span>${obligatoria(d) ? `<span class="pill materializado">Obligatorio</span>` : ""}<span class="dem-pts" title="Puntaje de priorización">${pts === null ? "—" : pts}</span></div>
+      <div class="dem-nombre">${esc(d.Nombre || "(sin nombre)")}</div>
+      <div class="sub">${esc([d.Tipo, d.Area, d.Tamano ? `Talla ${d.Tamano}` : ""].filter(Boolean).join(" · "))}</div>
+      <div class="dem-pie">${d.PM_Asignado ? persona(nombreUsuario(d.PM_Asignado)) : `<span class="sub">Sin PM</span>`}<span class="sub ${antiguedad(d) > 30 && ABIERTOS_DEMANDA.includes(d.Estado || "Recibida") ? "baja" : ""}" title="Días desde que llegó">${antiguedad(d)} d</span></div></div>`; };
+    const ranking = lista.length ? `<div class="tabla-scroll"><table><thead><tr><th>#</th><th>Almera</th><th>Iniciativa</th><th>Tipificación</th><th>Estado</th><th>Puntaje</th><th>PM</th><th>Antigüedad</th></tr></thead><tbody>
+      ${lista.map((d, i) => { const pts = puntajeDemanda(d); return `<tr class="clic" data-dem="${esc(d.ID_Demanda)}"><td>${i + 1}</td><td><b>${esc(d.Codigo_Almera)}</b></td>
+        <td><b>${esc(d.Nombre)}</b><div class="sub">${esc(d.Solicitante ? `Solicita: ${d.Solicitante}` : "")}${d.Sponsor ? ` · Sponsor: ${esc(d.Sponsor)}` : ""}</div></td>
+        <td>${esc(d.Tipo || "—")}<div class="sub">${esc([d.Categoria, d.Area, d.Tamano ? `Talla ${d.Tamano}` : ""].filter(Boolean).join(" · "))}</div>${obligatoria(d) ? `<span class="pill materializado">Obligatorio</span>` : ""}</td>
+        <td>${pill(d.Estado || "Recibida")}${d.ID_Proyecto ? `<div><button class="btn enlace" data-pid="${esc(d.ID_Proyecto)}">Ver proyecto</button></div>` : ""}</td>
+        <td class="nowrap">${pts === null ? `<span class="sub">Sin calificar</span>` : `<span class="cap-barra"><span class="cap-lleno" style="width:${pts}%;background:var(--azul)"></span></span> <b>${pts}</b>`}</td>
+        <td>${d.PM_Asignado ? persona(nombreUsuario(d.PM_Asignado)) : `<span class="sub">—</span>`}</td>
+        <td class="${antiguedad(d) > 30 && ABIERTOS_DEMANDA.includes(d.Estado || "Recibida") ? "baja" : ""}">${antiguedad(d)} días<div class="sub">${diasEn(d)} en este estado</div></td></tr>`; }).join("")}</tbody></table></div>`
+      : vacio(todas.length ? "Ninguna demanda coincide con los filtros." : "Aún no hay demandas. Registra la primera con «+ Nueva demanda» cuando Gestión de la Demanda te asigne una iniciativa en Almera.");
+    const cols = ESTADOS_DEMANDA.filter((e) => F.estado === "todas" || e !== "Convertida" && e !== "Rechazada" || F.estado === e);
+    const tablero = `<div class="kanban">${cols.map((e) => { const l = lista.filter((d) => (d.Estado || "Recibida") === e); return `<div class="kb-col" data-col="${esc(e)}"><div class="kb-cab">${pill(e)} <span class="contador">${l.length}</span></div><div class="kb-lista">${l.map(tarjeta).join("") || `<div class="kb-vacio">Arrastra aquí</div>`}</div></div>`; }).join("")}</div>`;
+    el.innerHTML = `<div class="titulo-fila"><h1>Backlog de demanda</h1><div class="acciones">
+        ${decideDemanda() ? `<button class="btn" id="b-pesos">⚖ Pesos de priorización</button>` : ""}
+        <button class="btn" id="b-agenda">📄 Agenda del comité</button>
+        ${puedeDemanda() ? `<button class="btn primario" id="b-dem">+ Nueva demanda</button>` : ""}</div></div>
+      <div class="kpis">${kpi("Demandas abiertas", abiertas.length)}${kpi("En análisis", todas.filter((d) => d.Estado === "En análisis").length)}${kpi("Para comité", todas.filter((d) => d.Estado === "En comité" || d.Estado === "Priorizada").length)}
+        ${kpi("Más de 30 días sin decisión", viejas, "", viejas ? "alerta" : "")}${kpi("Tasa de aprobación", tasa === null ? "—" : `${tasa}%`, `${decididas.length} decidida(s)`)}</div>
+      <div class="card"><div class="dem-barra">
+        <div class="seg">${["ranking", "tablero"].map((v) => `<button class="btn chico ${vista === v ? "primario" : ""}" data-demvista="${v}">${v === "ranking" ? "☰ Ranking" : "▦ Tablero"}</button>`).join("")}</div>
+        <label class="filtro"><span>Estado</span><select data-demf="estado"><option value="abiertas" ${F.estado === "abiertas" ? "selected" : ""}>Abiertas</option>${ESTADOS_DEMANDA.map((e) => `<option ${F.estado === e ? "selected" : ""}>${e}</option>`).join("")}<option value="todas" ${F.estado === "todas" ? "selected" : ""}>Todas</option></select></label>
+        <label class="filtro"><span>Tipo</span><select data-demf="tipo"><option value="">Todos</option>${(S.cat.Tipo_Demanda || []).map((t) => `<option ${F.tipo === t ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></label>
+        <label class="filtro"><span>Área</span><select data-demf="area"><option value="">Todas</option>${(S.cat.Cliente_Area || []).map((t) => `<option ${F.area === t ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></label>
+        <label class="filtro"><span>PM</span><select data-demf="pm"><option value="">Todos</option>${pms.map(([c, n]) => `<option value="${esc(c)}" ${lc(F.pm) === lc(c) ? "selected" : ""}>${esc(n)}</option>`).join("")}</select></label>
+        <label class="filtro crece"><span>Buscar</span><input type="search" data-demf="q" value="${esc(F.q)}" placeholder="Código Almera, nombre, solicitante…"></label></div>
+        <p class="sub">${lista.length} demanda(s). Orden: obligatorias primero y luego por puntaje. ${vista === "tablero" && puedeDemanda() ? "Arrastra las tarjetas para cambiar de estado." : ""}</p>
+        ${vista === "tablero" ? tablero : ranking}</div>`;
+    el.querySelectorAll("[data-demvista]").forEach((b) => b.addEventListener("click", () => { S.demVista = b.dataset.demvista; render(); }));
+    el.querySelectorAll("[data-demf]").forEach((i) => i.addEventListener("change", () => { F[i.dataset.demf] = i.value; render(); }));
+    el.querySelectorAll("tr[data-dem], .dem-card").forEach((r) => r.addEventListener("click", (e) => { if (e.target.closest("button")) return; formDemanda(demandas().find((d) => d.ID_Demanda === r.dataset.dem)); }));
+    if ($("#b-dem")) $("#b-dem").addEventListener("click", () => formDemanda());
+    if ($("#b-pesos")) $("#b-pesos").addEventListener("click", formPesos);
+    $("#b-agenda").addEventListener("click", agendaComite);
+    // Arrastrar tarjetas entre columnas del tablero.
+    el.querySelectorAll(".dem-card[draggable=true]").forEach((c) => c.addEventListener("dragstart", (e) => { e.dataTransfer.setData("text/plain", c.dataset.dem); c.classList.add("arrastrando"); }));
+    el.querySelectorAll(".kb-col").forEach((col) => {
+      col.addEventListener("dragover", (e) => { e.preventDefault(); col.classList.add("sobre"); });
+      col.addEventListener("dragleave", () => col.classList.remove("sobre"));
+      col.addEventListener("drop", (e) => {
+        e.preventDefault(); col.classList.remove("sobre");
+        const d = demandas().find((x) => x.ID_Demanda === e.dataTransfer.getData("text/plain"));
+        if (d) moverDemanda(d, col.dataset.col);
+      });
+    });
+  }
+  // Cambio de estado desde el tablero, con las reglas del flujo.
+  function moverDemanda(d, estado) {
+    if (!d || (d.Estado || "Recibida") === estado) return;
+    if (estado === "Convertida") return d.Estado === "Aprobada" ? convertirDemanda(d) : toast("Solo una demanda aprobada se convierte en proyecto.", true);
+    if (DECISIONES.includes(estado)) return decideDemanda() ? decidirDemanda(d, estado) : toast("Aprobar, aplazar o rechazar lo decide el comité (rol PMO o Admin).", true);
+    guardar(() => S.api.actualizarPorId("Demandas", "ID_Demanda", d.ID_Demanda, { Estado: estado, Fecha_Estado: R.hoyISO() }), `${d.Codigo_Almera}: ${estado}`);
+  }
+  function formDemanda(d) {
+    const nuevo = !d;
+    const esc5 = [[1, "1 · Muy bajo"], [2, "2 · Bajo"], [3, "3 · Medio"], [4, "4 · Alto"], [5, "5 · Muy alto"]];
+    const pms = usuariosConRol("PM").map((u) => [u.Correo, u.Nombre || u.Correo]);
+    const estadosEditables = ESTADOS_DEMANDA.filter((e) => !DECISIONES.includes(e) && e !== "Convertida");
+    const campos = [
+      { seccion: "1. Iniciativa" },
+      { k: "Codigo_Almera", label: "Código Almera *", placeholder: "Código de la demanda en Almera" },
+      { k: "Fecha_Recepcion", label: "Fecha de asignación", tipo: "date", def: R.hoyISO() },
+      { k: "Nombre", label: "Nombre de la iniciativa", ancho: true },
+      { k: "Descripcion", label: "Necesidad / problema", tipo: "textarea" },
+      { k: "Beneficio", label: "Beneficio esperado", tipo: "textarea" },
+      { k: "Area", label: "Área solicitante", tipo: "select", opciones: S.cat.Cliente_Area },
+      { k: "Solicitante", label: "Solicitante", recurso: true, placeholder: "Busca en Recursos" },
+      { k: "Sponsor", label: "Sponsor", recurso: true, placeholder: "Busca en Recursos" },
+      { k: "Fecha_Deseada", label: "Fecha deseada por el solicitante", tipo: "date" },
+      { seccion: "2. Tipificación" },
+      { k: "Tipo", label: "Tipo", tipo: "select", opciones: S.cat.Tipo_Demanda },
+      { k: "Categoria", label: "Categoría", tipo: "select", opciones: S.cat.Categoria_Demanda },
+      { k: "Tamano", label: "Talla estimada", tipo: "select", opciones: [["S", "S · Menos de 1 mes"], ["M", "M · 1 a 3 meses"], ["L", "L · 3 a 6 meses"], ["XL", "XL · Más de 6 meses"]] },
+      { k: "Obligatorio", label: "¿Regulatorio / obligatorio?", tipo: "select", opciones: ["No", "Sí"], def: "No", ayuda: "Las obligatorias van primero en el ranking." },
+      { k: "Costo_Estimado", label: "Costo estimado (COP)", tipo: "number", min: 0 },
+      { k: "PM_Asignado", label: "PM asignado", tipo: "select", opciones: pms, ayuda: " " },
+      { seccion: "3. Priorización", ayuda: "de 1 a 5; el puntaje se calcula con los pesos del comité" },
+      ...CRITERIOS_DEM.map((c) => ({ k: c.k, label: `${c.t}${c.inv ? " (a menor, mejor)" : ""}`, tipo: "select", opciones: esc5 })),
+      { html: `<div class="calif-viva" id="dem-pts"></div>` },
+      { seccion: "4. Estado" },
+      { k: "Estado", label: "Estado", tipo: "select", opciones: nuevo || estadosEditables.includes(d.Estado || "Recibida") ? estadosEditables : [d.Estado], def: "Recibida", bloqueado: !nuevo && !estadosEditables.includes(d.Estado || "Recibida"),
+        ayuda: "Aprobar, aplazar o rechazar se hace con «Decisión del comité»." },
+    ];
+    const historial = nuevo ? "" : `<div class="form-seccion">Decisión del comité</div>
+      <div class="dem-decision">${d.Fecha_Decision ? `${pill(d.Estado)} el ${fecha(d.Fecha_Decision)} por ${esc(d.Decidido_Por || "—")}${d.Comentario_Decision ? `<div class="sub">${esc(d.Comentario_Decision)}</div>` : ""}` : `<span class="sub">Sin decisión todavía.</span>`}
+        <div class="acciones">${decideDemanda() && !["Convertida"].includes(d.Estado) ? `<button type="button" class="btn" id="dem-decidir">⚖ Decisión del comité</button>` : ""}
+        ${d.Estado === "Aprobada" && R.puede(S.usuario, "crearProyecto") ? `<button type="button" class="btn primario" id="dem-convertir">🚀 Convertir en proyecto</button>` : ""}
+        ${d.ID_Proyecto ? `<button type="button" class="btn" id="dem-proy">Ver proyecto ${esc(d.ID_Proyecto)}</button>` : ""}</div></div>
+      <div class="form-seccion">Historial</div><div id="dem-hist" class="sub">Cargando…</div>`;
+    const init = (m) => {
+      const calc = () => {
+        const x = {}; CRITERIOS_DEM.forEach((c) => { x[c.k] = m.querySelector(`[name="${c.k}"]`).value; });
+        const pts = puntajeDemanda(x);
+        m.querySelector("#dem-pts").innerHTML = pts === null ? "Califica los 6 criterios para ver el puntaje." : `Puntaje de priorización: <b>${pts} / 100</b>${m.querySelector('[name="Obligatorio"]').value === "Sí" ? " · <b>Obligatoria</b> (va primero)" : ""}`;
+      };
+      m.querySelectorAll("select").forEach((s) => s.addEventListener("change", calc)); calc();
+      const pmSel = m.querySelector('[name="PM_Asignado"]'), pmAy = pmSel.parentElement.querySelector(".sub");
+      const cap = () => { const c = capacidad().find((x) => lc(x.correo) === lc(pmSel.value)); pmAy.innerHTML = pmSel.value ? `Hoy tiene asignado <b class="${c && c.total > c.cap ? "baja" : ""}">${c ? c.total : 0}%</b> de ${c ? c.cap : 100}% en proyectos activos.` : "Quien hace el análisis de la demanda."; };
+      pmSel.addEventListener("change", cap); cap();
+      if (!nuevo) {
+        if (m.querySelector("#dem-decidir")) m.querySelector("#dem-decidir").addEventListener("click", () => decidirDemanda(d));
+        if (m.querySelector("#dem-convertir")) m.querySelector("#dem-convertir").addEventListener("click", () => convertirDemanda(d));
+        if (m.querySelector("#dem-proy")) m.querySelector("#dem-proy").addEventListener("click", () => { cerrarModal(); ir("ficha", d.ID_Proyecto); });
+        cargarAuditoria().then((a) => { const h = m.querySelector("#dem-hist"); if (!h) return; const l = a.filter((x) => x.Tabla === "Demandas" && x.ID_Registro === d.ID_Demanda);
+          h.innerHTML = l.length ? `<ul class="lista">${l.map((x) => `<li>${fechaHora(x.Fecha_Hora)} · ${esc(nombreUsuario(x.Usuario))} · ${esc(x.Accion)}: ${esc(x.Detalle)}</li>`).join("")}</ul>` : "Sin movimientos registrados."; });
+      }
+    };
+    modal(nuevo ? "Nueva demanda" : `Demanda ${d.Codigo_Almera}`, campos, nuevo ? {} : d, (fd) => {
+      const cambios = { ...fd, Codigo_Almera: String(fd.Codigo_Almera).trim() };
+      if (nuevo) {
+        const max = demandas().reduce((mx, x) => Math.max(mx, parseInt(String(x.ID_Demanda).slice(4), 10) || 0), 0);
+        const fila = { ID_Demanda: `DEM-${String(max + 1).padStart(4, "0")}`, ...cambios, Fecha_Estado: R.hoyISO(), Registrado_Por: S.usuario.Correo };
+        guardar(async () => { for (const n of [fd.Solicitante, fd.Sponsor].filter(Boolean)) await asegurarRecurso({ Nombre: n }); await S.api.agregarFila("Demandas", fila); }, `Demanda ${fila.Codigo_Almera} registrada`);
+      } else {
+        if ((cambios.Estado || "") !== (d.Estado || "")) cambios.Fecha_Estado = R.hoyISO();
+        if (!estadosEditables.includes(d.Estado || "Recibida")) delete cambios.Estado;
+        guardar(async () => { for (const n of [fd.Solicitante, fd.Sponsor].filter(Boolean)) await asegurarRecurso({ Nombre: n }); await S.api.actualizarPorId("Demandas", "ID_Demanda", d.ID_Demanda, cambios); }, "Demanda actualizada");
+      }
+    }, (fd) => {
+      const cod = String(fd.Codigo_Almera || "").trim();
+      if (!cod) return "El código Almera es obligatorio: es la llave de la demanda.";
+      const dup = demandas().find((x) => lc(x.Codigo_Almera) === lc(cod) && (!d || x.ID_Demanda !== d.ID_Demanda));
+      if (dup) return `Ya existe la demanda ${dup.Codigo_Almera} («${dup.Nombre}»).`;
+      const dupP = S.datos.Proyectos.find((p) => lc(p.Codigo_Almera) === lc(cod) && (!d || p.ID_Proyecto !== d.ID_Proyecto));
+      if (dupP) return `El código ${cod} ya está en el proyecto «${dupP.Nombre}».`;
+      return "";
+    }, { init, despues: historial, eliminar: nuevo || d.Estado === "Convertida" || !decideDemanda() ? null : { texto: "Eliminar demanda", mensaje: `Se borrará la demanda ${d.Codigo_Almera}. Si solo no avanzó, mejor recházala o aplázala para que quede la trazabilidad.`,
+      accion: () => guardar(() => S.api.eliminarFilas("Demandas", "ID_Demanda", [d.ID_Demanda]), "Demanda eliminada") } });
+  }
+  function decidirDemanda(d, sugerida) {
+    const ultimo = leerLocal("pmo_decide", "");
+    modal(`Decisión del comité · ${d.Codigo_Almera}`, [
+      { k: "Decision", label: "Decisión", tipo: "select", opciones: DECISIONES, def: sugerida || "Aprobada" },
+      { k: "Fecha_Decision", label: "Fecha del comité", tipo: "date", def: R.hoyISO() },
+      { k: "Decidido_Por", label: "Aprobado / decidido por", recurso: true, def: ultimo, placeholder: "Quien aprueba en el comité" },
+      { k: "Comentario_Decision", label: "Observaciones / condiciones", tipo: "textarea", ancho: true },
+    ], {}, (fd) => {
+      guardarLocal("pmo_decide", fd.Decidido_Por || "");
+      guardar(async () => {
+        if (fd.Decidido_Por) await asegurarRecurso({ Nombre: fd.Decidido_Por });
+        await S.api.actualizarPorId("Demandas", "ID_Demanda", d.ID_Demanda, { Estado: fd.Decision, Fecha_Decision: fd.Fecha_Decision, Decidido_Por: fd.Decidido_Por, Comentario_Decision: fd.Comentario_Decision, Fecha_Estado: R.hoyISO() });
+      }, `Demanda ${d.Codigo_Almera}: ${fd.Decision}`);
+    }, null, { antes: `<div class="resumen-filtro"><b>${esc(d.Nombre)}</b><br>Puntaje ${puntajeDemanda(d) ?? "sin calificar"}${obligatoria(d) ? " · Obligatoria" : ""} · ${esc(d.Tipo || "")} · ${esc(d.Area || "")}</div>` });
+  }
+  // Crea el proyecto con los datos de la demanda y deja ambos enlazados.
+  function convertirDemanda(d) {
+    const pref = { Nombre: d.Nombre, Cliente_Area: d.Area, PM: d.PM_Asignado, Codigo_Almera: d.Codigo_Almera, Estado: "Activo", Fase: "Inicio", Presupuesto: d.Costo_Estimado || 0,
+      Valor: d.Valor, Urgencia: d.Urgencia, Riesgo_Prio: d.Riesgo_Prio, Esfuerzo: d.Esfuerzo, Comentario_Estado: `Viene de la demanda ${d.Codigo_Almera}. ${d.Descripcion || ""}`.trim() };
+    formProyecto(null, pref, async (idProyecto) => {
+      await S.api.actualizarPorId("Demandas", "ID_Demanda", d.ID_Demanda, { Estado: "Convertida", ID_Proyecto: idProyecto, Fecha_Estado: R.hoyISO() });
+      const personas = [["Sponsor", d.Sponsor], ["Solicitante", d.Solicitante]].filter(([, n]) => n);
+      if (personas.length) {
+        const recs = [];
+        for (const [, n] of personas) recs.push(await asegurarRecurso({ Nombre: n }));
+        await S.api.agregarFilas("Stakeholders", personas.map(([rol, n], i) => { const r = recs[i] || {}; return { ID_Stakeholder: R.siguienteIdHijo("STK", S.datos.Stakeholders || [], "ID_Stakeholder", idProyecto, i), ID_Proyecto: idProyecto,
+          Rol: rol, Nombre: r.Nombre || n, Cargo: r.Cargo || "", Area: r.Area || "", Correo: r.Correo || "", Telefono: r.Telefono || "", ID_Proveedor: r.ID_Proveedor || "", ID_Recurso: r.ID_Recurso || "" }; }));
+      }
+    });
+  }
+  function formPesos() {
+    const w = pesosDemanda();
+    modal("Pesos de priorización", CRITERIOS_DEM.map((c) => ({ k: c.k, label: `${c.t} (%)`, tipo: "number", min: 0, max: 100, def: w[c.k] })), {}, (fd) => guardar(async () => {
+      const viejos = (S.datos.Catalogos || []).filter((c) => c.Lista === "Peso_Prioridad");
+      for (const v of viejos) await S.api.eliminarFila("Catalogos", { Lista: "Peso_Prioridad", Valor: v.Valor });
+      await S.api.agregarFilas("Catalogos", CRITERIOS_DEM.map((c) => ({ Lista: "Peso_Prioridad", Valor: `${c.k}:${Number(fd[c.k]) || 0}` })));
+    }, "Pesos actualizados"), (fd) => { const t = CRITERIOS_DEM.reduce((a, c) => a + (Number(fd[c.k]) || 0), 0); return t !== 100 ? `Los pesos deben sumar 100% (hoy suman ${t}%).` : ""; },
+    { antes: `<p class="sub">Cuánto pesa cada criterio en el puntaje (deben sumar 100%). Aplica a todas las demandas; lo regulatorio u obligatorio siempre va primero.</p>` });
+  }
+  function agendaComite() {
+    const lista = demandas().filter((d) => ["En comité", "Priorizada"].includes(d.Estado)).sort(ordenRanking);
+    const t = (v) => esc(v === 0 ? "0" : v || "—");
+    const doc = `${cabDocumento("Agenda del comité de priorización", "Backlog de demanda", `${lista.length} demanda(s) para decisión · ${fecha(R.hoyISO())}`)}
+      <h2>Demandas para decisión (orden sugerido)</h2>
+      ${lista.length ? `<table class="hv-t"><thead><tr><th>#</th><th>Almera</th><th>Iniciativa</th><th>Tipificación</th><th>Puntaje</th><th>Solicitante / sponsor</th><th>PM</th><th>Decisión</th></tr></thead><tbody>
+        ${lista.map((d, i) => `<tr><td>${i + 1}</td><td class="hv-nw"><b>${t(d.Codigo_Almera)}</b></td><td><b>${t(d.Nombre)}</b><br><small>${t(d.Descripcion)}</small>${d.Beneficio ? `<br><small><b>Beneficio:</b> ${t(d.Beneficio)}</small>` : ""}</td>
+          <td>${t(d.Tipo)}<br><small>${t(d.Categoria)} · ${t(d.Area)}${d.Tamano ? ` · Talla ${esc(d.Tamano)}` : ""}${obligatoria(d) ? " · <b>Obligatoria</b>" : ""}</small></td>
+          <td class="hv-nw"><b>${puntajeDemanda(d) ?? "—"}</b></td><td>${t(d.Solicitante)}<br><small>${t(d.Sponsor)}</small></td><td>${t(nombreUsuario(d.PM_Asignado))}</td><td style="min-width:90px">☐ Aprobar<br>☐ Aplazar<br>☐ Rechazar</td></tr>`).join("")}</tbody></table>`
+        : `<p class="hv-vacio">No hay demandas en estado «Priorizada» o «En comité».</p>`}
+      <h2>Criterios y pesos</h2><p class="hv-p">${CRITERIOS_DEM.map((c) => `${esc(c.t)} ${pesosDemanda()[c.k]}%${c.inv ? " (a menor, mejor)" : ""}`).join(" · ")}. Las demandas regulatorias u obligatorias van primero.</p>
+      <footer class="hv-pie">Fundación Santa Fe de Bogotá · Oficina de Proyectos · Agenda del comité de priorización</footer>`;
+    mostrarDocumento("Agenda del comité", doc, `Agenda comite priorizacion ${R.hoyISO()}`);
+  }
 
   // ---------- Tickets del helpdesk ----------
   const ticketsDe = (pid) => (S.datos.Tickets || []).filter((t) => t.ID_Proyecto === pid);
@@ -3316,7 +3569,7 @@
       }, "Proveedor eliminado") } });
   }
 
-  function formProyecto(p) {
+  function formProyecto(p, pref, alCrear) {
     const u = S.usuario;
     const nuevo = !p;
     const pmFijo = R.soloPM(u);
@@ -3359,7 +3612,7 @@
       { seccion: "9. Comentario" },
       { k: "Comentario_Estado", label: "Comentario de estado", tipo: "textarea", placeholder: "Novedad principal del proyecto" },
     ];
-    const valores = p ? { ...p } : { PM: pmFijo ? u.Correo : "" };
+    const valores = p ? { ...p } : { ...(pref || {}), PM: pmFijo ? u.Correo : (pref && pref.PM) || "" };
     // Equipo: personas nuevas se guardan con el proyecto; los roles nuevos van de una vez al catálogo.
     const pendStk = [];
     const initEquipo = (m) => {
@@ -3481,7 +3734,7 @@
         const fila = { ...fd, Nombre: fd.Nombre || `Iniciativa ${id}`, ID_Proyecto: id, Avance_Real: fd.Avance_Real === "" ? 0 : fd.Avance_Real, ...sello() };
         S.pid = fila.ID_Proyecto;
         S.vista = "ficha";
-        guardar(async () => { await S.api.agregarFila("Proyectos", fila); await guardarEquipo(id); }, `Iniciativa ${fila.ID_Proyecto} registrada`);
+        guardar(async () => { await S.api.agregarFila("Proyectos", fila); await guardarEquipo(id); if (alCrear) await alCrear(id); }, `Iniciativa ${fila.ID_Proyecto} registrada`);
       } else {
         const seCierra = fd.Estado === "Cerrado" && p.Estado !== "Cerrado";
         if (seCierra) S.fichaTab = "lecciones";

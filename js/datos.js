@@ -29,6 +29,9 @@
     Dependencias: ["ID_Dependencia", "ID_Proyecto", "Depende_De", "Tipo", "Descripcion"],
     // Directorio único de personas (recursos) del portafolio.
     Recursos: ["ID_Recurso", "Nombre", "Correo", "Cargo", "Area", "Telefono", "ID_Proveedor", "Capacidad", "Activo"],
+    // Backlog de demanda: iniciativas asignadas por Gestión de la Demanda (llave: código Almera).
+    Demandas: ["ID_Demanda", "Codigo_Almera", "Nombre", "Descripcion", "Beneficio", "Area", "Solicitante", "Sponsor", "Fecha_Recepcion", "Fecha_Deseada", "Tipo", "Categoria", "Tamano", "Obligatorio",
+      "Costo_Estimado", "PM_Asignado", "Valor", "Alineacion", "Impacto_Paciente", "Urgencia", "Riesgo_Prio", "Esfuerzo", "Estado", "Fecha_Estado", "Fecha_Decision", "Decidido_Por", "Comentario_Decision", "ID_Proyecto", "Registrado_Por"],
     // Registro de auditoría: quién cambió qué y cuándo.
     Auditoria: ["Fecha_Hora", "Usuario", "Tabla", "ID_Registro", "ID_Proyecto", "Accion", "Detalle"],
     // Filtros guardados por cada usuario (y los que Admin/PMO comparten con todos).
@@ -46,7 +49,7 @@
     Compromisos: ["Correo_Responsable", "Dias_Alerta"],
     Comentarios: ["Adjuntos"],
   };
-  const COLS_FECHA = ["Fecha_Identificacion", "Fecha_Fin_Base", "Nueva_Fecha_Fin", "Fecha_Decision", "Fecha", "Fecha_Registro", "Fecha_Inicio", "Fecha_Fin_Plan", "Actualizado_El", "Fecha_Plan", "Fecha_Real", "Fecha_Corte", "Fecha_Compromiso", "Fecha_Cierre", "Fecha_Acta"];
+  const COLS_FECHA = ["Fecha_Recepcion", "Fecha_Deseada", "Fecha_Estado", "Fecha_Identificacion", "Fecha_Fin_Base", "Nueva_Fecha_Fin", "Fecha_Decision", "Fecha", "Fecha_Registro", "Fecha_Inicio", "Fecha_Fin_Plan", "Actualizado_El", "Fecha_Plan", "Fecha_Real", "Fecha_Corte", "Fecha_Compromiso", "Fecha_Cierre", "Fecha_Acta"];
 
   // Excel puede convertir "2026-09-28" en número de serie; aquí se devuelve a texto ISO.
   const serialAISO = (v) => new Date(Math.round((v - 25569) * 86400000)).toISOString().slice(0, 10);
