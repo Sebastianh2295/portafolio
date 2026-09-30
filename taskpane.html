@@ -4,7 +4,7 @@
   <script>
     /* Actualización automática: si GitHub tiene una versión más nueva que la guardada en caché
        por Excel, se recarga la página con esa versión. */
-    window.APP_VERSION = "23";
+    window.APP_VERSION = "24";
     (function () {
       try {
         fetch("version.json?t=" + Date.now(), { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (j) {
@@ -20,7 +20,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Portafolio PMO</title>
-  <link rel="stylesheet" href="css/estilos.css?v=23">
+  <link rel="stylesheet" href="css/estilos.css?v=24">
   <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
   <style>
     .pane { padding: 18px; }
@@ -37,7 +37,7 @@
     <div id="estado" class="sub">Conectando con Excel…</div>
     <div class="sub" style="margin-top:14px">Versión <span id="ver"></span></div>
   </div>
-  <script src="js/datos.js?v=23"></script>
+  <script src="js/datos.js?v=24"></script>
   <script>
     /* Este panel es el "puente": la ventana grande no puede leer Excel directamente,
        así que le envía sus pedidos a este panel, que los ejecuta con Office.js y responde. */

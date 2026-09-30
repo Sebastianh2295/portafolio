@@ -751,24 +751,127 @@
       .sort((a, b) => (b.mio - a.mio) || String(a.c.Fecha_Compromiso || "9999").localeCompare(String(b.c.Fecha_Compromiso || "9999")));
     return { vencidos: lista.filter((x) => x.e === "Vencido"), pronto: lista.filter((x) => x.e === "Por vencer") };
   }
-  function correoRecordatorio(items) {
-    const para = [...new Set(items.map((x) => correoDe(x.c)).filter(Boolean))];
-    const uno = items.length === 1 ? items[0].c : null;
-    const asunto = uno ? `Recordatorio: «${uno.Compromiso}» ${R.estadoCompromiso(uno) === "Vencido" ? "está vencido" : `vence el ${fecha(uno.Fecha_Compromiso)}`}` : `Recordatorio: ${items.length} compromisos pendientes`;
-    const cuerpo = `Hola,\n\nTe recuerdo ${items.length === 1 ? "este compromiso" : "estos compromisos"} del portafolio de proyectos:\n\n` +
-      items.map((x) => { const p = proyecto(x.c.ID_Proyecto) || {}; return `• ${x.c.Compromiso}\n  Proyecto: ${p.Nombre || x.c.ID_Proyecto}\n  Fecha límite: ${x.c.Fecha_Compromiso ? fecha(x.c.Fecha_Compromiso) : "sin fecha"} (${R.estadoCompromiso(x.c)})`; }).join("\n\n") +
-      `\n\nPor favor cuéntame cómo va o si necesitas apoyo.\n\nGracias,\n${S.usuario.Nombre || S.usuario.Correo}`;
-    return { para, asunto, cuerpo, href: `mailto:${para.join(";")}?subject=${encodeURIComponent(asunto)}&body=${encodeURIComponent(cuerpo)}` };
+  // ---------- Correo de recordatorio estructurado ----------
+  const validoCorreo = (c) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(c || "").trim());
+  const pila = (nombre) => { const t = String(nombre || "").replace(/@.*/, "").trim().split(/\s+/)[0] || ""; return t ? t.charAt(0).toUpperCase() + t.slice(1).toLowerCase() : ""; };
+  function venceTexto(c) {
+    if (!c.Fecha_Compromiso) return "sin fecha definida";
+    const d = R.difDias(c.Fecha_Compromiso, R.hoyISO());
+    return d === 0 ? "vence hoy" : d === 1 ? "vence mañana" : d > 1 ? `vence en ${d} días` : `venció hace ${-d} día${d === -1 ? "" : "s"}`;
   }
-  // Abre el correo en Outlook y deja constancia en el hilo de cada compromiso.
-  async function enviarRecordatorio(items) {
-    const m = correoRecordatorio(items);
-    const a = document.createElement("a"); a.href = m.href; a.target = "_blank"; a.rel = "noopener"; document.body.appendChild(a); a.click(); a.remove();
-    try {
-      await S.api.agregarFilas("Comentarios", items.map((x) => nuevoComentario(x.c, `Recordatorio enviado por correo${m.para.length ? ` a ${m.para.join(", ")}` : ""}.`)));
-      await recargar();
-    } catch (e) { /* el correo ya se abrió; la constancia es opcional */ }
-    return m;
+  // Último avance real (sin las constancias automáticas de la app).
+  function ultimoAvance(c) {
+    const auto = /^(Recordatorio enviado|Compromiso (cerrado|en curso|reabierto)|Marcado como cumplido|Cerrado en la sesión)/i;
+    const l = comentariosDe(c.ID_Compromiso).filter((x) => x.Texto && !auto.test(x.Texto));
+    const u = l[l.length - 1];
+    return u ? `«${u.Texto}» (${fechaHora(u.Fecha_Hora)})` : "";
+  }
+  const sesionDe = (c) => (c.ID_Seguimiento ? S.datos.Seguimientos.find((s) => s.ID_Seguimiento === c.ID_Seguimiento) : null);
+  function correoRecordatorio(items, ccElegidos) {
+    const cs = items.map((x) => x.c);
+    const para = [...new Set(cs.map(correoDe).filter(validoCorreo))];
+    const nombres = [...new Set(cs.map((c) => (recursoPor({ correo: correoDe(c), nombre: c.Responsable }) || {}).Nombre || c.Responsable).filter(Boolean))];
+    const saludo = nombres.length === 1 ? `Hola, ${pila(nombres[0])}:` : "Hola:";
+    const proys = [...new Set(cs.map((c) => c.ID_Proyecto))].map(proyecto).filter(Boolean);
+    const unoP = proys.length === 1 ? proys[0] : null;
+    const vencidos = cs.filter((c) => R.estadoCompromiso(c) === "Vencido");
+    const u = S.usuario, yo = recursoPor({ correo: u.Correo, nombre: u.Nombre }) || {};
+    const firma = ["Cordialmente,", yo.Nombre || u.Nombre || u.Correo,
+      [yo.Cargo, unoP && lc(unoP.PM) === lc(u.Correo) ? `PM · Proyecto ${unoP.Nombre}` : unoP ? `Proyecto ${unoP.Nombre}` : "", "Oficina de Proyectos FSFB"].filter(Boolean).join(" · ")].join("\n");
+    const detalle = (c, conProy) => [
+      `Compromiso: ${c.Compromiso}`,
+      conProy ? `Proyecto: ${(proyecto(c.ID_Proyecto) || {}).Nombre || c.ID_Proyecto}` : "",
+      `Responsable: ${c.Responsable || "—"}`,
+      `Fecha límite: ${c.Fecha_Compromiso ? fecha(c.Fecha_Compromiso) : "sin fecha"} (${venceTexto(c)})`,
+      `Estado actual: ${R.estadoBase(c)}`,
+      ultimoAvance(c) ? `Último avance registrado: ${ultimoAvance(c)}` : "",
+    ].filter(Boolean).join("\n");
+    let asunto, intro, cuerpoItems, cierre;
+    if (cs.length === 1) {
+      const c = cs[0], s = sesionDe(c), p = proyecto(c.ID_Proyecto) || {};
+      asunto = `${p.Nombre || "Proyecto"} · Recordatorio de compromiso · ${R.estadoCompromiso(c) === "Vencido" ? `vencido desde el ${fecha(c.Fecha_Compromiso)}` : c.Fecha_Compromiso ? `vence el ${fecha(c.Fecha_Compromiso)}` : "pendiente"}`;
+      intro = s ? `De acuerdo con la sesión de seguimiento del proyecto ${p.Nombre} realizada el ${fecha(s.Fecha_Corte)}${s.Fecha_Acta ? ` (acta del ${fecha(s.Fecha_Acta)})` : ""}, quedó a tu cargo el siguiente compromiso:`
+        : `En el marco del seguimiento del proyecto ${p.Nombre}, quedó registrado a tu cargo el siguiente compromiso:`;
+      cuerpoItems = detalle(c, false) + (s && esURL(s.URL_Acta) ? `\n\nActa de la sesión: ${s.URL_Acta}` : "");
+      cierre = R.estadoCompromiso(c) === "Vencido"
+        ? `A la fecha no tenemos registro de su cierre. Te agradecemos indicarnos el estado actual y una nueva fecha de entrega, para reflejarlo en el seguimiento del proyecto. Si hay algún impedimento, avísanos para revisarlo juntos.`
+        : `Agradecemos tu gestión y el avance en este compromiso. Te pedimos confirmarnos cómo va y, si ya está listo, compartirnos la evidencia para cerrarlo en el próximo seguimiento. Si necesitas apoyo o ves algún riesgo para cumplir la fecha, avísanos para revisarlo.`;
+    } else {
+      asunto = `${unoP ? `${unoP.Nombre} · ` : ""}Recordatorio de ${cs.length} compromisos pendientes${vencidos.length ? ` (${vencidos.length} vencido${vencidos.length > 1 ? "s" : ""})` : ""}`;
+      intro = `De acuerdo con los seguimientos realizados${unoP ? ` al proyecto ${unoP.Nombre}` : ""}, tienes los siguientes compromisos pendientes:`;
+      const grupos = {};
+      cs.forEach((c) => { const s = sesionDe(c); const k = s ? `${s.Fecha_Corte}|${s.ID_Seguimiento}` : `9999|${c.ID_Proyecto}`; (grupos[k] = grupos[k] || { s, p: proyecto(c.ID_Proyecto), l: [] }).l.push(c); });
+      let n = 0;
+      cuerpoItems = Object.keys(grupos).sort().map((k) => { const g = grupos[k];
+        const cab = g.s ? `Sesión de seguimiento del ${fecha(g.s.Fecha_Corte)}${g.s.Fecha_Acta ? ` (acta del ${fecha(g.s.Fecha_Acta)})` : ""}${unoP ? "" : ` · ${(g.p || {}).Nombre || ""}`}:` : `Registrados en el proyecto${unoP ? "" : ` ${(g.p || {}).Nombre || ""}`}:`;
+        return `${cab}\n` + g.l.map((c) => `${++n}. ${detalle(c, false).replace(/\n/g, "\n   ")}`).join("\n\n"); }).join("\n\n");
+      cierre = `Agradecemos tu gestión y el avance en estos compromisos. Te pedimos confirmarnos el estado de cada uno${vencidos.length ? " y, para los vencidos, una nueva fecha de entrega" : ""}. Si necesitas apoyo, avísanos para revisarlo.`;
+    }
+    const cuerpo = `${saludo}\n\n${intro}\n\n${cuerpoItems}\n\n${cierre}\n\n${firma}`;
+    const cc = [...new Set((ccElegidos || []).map((x) => String(x).trim()).filter((x) => validoCorreo(x) && !para.some((d) => lc(d) === lc(x))))];
+    const href = `mailto:${para.join(";")}?${cc.length ? `cc=${encodeURIComponent(cc.join(";"))}&` : ""}subject=${encodeURIComponent(asunto)}&body=${encodeURIComponent(cuerpo)}`;
+    return { para, cc, asunto, cuerpo, href };
+  }
+  // Candidatos a copia: lista fija (Catálogos), PM y stakeholders de los proyectos involucrados.
+  function candidatosCopia(items) {
+    const u = S.usuario, out = [];
+    const agregar = (correo, nombre, motivo) => { if (!validoCorreo(correo) || out.some((x) => lc(x.correo) === lc(correo))) return; out.push({ correo: String(correo).trim(), nombre, motivo }); };
+    (S.cat.Copia_Recordatorios || []).forEach((c) => agregar(c, (recursoPor({ correo: c }) || {}).Nombre || c, "Copia fija"));
+    [...new Set(items.map((x) => x.c.ID_Proyecto))].forEach((pid) => {
+      const p = proyecto(pid); if (!p) return;
+      if (lc(p.PM) !== lc(u.Correo)) agregar(p.PM, nombreUsuario(p.PM), `PM · ${p.Nombre}`);
+      stakeholdersDe(pid).forEach((x) => agregar(x.Correo, x.Nombre, `${x.Rol || "Stakeholder"} · ${p.Nombre}`));
+    });
+    return out;
+  }
+  // Muestra destinatarios (con copia editable) y la vista previa; abre el correo y deja constancia.
+  function enviarRecordatorio(items) {
+    return new Promise((resolver) => {
+      const para = [...new Set(items.map((x) => correoDe(x.c)).filter(validoCorreo))];
+      const cand = candidatosCopia(items).filter((x) => !para.some((d) => lc(d) === lc(x.correo)));
+      const o = document.createElement("div");
+      o.id = "recordatorio";
+      o.innerHTML = `<div class="modal-caja rec-caja" role="dialog" aria-modal="true" aria-label="Recordatorio por correo">
+        <div class="titulo-fila"><h2>✉ Recordatorio por correo</h2><button class="btn enlace" id="rc-x" aria-label="Cerrar">✕</button></div>
+        <div class="rec-dest"><b>Para:</b> ${para.length ? para.map((c) => `<span class="chip-mail">${esc(c)}</span>`).join(" ") : `<span class="baja">El responsable no tiene correo registrado: escríbelo en Outlook.</span>`}</div>
+        <div class="rec-dest"><b>Con copia a:</b> <span class="sub">desmarca a quien no aplique</span>
+          <div class="rec-cc">${cand.map((x, i) => `<label class="check"><input type="checkbox" class="rc-cc" data-i="${i}" checked> ${esc(x.nombre)} <span class="sub">${esc(x.correo)} · ${esc(x.motivo)}</span></label>`).join("") || `<span class="sub">No hay stakeholders con correo ni copia fija. La copia fija se configura en Catálogos.</span>`}</div>
+          <input id="rc-otros" placeholder="Otros correos en copia, separados por coma" aria-label="Otros correos en copia"></div>
+        <details class="rec-prev" open><summary>Vista previa del correo</summary><div class="rec-asunto" id="rc-asunto"></div><pre id="rc-cuerpo"></pre></details>
+        <div class="error-campo" id="rc-err"></div>
+        <div class="acciones derecha"><button class="btn" id="rc-copiar" title="Por si Outlook no abre el correo">Copiar texto</button><button class="btn" id="rc-cancelar">Cancelar</button><button class="btn primario" id="rc-abrir">Abrir en Outlook</button></div>
+      </div>`;
+      document.body.appendChild(o);
+      const elegidos = () => [...o.querySelectorAll(".rc-cc:checked")].map((c) => cand[Number(c.dataset.i)].correo)
+        .concat(String(o.querySelector("#rc-otros").value || "").split(/[,;\s]+/).filter(Boolean));
+      const previa = () => { const m = correoRecordatorio(items, elegidos()); o.querySelector("#rc-asunto").textContent = `Asunto: ${m.asunto}${m.cc.length ? `  ·  CC: ${m.cc.length}` : ""}`; o.querySelector("#rc-cuerpo").textContent = m.cuerpo; return m; };
+      previa();
+      o.querySelectorAll(".rc-cc").forEach((c) => c.addEventListener("change", previa));
+      o.querySelector("#rc-otros").addEventListener("input", previa);
+      const cerrar = (r) => { o.remove(); resolver(r); };
+      o.querySelector("#rc-x").addEventListener("click", () => cerrar(null));
+      o.querySelector("#rc-cancelar").addEventListener("click", () => cerrar(null));
+      o.addEventListener("keydown", (e) => { if (e.key === "Escape") cerrar(null); });
+      o.querySelector("#rc-copiar").addEventListener("click", async () => {
+        const m = previa();
+        try { await navigator.clipboard.writeText(`Para: ${m.para.join("; ")}\nCC: ${m.cc.join("; ")}\nAsunto: ${m.asunto}\n\n${m.cuerpo}`); toast("Texto copiado: pégalo en un correo nuevo"); }
+        catch (e) { o.querySelector("#rc-err").textContent = "No se pudo copiar automáticamente; selecciona el texto de la vista previa."; }
+      });
+      o.querySelector("#rc-abrir").addEventListener("click", async () => {
+        const otros = String(o.querySelector("#rc-otros").value || "").split(/[,;\s]+/).filter(Boolean);
+        const malos = otros.filter((x) => !validoCorreo(x));
+        if (malos.length) { o.querySelector("#rc-err").textContent = `Correo no válido: ${malos.join(", ")}`; return; }
+        const m = previa();
+        const a = document.createElement("a"); a.href = m.href; a.target = "_blank"; a.rel = "noopener"; document.body.appendChild(a); a.click(); a.remove();
+        o.remove();
+        try {
+          await S.api.agregarFilas("Comentarios", items.map((x) => nuevoComentario(x.c, `Recordatorio enviado por correo${m.para.length ? ` a ${m.para.join(", ")}` : ""}${m.cc.length ? ` con copia a ${m.cc.join(", ")}` : ""}.`)));
+          await recargar();
+        } catch (e) { /* el correo ya se abrió; la constancia es opcional */ }
+        resolver(m);
+      });
+      o.querySelector("#rc-abrir").focus();
+    });
   }
   function panelAlertas() {
     const a = alertas();
@@ -802,11 +905,13 @@
     m.querySelectorAll("[data-al-abrir]").forEach((b) => b.addEventListener("click", () => detalleCompromiso(b.dataset.alAbrir)));
     m.querySelectorAll("[data-al-mail]").forEach((b) => b.addEventListener("click", async () => {
       const r = await enviarRecordatorio([buscar(b.dataset.alMail)]);
+      if (!r) return;
       b.textContent = "✓ Correo abierto"; b.disabled = true;
       toast(r.para.length ? `Correo listo para ${r.para.join(", ")}` : "Correo abierto: escribe el destinatario (el compromiso no tiene correo del responsable).");
     }));
     m.querySelectorAll("[data-al-grupo]").forEach((b) => b.addEventListener("click", async () => {
       const r = await enviarRecordatorio(grupos[Number(b.dataset.alGrupo)][1]);
+      if (!r) return;
       b.textContent = "✓ Correo abierto"; b.disabled = true;
       toast(`Correo listo para ${r.para.join(", ") || "el responsable"}`);
     }));
@@ -981,7 +1086,7 @@
     if ($("#d-encurso")) $("#d-encurso").addEventListener("click", () => accion(txt.value.trim() || "Compromiso en curso.", "En curso", "Compromiso en curso"));
     if ($("#d-reabrir")) $("#d-reabrir").addEventListener("click", () => accion(txt.value.trim() || "Compromiso reabierto.", "Pendiente", "Compromiso reabierto"));
     $("#d-editar").addEventListener("click", () => formCompromiso(c));
-    if ($("#d-recordar")) $("#d-recordar").addEventListener("click", async () => { await enviarRecordatorio([{ c }]); render(); detalleCompromiso(id); toast("Correo de recordatorio abierto en tu Outlook"); });
+    if ($("#d-recordar")) $("#d-recordar").addEventListener("click", async () => { const r = await enviarRecordatorio([{ c }]); if (!r) return; render(); detalleCompromiso(id); toast("Correo de recordatorio abierto en tu Outlook"); });
   }
 
   // ---------- Proyectos ----------
@@ -1235,6 +1340,7 @@
     { lista: "Estado_Ticket", t: "Estado del ticket (helpdesk)", campo: "Estado", tabla: "Tickets", idCol: "ID_Ticket" },
     { lista: "Tipo_Cambio", t: "Tipo de cambio", campo: "Tipo", tabla: "Cambios", idCol: "ID_Cambio" },
     { lista: "Categoria_Leccion", t: "Categoría de lección aprendida", campo: "Categoria", tabla: "Lecciones", idCol: "ID_Leccion" },
+    { lista: "Copia_Recordatorios", t: "Copia fija de recordatorios (correos)", campo: "", tabla: "__ninguna", correo: true },
   ];
   const filasCat = (c) => (S.datos[c.tabla || "Proyectos"] || []);
   const CATALOGOS_FIJOS = { Estado: "Estado del proyecto", Semaforo: "Semáforo", Frecuencia_Seguimiento: "Frecuencia de seguimiento",
@@ -1252,11 +1358,11 @@
           const valores = S.cat[c.lista] || [];
           return `<div class="card" data-anchor="cat-${c.lista}">
             <h2>${esc(c.t)}</h2>
-            <p class="sub">${c.tabla ? "Entre paréntesis: registros que usan cada valor." : "Entre paréntesis: proyectos que usan cada valor."}</p>
-            <ul class="cat-lista">${valores.map((v) => `<li><span class="cat-valor">${esc(v)} <span class="contador" title="En uso">${enUso(c, v)}</span></span>
+            <p class="sub">${c.correo ? "Estos correos quedan en copia (y se pueden desmarcar) en cada recordatorio de compromisos." : c.tabla ? "Entre paréntesis: registros que usan cada valor." : "Entre paréntesis: proyectos que usan cada valor."}</p>
+            <ul class="cat-lista">${valores.map((v) => `<li><span class="cat-valor">${esc(v)} ${c.correo ? "" : `<span class="contador" title="En uso">${enUso(c, v)}</span>`}</span>
               <span class="cat-acc"><button class="btn chico" data-renombrar="${esc(c.lista)}" data-valor="${esc(v)}" title="Renombrar">✎ Renombrar</button><button class="btn chico" data-quitar="${esc(c.lista)}" data-valor="${esc(v)}" title="Quitar">✕</button></span></li>`).join("") || `<li>${vacio("Sin valores.")}</li>`}</ul>
             <form class="cat-agregar" data-lista="${esc(c.lista)}" novalidate>
-              <input name="valor" placeholder="Nuevo valor" aria-label="Nuevo valor para ${esc(c.t)}">
+              <input name="valor" type="${c.correo ? "email" : "text"}" placeholder="${c.correo ? "nombre@fsfb.org.co" : "Nuevo valor"}" aria-label="Nuevo valor para ${esc(c.t)}">
               <button class="btn primario" type="submit">Agregar</button>
             </form>
             <div class="error-campo" data-e-cat="${esc(c.lista)}" role="alert"></div>
@@ -1286,7 +1392,9 @@
         const valor = f.valor.value.trim();
         if (!valor) { err.textContent = "Escribe el valor que quieres agregar."; return; }
         if ((S.cat[lista] || []).some((v) => lc(v) === lc(valor))) { err.textContent = "Ese valor ya existe en la lista."; return; }
-        if (valor.length > 60) { err.textContent = "Máximo 60 caracteres."; return; }
+        const esCorreo = (CATALOGOS_EDITABLES.find((x) => x.lista === lista) || {}).correo;
+        if (esCorreo && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(valor)) { err.textContent = "Escribe un correo válido."; return; }
+        if (valor.length > (esCorreo ? 120 : 60)) { err.textContent = "Demasiado largo."; return; }
         guardar(() => S.api.agregarFila("Catalogos", { Lista: lista, Valor: valor }), `«${valor}» agregado`);
       });
     });
@@ -1314,7 +1422,7 @@
       const lista = b.dataset.quitar, valor = b.dataset.valor;
       const c = CATALOGOS_EDITABLES.find((x) => x.lista === lista);
       const err = el.querySelector(`[data-e-cat="${lista}"]`);
-      if ((S.cat[lista] || []).length <= 1) { err.textContent = "La lista debe tener al menos un valor."; return; }
+      if (!c.correo && (S.cat[lista] || []).length <= 1) { err.textContent = "La lista debe tener al menos un valor."; return; }
       const n = enUso(c, valor);
       confirmar(`Quitar «${valor}»`,
         n ? `${n} ${c.tabla ? "registro(s)" : "proyecto(s)"} usan este valor. Lo conservarán, pero ya no aparecerá como opción en los formularios.` : `«${valor}» dejará de aparecer en ${c.t}.`,
