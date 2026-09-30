@@ -857,18 +857,28 @@
         try { await navigator.clipboard.writeText(`Para: ${m.para.join("; ")}\nCC: ${m.cc.join("; ")}\nAsunto: ${m.asunto}\n\n${m.cuerpo}`); toast("Texto copiado: pégalo en un correo nuevo"); }
         catch (e) { o.querySelector("#rc-err").textContent = "No se pudo copiar automáticamente; selecciona el texto de la vista previa."; }
       });
-      o.querySelector("#rc-abrir").addEventListener("click", async () => {
+      o.querySelector("#rc-abrir").addEventListener("click", () => {
         const otros = String(o.querySelector("#rc-otros").value || "").split(/[,;\s]+/).filter(Boolean);
         const malos = otros.filter((x) => !validoCorreo(x));
         if (malos.length) { o.querySelector("#rc-err").textContent = `Correo no válido: ${malos.join(", ")}`; return; }
         const m = previa();
         const a = document.createElement("a"); a.href = m.href; a.target = "_blank"; a.rel = "noopener"; document.body.appendChild(a); a.click(); a.remove();
-        o.remove();
-        try {
-          await S.api.agregarFilas("Comentarios", items.map((x) => nuevoComentario(x.c, `Recordatorio enviado por correo${m.para.length ? ` a ${m.para.join(", ")}` : ""}${m.cc.length ? ` con copia a ${m.cc.join(", ")}` : ""}.`)));
-          await recargar();
-        } catch (e) { /* el correo ya se abrió; la constancia es opcional */ }
-        resolver(m);
+        // Solo se deja constancia si la persona confirma que lo envió.
+        o.querySelector(".rec-caja").innerHTML = `<div class="titulo-fila"><h2>✉ ¿Enviaste el correo?</h2></div>
+          <p>Se abrió el correo en Outlook. Cuando lo envíes, confírmalo aquí para dejar constancia en el seguimiento del compromiso.</p>
+          <p class="sub">Para: ${esc(m.para.join(", ") || "—")}${m.cc.length ? `<br>CC: ${esc(m.cc.join(", "))}` : ""}</p>
+          <div class="acciones derecha"><button class="btn" id="rc-no">No lo envié</button><button class="btn" id="rc-otra">Volver a abrir el correo</button><button class="btn primario" id="rc-si">Sí, lo envié</button></div>`;
+        o.querySelector("#rc-no").addEventListener("click", () => cerrar(null));
+        o.querySelector("#rc-otra").addEventListener("click", () => { const b = document.createElement("a"); b.href = m.href; b.target = "_blank"; b.rel = "noopener"; document.body.appendChild(b); b.click(); b.remove(); });
+        o.querySelector("#rc-si").addEventListener("click", async () => {
+          o.remove();
+          try {
+            await S.api.agregarFilas("Comentarios", items.map((x) => nuevoComentario(x.c, `Recordatorio enviado por correo${m.para.length ? ` a ${m.para.join(", ")}` : ""}${m.cc.length ? ` con copia a ${m.cc.join(", ")}` : ""}.`)));
+            await recargar();
+          } catch (e) { toast("No se pudo registrar la constancia: " + e.message, true); }
+          resolver(m);
+        });
+        o.querySelector("#rc-si").focus();
       });
       o.querySelector("#rc-abrir").focus();
     });
@@ -1017,7 +1027,7 @@
         ${c.Fecha_Cierre ? `<div><span class="sub">Cerrado el</span><b>${fecha(c.Fecha_Cierre)}</b></div>` : ""}
       </div>
       <div class="form-seccion">Seguimiento del compromiso <span class="contador">${coms.length}</span></div>
-      <div class="hilo">${coms.map((x) => `<div class="com"><div class="com-cab"><b>${esc(nombreUsuario(x.Autor))}</b><span class="sub">${fechaHora(x.Fecha_Hora)}</span></div>${x.Texto ? `<div class="com-texto">${esc(x.Texto)}</div>` : ""}${htmlAdjuntos(x)}</div>`).join("") || `<div class="vacio">Aún no hay comentarios. Escribe el primero: avances, dudas o bloqueos de este compromiso.</div>`}</div>
+      <div class="hilo">${coms.map((x) => `<div class="com"><div class="com-cab"><b>${esc(nombreUsuario(x.Autor))}</b><span class="sub">${fechaHora(x.Fecha_Hora)}${lc(x.Autor) === lc(S.usuario.Correo) || R.tieneRol(S.usuario, "Admin") ? ` <button class="btn enlace com-borrar" data-borrar-com="${esc(x.ID_Comentario)}" title="Eliminar este comentario">Eliminar</button>` : ""}</span></div>${x.Texto ? `<div class="com-texto">${esc(x.Texto)}</div>` : ""}${htmlAdjuntos(x)}</div>`).join("") || `<div class="vacio">Aún no hay comentarios. Escribe el primero: avances, dudas o bloqueos de este compromiso.</div>`}</div>
       ${puede ? `<textarea id="d-texto" rows="3" placeholder="Escribe un comentario: qué se avanzó, qué falta, quién debe actuar… (puedes pegar aquí una imagen con Ctrl+V)"></textarea>
         <div class="adj-barra"><button type="button" class="btn chico" id="d-adjuntar">📎 Adjuntar archivo</button><span class="sub">o pega una imagen del correo con Ctrl+V · máx. 5 MB por archivo</span></div>
         <div id="d-pend" class="adj-pend"></div>
@@ -1032,6 +1042,13 @@
     $("#d-cerrar").addEventListener("click", cerrarModal);
     m.addEventListener("keydown", (ev) => { if (ev.key === "Escape") cerrarModal(); });
     const h = $(".hilo"); h.scrollTop = h.scrollHeight;
+    m.querySelectorAll("[data-borrar-com]").forEach((b) => b.addEventListener("click", () => {
+      const x = coms.find((y) => y.ID_Comentario === b.dataset.borrarCom);
+      confirmar("Eliminar comentario", `Se eliminará el comentario «${String(x.Texto || "").slice(0, 90)}»${adjuntosDe(x).length ? " y sus adjuntos" : ""}.`, "Eliminar", async () => {
+        await guardar(async () => { await borrarAdjuntos([x]); await S.api.eliminarFilas("Comentarios", "ID_Comentario", [x.ID_Comentario]); }, "Comentario eliminado");
+        detalleCompromiso(id);
+      });
+    }));
     enlazarAdjuntos(h);
     if (!puede) return;
     const txt = $("#d-texto");
