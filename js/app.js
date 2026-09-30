@@ -241,7 +241,7 @@
           <button class="nav nav-colapsar" id="b-colapsar" title="${S.navMini ? "Expandir menú" : "Contraer menú"}">${ico(S.navMini ? "expandir" : "colapsar")}<span>Contraer menú</span></button>
         </aside>
         <div class="nav-velo" id="nav-velo"></div>
-        <main class="contenido">${migas()}<section id="vista"></section></main>
+        <main class="contenido"><div class="barra-migas">${migas()}${EXPORTADORES[S.vista] && S.datos ? `<button class="btn chico btn-exportar" id="b-exportar" title="Descarga en Excel lo que ves, con los filtros aplicados">${ico("exportar")}<span>${S.vista === "ficha" ? (S.fichaTab === "riesgos" ? "Exportar riesgos (formato FSFB)" : "Exportar proyecto a Excel") : "Exportar a Excel"}</span></button>` : ""}</div><section id="vista"></section></main>
       </div>`;
     document.querySelectorAll(".nav[data-vista]").forEach((b) => b.addEventListener("click", () => { document.body.classList.remove("nav-abierta"); ir(b.dataset.vista); }));
     document.querySelectorAll("[data-miga]").forEach((b) => b.addEventListener("click", () => ir(b.dataset.miga)));
@@ -252,6 +252,7 @@
     $("#nav-velo").addEventListener("click", () => document.body.classList.remove("nav-abierta"));
     $("#b-colapsar").addEventListener("click", () => { guardarLocal("pmo_nav_mini", !S.navMini); render(); });
     $("#b-buscar").addEventListener("click", abrirBusqueda);
+    if ($("#b-exportar")) $("#b-exportar").addEventListener("click", () => EXPORTADORES[S.vista]());
     const mu = $("#menu-usuario"), bu = $("#b-usuario");
     bu.addEventListener("click", (e) => { e.stopPropagation(); mu.hidden = !mu.hidden; bu.setAttribute("aria-expanded", String(!mu.hidden)); });
     $("#b-tema").addEventListener("click", () => { aplicarTema(oscuro ? "claro" : "oscuro"); render(); });
@@ -2696,6 +2697,7 @@
     compromiso: '<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>',
     ticket: '<path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M13 5v2M13 17v2M13 11v2"/>',
     ir: '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
+    exportar: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>',
   };
   const ico = (n, cls = "") => `<svg class="ico ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONOS[n] || ""}</svg>`;
 
@@ -2808,6 +2810,310 @@
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); abrirBusqueda(); }
   });
   document.addEventListener("click", (e) => { const mu = document.getElementById("menu-usuario"); if (mu && !mu.hidden && !e.target.closest(".ab-usuario")) mu.hidden = true; });
+
+  // ---------- Exportar a Excel (con formato) por módulo, respetando filtros ----------
+  let cargaExcelJS = null;
+  function libExcelJS() {
+    if (window.ExcelJS) return Promise.resolve(window.ExcelJS);
+    if (!cargaExcelJS) cargaExcelJS = new Promise((ok, falla) => {
+      const s = document.createElement("script");
+      s.src = new URL("lib/exceljs.min.js", location.href).href;
+      s.onload = () => ok(window.ExcelJS); s.onerror = () => falla(new Error("No se pudo cargar el generador de Excel."));
+      document.head.appendChild(s);
+    });
+    return cargaExcelJS;
+  }
+  // Riesgos tal como se ven con los filtros del panel (clave "global" o "p:<ID>").
+  function riesgosVisibles(clave, todos) {
+    const F = (S.rgF && S.rgF[clave]) || { estado: "activos", vista: "inherente" };
+    const P = F.vista === "residual" ? "Probabilidad_Residual" : "Probabilidad_Inherente", I = F.vista === "residual" ? "Impacto_Residual" : "Impacto_Inherente";
+    return todos.filter((r) => (F.estado === "todos" || (F.estado === "activos" ? riesgoActivo(r) : r.Estado === F.estado)) &&
+      (!F.nivel || nivelActual(r) === F.nivel) && (!F.resp || normTxt(r.Responsable) === normTxt(F.resp)) && (!F.origen || origenRiesgo(r) === F.origen) &&
+      (!F.q || normTxt(`${r.Descripcion} ${r.Plan_Mitigacion} ${r.Plan_Contingencia} ${r.Responsable}`).includes(normTxt(F.q))) &&
+      (!F.celda || `${Number(r[P])}-${Number(r[I])}` === F.celda) &&
+      (F.extra !== "sinPlan" || !String(r.Plan_Mitigacion || "").trim()) && (F.extra !== "sinResp" || !String(r.Responsable || "").trim()))
+      .sort((a, b) => String(a.ID_Proyecto).localeCompare(String(b.ID_Proyecto)) || numRiesgo(a) - numRiesgo(b));
+  }
+  function describirFiltrosRiesgo(clave) {
+    const F = (S.rgF && S.rgF[clave]) || {};
+    return [F.estado && F.estado !== "todos" ? `Estado: ${F.estado}` : "", F.nivel ? `Nivel: ${F.nivel}` : "", F.resp ? `Responsable: ${F.resp}` : "", F.origen ? `Origen: ${F.origen}` : "",
+      F.q ? `Búsqueda: «${F.q}»` : "", F.celda ? `Casilla del mapa P${F.celda.replace("-", " × I")} (${F.vista || "inherente"})` : "", F.extra === "sinPlan" ? "Sin plan de mitigación" : "", F.extra === "sinResp" ? "Sin responsable" : ""].filter(Boolean);
+  }
+  const filtrosGenerales = () => { const v = describirFiltro({ filtros: S.filtros, lista: S.filtrosLista }); return v.startsWith("Sin filtros") ? [] : [v]; };
+  // Colores por valor (semáforo, nivel, estado) para resaltar celdas.
+  const COLOR_CELDA = {
+    Verde: "C6EFCE", Amarillo: "FFEB9C", Rojo: "FFC7CE", Alto: "FFC7CE", Medio: "FFEB9C", Bajo: "C6EFCE",
+    Vencido: "FFC7CE", "Por vencer": "FFEB9C", Cerrado: "C6EFCE", Cumplido: "C6EFCE", "En curso": "DDEBF7", Pendiente: "F2F2F2",
+    Sobreasignado: "FFC7CE", "Al límite": "FFEB9C", Disponible: "C6EFCE", Aprobado: "C6EFCE", Rechazado: "FFC7CE", Solicitado: "FFEB9C",
+    Materializado: "FFC7CE", "En seguimiento": "DDEBF7", Abierto: "FFEB9C", Resuelto: "C6EFCE", Atrasado: "FFC7CE",
+  };
+  const aFechaX = (v) => { const m = String(v || "").match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/); return m ? new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4] || 0), Number(m[5] || 0))) : v || ""; };
+  /* hojas: [{ nombre, columnas: [{ t, v: (fila) => valor, tipo?: "fecha"|"fechahora"|"cop"|"pct"|"num"|"texto", ancho?, color?: true }], filas }] */
+  async function exportarExcel(modulo, hojas, filtros) {
+    cargando(true, "Generando Excel…");
+    try {
+      const X = await libExcelJS();
+      const wb = new X.Workbook();
+      wb.creator = "Portafolio PMO · FSFB"; wb.created = new Date();
+      const info = wb.addWorksheet("Info");
+      info.columns = [{ width: 26 }, { width: 90 }];
+      const filasInfo = [["Portafolio de Proyectos · FSFB", ""], ["Módulo", modulo], ["Generado", new Date().toLocaleString("es-CO")], ["Por", `${S.usuario.Nombre || ""} <${S.usuario.Correo}>`],
+        ["Filtros aplicados", filtros.length ? filtros.join(" · ") : "Ninguno (todo lo visible para tu rol)"], ["Contenido", hojas.map((h) => `${h.nombre}: ${h.filas.length} fila(s)`).join(" · ")]];
+      filasInfo.forEach((f) => info.addRow(f));
+      info.getCell("A1").font = { bold: true, size: 14, color: { argb: "FF104994" } };
+      for (let r = 2; r <= filasInfo.length; r++) { info.getCell(`A${r}`).font = { bold: true, color: { argb: "FF5F6B7A" } }; info.getCell(`B${r}`).alignment = { wrapText: true, vertical: "top" }; }
+      for (const h of hojas) {
+        const ws = wb.addWorksheet(h.nombre.slice(0, 31), { views: [{ state: "frozen", ySplit: 1 }] });
+        ws.columns = h.columnas.map((c) => ({ header: c.t, width: c.ancho || (c.tipo === "fecha" ? 12 : c.tipo === "cop" ? 16 : c.tipo === "pct" || c.tipo === "num" ? 11 : 22) }));
+        h.filas.forEach((f) => ws.addRow(h.columnas.map((c) => {
+          let v = c.v(f);
+          if (v === undefined || v === null) v = "";
+          if (c.tipo === "fecha" || c.tipo === "fechahora") return aFechaX(v);
+          if (c.tipo === "cop" || c.tipo === "num") return v === "" ? "" : Number(v) || 0;
+          if (c.tipo === "pct") return v === "" ? "" : (Number(v) || 0) / 100;
+          return String(v);
+        })));
+        const cab = ws.getRow(1);
+        cab.height = 22;
+        cab.eachCell((cel) => { cel.font = { bold: true, color: { argb: "FFFFFFFF" } }; cel.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF104994" } }; cel.alignment = { vertical: "middle", wrapText: true }; });
+        h.columnas.forEach((c, i) => {
+          const col = ws.getColumn(i + 1);
+          if (c.tipo === "fecha") col.numFmt = "dd/mm/yyyy";
+          if (c.tipo === "fechahora") col.numFmt = "dd/mm/yyyy hh:mm";
+          if (c.tipo === "cop") col.numFmt = '"$"#,##0';
+          if (c.tipo === "pct") col.numFmt = "0%";
+          if ((c.ancho || 22) >= 30) col.alignment = { wrapText: true, vertical: "top" };
+        });
+        ws.eachRow((row, n) => {
+          if (n === 1) return;
+          row.alignment = { vertical: "top", wrapText: true };
+          h.columnas.forEach((c, i) => {
+            const cel = row.getCell(i + 1);
+            cel.border = { bottom: { style: "thin", color: { argb: "FFE3E8EE" } } };
+            const k = c.color && COLOR_CELDA[String(cel.value)];
+            if (k) cel.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF" + k } };
+          });
+        });
+        if (h.filas.length) ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: h.columnas.length } };
+      }
+      const buf = await wb.xlsx.writeBuffer();
+      const nombre = `Portafolio_${modulo.replace(/[^\wÁÉÍÓÚáéíóúÑñ]+/g, "_")}_${R.hoyISO()}.xlsx`;
+      descargar(new Uint8Array(buf), nombre, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      toast(`Excel generado: ${nombre}`);
+    } catch (e) { toast("No se pudo generar el Excel: " + e.message + (S.modo === "panel" ? " Si el panel bloquea la descarga, abre la app en ventana grande." : ""), true); }
+    finally { cargando(false); }
+  }
+  // Riesgos en el formato FSFB (plantilla con listas desplegables), para editar y volver a cargar.
+  async function exportarRiesgosFSFB(lista, titulo, filtros) {
+    cargando(true, "Generando Excel de riesgos…");
+    try {
+      const X = await libExcelJS();
+      const wb = new X.Workbook();
+      await wb.xlsx.load(await (await fetch(new URL("assets/Plantilla_Riesgos.xlsx", location.href).href)).arrayBuffer());
+      const ws = wb.getWorksheet("Riesgos") || wb.worksheets[0];
+      ws.getCell("A1").value = titulo;
+      const varios = new Set(lista.map((r) => r.ID_Proyecto)).size > 1;
+      ws.getCell("P3").value = "Origen"; ws.getCell("Q3").value = "Fecha identificación";
+      if (varios) ws.getCell("R3").value = "Proyecto";
+      ["P3", "Q3", "R3"].forEach((k) => { const c = ws.getCell(k); if (c.value) { c.style = { ...ws.getCell("O3").style }; } });
+      ws.getColumn(16).width = 34; ws.getColumn(17).width = 14; if (varios) ws.getColumn(18).width = 30;
+      lista.forEach((r, i) => {
+        const f = 4 + i;
+        const ci = R.calificacion(r.Probabilidad_Inherente, r.Impacto_Inherente), cr = R.calificacion(r.Probabilidad_Residual, r.Impacto_Residual);
+        const vals = [numRiesgo(r), r.Tipo || "Amenaza", r.Estado || "Abierto", r.Responsable || "", r.Descripcion || "", PROB_TXT[r.Probabilidad_Inherente] || "", IMP_TXT[r.Impacto_Inherente] || "",
+          ci || "", ci ? R.nivelRiesgo(ci) : "", r.Plan_Mitigacion || "", r.Plan_Contingencia || "", PROB_TXT[r.Probabilidad_Residual] || "", IMP_TXT[r.Impacto_Residual] || "",
+          cr || "", cr ? R.nivelRiesgo(cr) : "", origenRiesgo(r), aFechaX(r.Fecha_Identificacion), ...(varios ? [(proyecto(r.ID_Proyecto) || {}).Nombre || r.ID_Proyecto] : [])];
+        vals.forEach((v, j) => {
+          const c = ws.getCell(f, j + 1); c.value = v;
+          if (f > 4 && ws.getCell(4, j + 1).style) c.style = { ...ws.getCell(4, j + 1).style };
+          c.alignment = { wrapText: true, vertical: "top" };
+          if ((j === 8 || j === 14) && COLOR_CELDA[v]) c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF" + COLOR_CELDA[v] } };
+        });
+        ws.getCell(f, 17).numFmt = "dd/mm/yyyy";
+      });
+      const info = wb.addWorksheet("Info");
+      info.columns = [{ width: 22 }, { width: 90 }];
+      [["Generado", new Date().toLocaleString("es-CO")], ["Por", `${S.usuario.Nombre || ""} <${S.usuario.Correo}>`], ["Filtros", filtros.length ? filtros.join(" · ") : "Ninguno"], ["Riesgos", String(lista.length)]].forEach((x) => info.addRow(x));
+      const buf = await wb.xlsx.writeBuffer();
+      const nombre = `Riesgos_${titulo.replace(/.*Proyecto\s*/i, "").replace(/[^\wÁÉÍÓÚáéíóúÑñ]+/g, "_").slice(0, 60)}_${R.hoyISO()}.xlsx`;
+      descargar(new Uint8Array(buf), nombre, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      toast(`Excel generado: ${nombre}`);
+    } catch (e) { toast("No se pudo generar el Excel: " + e.message, true); }
+    finally { cargando(false); }
+  }
+
+  // Columnas reutilizables.
+  const C = {
+    proy: { t: "Proyecto", v: (x) => (proyecto(x.ID_Proyecto) || {}).Nombre || x.ID_Proyecto, ancho: 30 },
+    idp: { t: "ID proyecto", v: (x) => x.ID_Proyecto, ancho: 12 },
+  };
+  const colsProyecto = [
+    { t: "ID", v: (p) => p.ID_Proyecto, ancho: 11 }, { t: "Código Almera", v: (p) => p.Codigo_Almera, ancho: 14 }, { t: "Proyecto", v: (p) => p.Nombre, ancho: 34 },
+    { t: "Cliente / área", v: (p) => p.Cliente_Area }, { t: "PM", v: (p) => nombreUsuario(p.PM) }, { t: "Metodología", v: (p) => p.Metodologia, ancho: 14 },
+    { t: "Fase", v: (p) => p.Fase, ancho: 14 }, { t: "Estado", v: (p) => p.Estado, ancho: 12, color: true }, { t: "Semáforo", v: (p) => p.Semaforo, ancho: 11, color: true },
+    { t: "Prioridad", v: (p) => p.Prioridad, ancho: 11 }, { t: "Avance real", v: (p) => p.Avance_Real, tipo: "pct" }, { t: "Avance planeado", v: (p) => p.Avance_Planeado, tipo: "pct" },
+    { t: "Inicio", v: (p) => p.Fecha_Inicio, tipo: "fecha" }, { t: "Fin planeado", v: (p) => p.Fecha_Fin_Plan, tipo: "fecha" }, { t: "Fin línea base", v: (p) => p.Fecha_Fin_Base, tipo: "fecha" },
+    { t: "Presupuesto", v: (p) => p.Presupuesto, tipo: "cop" }, { t: "Ejecutado", v: (p) => p.Ejecutado, tipo: "cop" },
+    { t: "% ejecutado", v: (p) => (Number(p.Presupuesto) ? Math.round((Number(p.Ejecutado) || 0) / Number(p.Presupuesto) * 100) : ""), tipo: "pct" },
+    { t: "Frecuencia", v: (p) => p.Frecuencia_Seguimiento, ancho: 12 }, { t: "Seguimiento", v: (p) => R.estadoSeguimiento(p, S.datos.Seguimientos).estado, ancho: 12, color: true },
+    { t: "Último seguimiento", v: (p) => R.estadoSeguimiento(p, S.datos.Seguimientos).ultimaFecha, tipo: "fecha" },
+    { t: "Proveedores", v: (p) => idsLista(p.Proveedores).map((i) => (proveedor(i) || {}).Nombre || i).join(", "), ancho: 26 },
+    { t: "Puntaje prioridad", v: (p) => (puntaje(p) === null ? "" : puntaje(p)), tipo: "num" },
+    { t: "Comentario de estado", v: (p) => p.Comentario_Estado, ancho: 44 },
+  ];
+  const colsCompromiso = (conProy) => [
+    ...(conProy ? [C.proy] : []), { t: "Compromiso", v: (c) => c.Compromiso, ancho: 46 },
+    { t: "Sesión", v: (c) => { const s = sesionDe(c); return s ? `Sesión del ${fecha(s.Fecha_Corte)}` : "Sin sesión"; }, ancho: 18 },
+    { t: "Responsable", v: (c) => c.Responsable }, { t: "Correo responsable", v: (c) => correoDe(c), ancho: 26 },
+    { t: "Fecha límite", v: (c) => c.Fecha_Compromiso, tipo: "fecha" }, { t: "Estado", v: (c) => R.estadoBase(c), ancho: 12, color: true },
+    { t: "Alerta", v: (c) => { const e = R.estadoCompromiso(c); return e === "Vencido" || e === "Por vencer" ? e : ""; }, ancho: 12, color: true },
+    { t: "Fecha de cierre", v: (c) => c.Fecha_Cierre, tipo: "fecha" },
+    { t: "Último comentario", v: (c) => { const l = comentariosDe(c.ID_Compromiso); const u = l[l.length - 1]; return u ? resumenCom(u) : ""; }, ancho: 46 },
+    { t: "Fecha último comentario", v: (c) => { const l = comentariosDe(c.ID_Compromiso); const u = l[l.length - 1]; return u ? u.Fecha_Hora : ""; }, tipo: "fechahora", ancho: 16 },
+  ];
+  const colsSeguimiento = (conProy) => [
+    ...(conProy ? [C.proy] : []), { t: "Fecha de corte", v: (s) => s.Fecha_Corte, tipo: "fecha" }, { t: "Semana", v: (s) => s.Semana, ancho: 10 },
+    { t: "Avance real", v: (s) => s.Avance_Real, tipo: "pct" }, { t: "Semáforo", v: (s) => s.Semaforo, ancho: 11, color: true }, { t: "Ejecutado", v: (s) => s.Ejecutado, tipo: "cop" },
+    { t: "Logros", v: (s) => s.Logros, ancho: 44 }, { t: "Próximos pasos", v: (s) => s.Proximos_Pasos, ancho: 40 }, { t: "Bloqueos", v: (s) => s.Bloqueos, ancho: 36 },
+    { t: "Compromisos acordados", v: (s) => S.datos.Compromisos.filter((c) => c.ID_Seguimiento === s.ID_Seguimiento).length, tipo: "num" },
+    { t: "Fecha acta", v: (s) => s.Fecha_Acta, tipo: "fecha" }, { t: "Acta", v: (s) => s.Acta_Archivo || s.URL_Acta, ancho: 30 }, { t: "Reportado por", v: (s) => nombreUsuario(s.Reportado_Por) },
+  ];
+  const colsRiesgo = (conProy) => [
+    ...(conProy ? [C.proy] : []), { t: "No.", v: (r) => numRiesgo(r), tipo: "num", ancho: 6 }, { t: "Tipo", v: (r) => r.Tipo, ancho: 12 }, { t: "Estado", v: (r) => r.Estado, ancho: 14, color: true },
+    { t: "Responsable", v: (r) => r.Responsable }, { t: "Descripción", v: (r) => r.Descripcion, ancho: 50 },
+    { t: "Prob. inherente", v: (r) => PROB_TXT[r.Probabilidad_Inherente] || "", ancho: 15 }, { t: "Impacto inherente", v: (r) => IMP_TXT[r.Impacto_Inherente] || "", ancho: 17 },
+    { t: "Calificación", v: (r) => R.calificacion(r.Probabilidad_Inherente, r.Impacto_Inherente) || "", tipo: "num" }, { t: "Nivel", v: (r) => { const c = R.calificacion(r.Probabilidad_Inherente, r.Impacto_Inherente); return c ? R.nivelRiesgo(c) : ""; }, ancho: 10, color: true },
+    { t: "Plan de mitigación", v: (r) => r.Plan_Mitigacion, ancho: 44 }, { t: "Plan de contingencia", v: (r) => r.Plan_Contingencia, ancho: 44 },
+    { t: "Prob. residual", v: (r) => PROB_TXT[r.Probabilidad_Residual] || "", ancho: 15 }, { t: "Impacto residual", v: (r) => IMP_TXT[r.Impacto_Residual] || "", ancho: 17 },
+    { t: "Calificación residual", v: (r) => R.calificacion(r.Probabilidad_Residual, r.Impacto_Residual) || "", tipo: "num" }, { t: "Nivel residual", v: (r) => { const c = R.calificacion(r.Probabilidad_Residual, r.Impacto_Residual); return c ? R.nivelRiesgo(c) : ""; }, ancho: 12, color: true },
+    { t: "Origen", v: (r) => origenRiesgo(r), ancho: 30 }, { t: "Fecha identificación", v: (r) => r.Fecha_Identificacion, tipo: "fecha" },
+  ];
+  // Qué exporta cada pantalla.
+  const EXPORTADORES = {
+    dashboard: () => {
+      const ps = filtrados(), k = R.kpis(ps, S.datos.Seguimientos);
+      return exportarExcel("Dashboard", [
+        { nombre: "Indicadores", columnas: [{ t: "Indicador", v: (x) => x[0], ancho: 34 }, { t: "Valor", v: (x) => x[1], ancho: 22 }], filas: [
+          ["Proyectos en la selección", k.total], ["Proyectos activos", k.activos], ["Avance real promedio", `${Math.round(k.avanceReal)}%`], ["Avance planeado promedio", `${Math.round(k.avancePlan)}%`],
+          ["Proyectos en rojo", k.rojos], ["Presupuesto (activos)", cop(k.presupuesto)], ["Ejecutado (activos)", cop(k.ejecutado)], ["% ejecutado", `${Math.round(k.pctEjecutado)}%`], ["Seguimientos al día", `${Math.round(k.pctAlDia)}%`]] },
+        { nombre: "Proyectos", columnas: colsProyecto, filas: ps }], filtrosGenerales());
+    },
+    proyectos: () => {
+      const FL = S.filtrosLista;
+      const lista = filtrados().filter((p) => (!FL.semaforo || p.Semaforo === FL.semaforo) && (!FL.texto || `${p.ID_Proyecto} ${p.Nombre} ${p.Cliente_Area} ${p.Codigo_Almera || ""}`.toLowerCase().includes(FL.texto.toLowerCase())))
+        .sort((a, b) => String(a.Nombre).localeCompare(String(b.Nombre), "es"));
+      return exportarExcel("Proyectos", [{ nombre: "Proyectos", columnas: colsProyecto, filas: lista }], filtrosGenerales());
+    },
+    avances: () => {
+      const ids = new Set(filtrados().map((p) => p.ID_Proyecto));
+      const segs = S.datos.Seguimientos.filter((s) => ids.has(s.ID_Proyecto) && (s.Semana || R.semanaISO(s.Fecha_Corte)) === S.semana);
+      const rep = new Set(segs.map((s) => s.ID_Proyecto));
+      const sin = filtrados().filter((p) => p.Estado === "Activo" && p.Frecuencia_Seguimiento === "Semanal" && !rep.has(p.ID_Proyecto));
+      return exportarExcel(`Avances ${S.semana}`, [{ nombre: "Seguimientos de la semana", columnas: colsSeguimiento(true), filas: segs },
+        { nombre: "Sin reporte", columnas: [{ t: "Proyecto", v: (p) => p.Nombre, ancho: 34 }, { t: "PM", v: (p) => nombreUsuario(p.PM) }, { t: "Último seguimiento", v: (p) => R.estadoSeguimiento(p, S.datos.Seguimientos).ultimaFecha, tipo: "fecha" }], filas: sin }],
+        [...filtrosGenerales(), `Semana: ${S.semana}`]);
+    },
+    seguimiento: () => {
+      const ps = filtrados().filter((p) => p.Estado === "Activo");
+      const ids = new Set(ps.map((p) => p.ID_Proyecto));
+      return exportarExcel("Seguimiento y compromisos", [
+        { nombre: "Control de seguimiento", columnas: [{ t: "Proyecto", v: (p) => p.Nombre, ancho: 34 }, { t: "PM", v: (p) => nombreUsuario(p.PM) }, { t: "Frecuencia", v: (p) => p.Frecuencia_Seguimiento, ancho: 12 },
+          { t: "Último", v: (p) => R.estadoSeguimiento(p, S.datos.Seguimientos).ultimaFecha, tipo: "fecha" }, { t: "Próximo", v: (p) => R.estadoSeguimiento(p, S.datos.Seguimientos).proximo, tipo: "fecha" },
+          { t: "Estado", v: (p) => R.estadoSeguimiento(p, S.datos.Seguimientos).estado, ancho: 12, color: true }, { t: "En 90 días", v: (p) => R.estadoSeguimiento(p, S.datos.Seguimientos).en90, tipo: "num" }], filas: ps },
+        { nombre: "Compromisos abiertos", columnas: colsCompromiso(true), filas: S.datos.Compromisos.filter((c) => ids.has(c.ID_Proyecto) && !R.cerrado(c)).sort((a, b) => String(a.Fecha_Compromiso || "9").localeCompare(String(b.Fecha_Compromiso || "9"))) }],
+        filtrosGenerales());
+    },
+    cronograma: () => {
+      const ps = filtrados().filter((p) => p.Fecha_Inicio && p.Fecha_Fin_Plan).sort((a, b) => String(a.Fecha_Inicio).localeCompare(String(b.Fecha_Inicio)));
+      const ids = new Set(ps.map((p) => p.ID_Proyecto));
+      return exportarExcel("Cronograma", [
+        { nombre: "Proyectos", columnas: [colsProyecto[2], colsProyecto[7], colsProyecto[12], colsProyecto[13], colsProyecto[14], colsProyecto[10],
+          { t: "Depende de", v: (p) => depsDe(p.ID_Proyecto).map((d) => (proyecto(d.Depende_De) || {}).Nombre || d.Depende_De).join(", "), ancho: 30 }], filas: ps },
+        { nombre: "Hitos", columnas: [C.proy, { t: "Hito", v: (h) => h.Hito, ancho: 40 }, { t: "Fecha plan", v: (h) => h.Fecha_Plan, tipo: "fecha" }, { t: "Fecha real", v: (h) => h.Fecha_Real, tipo: "fecha" },
+          { t: "Estado", v: (h) => (h.Estado !== "Cumplido" && h.Fecha_Plan < R.hoyISO() ? "Atrasado" : h.Estado), ancho: 12, color: true }],
+          filas: S.datos.Hitos.filter((h) => ids.has(h.ID_Proyecto)).sort((a, b) => String(a.Fecha_Plan).localeCompare(String(b.Fecha_Plan))) }],
+        [...filtrosGenerales(), `Periodo en pantalla: ${S.cronoRango || "12m"}`]);
+    },
+    riesgos: () => {
+      const ids = new Set(filtrados().map((p) => p.ID_Proyecto));
+      const lista = riesgosVisibles("global", S.datos.Riesgos.filter((r) => ids.has(r.ID_Proyecto)));
+      return exportarRiesgosFSFB(lista, `Registro de riesgos — Portafolio — ${fecha(R.hoyISO())}`, [...filtrosGenerales(), ...describirFiltrosRiesgo("global")]);
+    },
+    priorizacion: () => exportarExcel("Priorización", [{ nombre: "Ranking", columnas: [
+      { t: "Puesto", v: (p) => filtrados().filter((x) => puntaje(x) !== null).sort((a, b) => puntaje(b) - puntaje(a)).indexOf(p) + 1 || "", tipo: "num", ancho: 8 },
+      colsProyecto[2], colsProyecto[7], { t: "PM", v: (p) => nombreUsuario(p.PM) }, ...CRITERIOS.map((c) => ({ t: c.t, v: (p) => p[c.k], tipo: "num", ancho: 14 })),
+      { t: "Puntaje", v: (p) => (puntaje(p) === null ? "" : puntaje(p)), tipo: "num" }, { t: "Cuadrante", v: (p) => (puntaje(p) === null ? "Sin calificar" : cuadrante(p)), ancho: 16 }],
+      filas: filtrados().slice().sort((a, b) => (puntaje(b) ?? -1) - (puntaje(a) ?? -1)) }], filtrosGenerales()),
+    recursos: () => {
+      const q = S.recQ || "", cap = capacidad();
+      const lista = recursos().filter((r) => !q || normTxt(`${r.Nombre} ${r.Correo} ${r.Cargo} ${r.Area} ${empresaDe(r)}`).includes(normTxt(q)));
+      const asig = (r) => cap.find((x) => (r.Correo && lc(x.correo) === lc(r.Correo)) || normTxt(x.nombre) === normTxt(r.Nombre));
+      return exportarExcel("Recursos", [{ nombre: "Recursos", columnas: [{ t: "Nombre", v: (r) => r.Nombre, ancho: 30 }, { t: "Cargo", v: (r) => r.Cargo }, { t: "Área", v: (r) => r.Area },
+        { t: "Empresa", v: (r) => empresaDe(r) }, { t: "Correo", v: (r) => r.Correo, ancho: 28 }, { t: "Teléfono", v: (r) => r.Telefono, ancho: 14 },
+        { t: "Capacidad", v: (r) => num0(r.Capacidad) ?? 100, tipo: "pct" }, { t: "Asignado", v: (r) => (asig(r) || {}).total || 0, tipo: "pct" }, { t: "Activo", v: (r) => r.Activo || "Sí", ancho: 8 }], filas: lista }],
+        q ? [`Búsqueda: «${q}»`] : []);
+    },
+    capacidad: () => {
+      const idsF = new Set(filtrados().map((p) => p.ID_Proyecto));
+      let lista = capacidad().filter((x) => x.asign.some((a) => idsF.has(a.p.ID_Proyecto)));
+      if (S.capVer && S.capVer !== "todos") lista = lista.filter((x) => nivelCap(x.total, x.cap) === S.capVer);
+      const det = lista.flatMap((x) => x.asign.map((a) => ({ x, a })));
+      return exportarExcel("Capacidad del equipo", [
+        { nombre: "Por persona", columnas: [{ t: "Persona", v: (x) => x.nombre, ancho: 30 }, { t: "Correo", v: (x) => x.correo, ancho: 28 }, { t: "Asignado", v: (x) => x.total, tipo: "pct" },
+          { t: "Capacidad", v: (x) => x.cap, tipo: "pct" }, { t: "Estado", v: (x) => nivelCap(x.total, x.cap), ancho: 14, color: true }, { t: "Proyectos", v: (x) => x.asign.length, tipo: "num" }], filas: lista },
+        { nombre: "Detalle por proyecto", columnas: [{ t: "Persona", v: (d) => d.x.nombre, ancho: 30 }, { t: "Proyecto", v: (d) => d.a.p.Nombre, ancho: 32 }, { t: "Rol", v: (d) => d.a.rol }, { t: "Dedicación", v: (d) => d.a.ded, tipo: "pct" }], filas: det }],
+        [...filtrosGenerales(), S.capVer && S.capVer !== "todos" ? `Estado: ${S.capVer}` : ""].filter(Boolean));
+    },
+    lecciones: () => {
+      const ids = new Set(filtrados().map((p) => p.ID_Proyecto)), F = S.lecF || {};
+      const lista = (S.datos.Lecciones || []).filter((l) => ids.has(l.ID_Proyecto) && (!F.cat || l.Categoria === F.cat) && (!F.tipo || l.Tipo === F.tipo) &&
+        (!F.texto || `${l.Situacion} ${l.Leccion} ${l.Recomendacion} ${(proyecto(l.ID_Proyecto) || {}).Nombre}`.toLowerCase().includes(F.texto.toLowerCase())));
+      return exportarExcel("Lecciones aprendidas", [{ nombre: "Lecciones", columnas: [C.proy, { t: "Fecha", v: (l) => l.Fecha, tipo: "fecha" }, { t: "Tipo", v: (l) => l.Tipo, ancho: 12 },
+        { t: "Categoría", v: (l) => l.Categoria, ancho: 16 }, { t: "Qué pasó", v: (l) => l.Situacion, ancho: 44 }, { t: "Lección", v: (l) => l.Leccion, ancho: 44 },
+        { t: "Recomendación", v: (l) => l.Recomendacion, ancho: 44 }, { t: "Registrado por", v: (l) => nombreUsuario(l.Registrado_Por) }], filas: lista }],
+        [...filtrosGenerales(), F.cat ? `Categoría: ${F.cat}` : "", F.tipo ? `Tipo: ${F.tipo}` : "", F.texto ? `Búsqueda: «${F.texto}»` : ""].filter(Boolean));
+    },
+    auditoria: async () => {
+      const F = S.audF || {};
+      const lista = (await cargarAuditoria()).filter((a) => (!F.usuario || lc(a.Usuario) === lc(F.usuario)) && (!F.tabla || a.Tabla === F.tabla) && (!F.texto || lc(`${a.Detalle} ${a.ID_Registro}`).includes(lc(F.texto))));
+      return exportarExcel("Auditoría", [{ nombre: "Auditoría", columnas: [{ t: "Fecha y hora", v: (a) => a.Fecha_Hora, tipo: "fechahora", ancho: 17 }, { t: "Usuario", v: (a) => nombreUsuario(a.Usuario) },
+        { t: "Acción", v: (a) => a.Accion, ancho: 11 }, { t: "Tipo de dato", v: (a) => NOMBRE_TABLA[a.Tabla] || a.Tabla, ancho: 14 }, { t: "Registro", v: (a) => a.ID_Registro, ancho: 16 },
+        { t: "Proyecto", v: (a) => (proyecto(a.ID_Proyecto) || {}).Nombre || a.ID_Proyecto, ancho: 28 }, { t: "Detalle", v: (a) => a.Detalle, ancho: 70 }], filas: lista }],
+        [F.usuario ? `Usuario: ${F.usuario}` : "", F.tabla ? `Tipo: ${F.tabla}` : "", F.texto ? `Búsqueda: «${F.texto}»` : ""].filter(Boolean));
+    },
+    usuarios: () => exportarExcel("Usuarios", [{ nombre: "Usuarios", columnas: [{ t: "Correo", v: (u) => u.Correo, ancho: 30 }, { t: "Nombre", v: (u) => u.Nombre, ancho: 28 },
+      { t: "Roles", v: (u) => u.Rol }, { t: "Proyectos (Lector)", v: (u) => u.Proyectos, ancho: 26 }, { t: "Activo", v: (u) => u.Activo, ancho: 8 }], filas: S.datos.Usuarios }], []),
+    catalogos: () => exportarExcel("Catálogos", [{ nombre: "Catálogos", columnas: [{ t: "Lista", v: (c) => c.Lista, ancho: 24 }, { t: "Valor", v: (c) => c.Valor, ancho: 34 }], filas: S.datos.Catalogos },
+      { nombre: "Proveedores", columnas: [{ t: "Proveedor", v: (v) => v.Nombre, ancho: 30 }, { t: "NIT", v: (v) => v.NIT, ancho: 14 }, { t: "Servicio", v: (v) => v.Servicio, ancho: 26 },
+        { t: "Contacto", v: (v) => v.Contacto }, { t: "Correo", v: (v) => v.Correo, ancho: 28 }, { t: "Teléfono", v: (v) => v.Telefono, ancho: 14 }, { t: "Activo", v: (v) => v.Activo, ancho: 8 }], filas: S.datos.Proveedores || [] }], []),
+    ficha: () => {
+      const p = proyecto(S.pid);
+      if (!p) return null;
+      const pid = p.ID_Proyecto;
+      if (S.fichaTab === "riesgos") return exportarRiesgosFSFB(riesgosVisibles("p:" + pid, riesgosDe(pid)), `Registro de riesgos — Proyecto ${p.Nombre} — ${fecha(R.hoyISO())}`, describirFiltrosRiesgo("p:" + pid));
+      const resumen = colsProyecto.map((c) => ({ campo: c.t, valor: c.tipo === "cop" ? cop(c.v(p)) : c.tipo === "pct" ? (c.v(p) === "" ? "" : `${Math.round(Number(c.v(p)) || 0)}%`) : c.tipo === "fecha" ? fecha(c.v(p)) : c.v(p) }));
+      return exportarExcel(`Proyecto ${p.Nombre}`, [
+        { nombre: "Resumen", columnas: [{ t: "Campo", v: (x) => x.campo, ancho: 24 }, { t: "Valor", v: (x) => x.valor, ancho: 70 }], filas: resumen },
+        { nombre: "Stakeholders", columnas: [{ t: "Rol", v: (x) => x.Rol }, { t: "Nombre", v: (x) => x.Nombre, ancho: 28 }, { t: "Cargo", v: (x) => x.Cargo }, { t: "Área", v: (x) => x.Area },
+          { t: "Empresa", v: (x) => (x.ID_Proveedor ? (proveedor(x.ID_Proveedor) || {}).Nombre : "Interno") }, { t: "Correo", v: (x) => x.Correo, ancho: 28 }, { t: "Dedicación", v: (x) => x.Dedicacion, tipo: "pct" }],
+          filas: [{ Rol: "PM", Nombre: nombreUsuario(p.PM), Cargo: "Gerente del proyecto", Area: "", ID_Proveedor: "", Correo: p.PM, Dedicacion: p.Dedicacion_PM }, ...stakeholdersDe(pid)] },
+        { nombre: "Compromisos", columnas: colsCompromiso(false), filas: S.datos.Compromisos.filter((c) => c.ID_Proyecto === pid).sort((a, b) => String(a.Fecha_Compromiso || "9").localeCompare(String(b.Fecha_Compromiso || "9"))) },
+        { nombre: "Seguimientos", columnas: colsSeguimiento(false), filas: R.seguimientosDe(pid, S.datos.Seguimientos).slice().reverse() },
+        { nombre: "Hitos", columnas: [{ t: "Hito", v: (h) => h.Hito, ancho: 40 }, { t: "Fecha plan", v: (h) => h.Fecha_Plan, tipo: "fecha" }, { t: "Fecha real", v: (h) => h.Fecha_Real, tipo: "fecha" },
+          { t: "Estado", v: (h) => (h.Estado !== "Cumplido" && h.Fecha_Plan < R.hoyISO() ? "Atrasado" : h.Estado), ancho: 12, color: true }], filas: S.datos.Hitos.filter((h) => h.ID_Proyecto === pid) },
+        { nombre: "Riesgos", columnas: colsRiesgo(false), filas: riesgosDe(pid).sort((a, b) => numRiesgo(a) - numRiesgo(b)) },
+        { nombre: "Tickets", columnas: [{ t: "N.º", v: (t) => t.Numero, ancho: 12 }, { t: "Título", v: (t) => t.Titulo, ancho: 44 }, { t: "Estado", v: (t) => t.Estado, ancho: 12, color: true },
+          { t: "Prioridad", v: (t) => t.Prioridad, ancho: 11 }, { t: "Registrado", v: (t) => t.Fecha_Registro, tipo: "fecha" }], filas: ticketsDe(pid) },
+        { nombre: "Cambios", columnas: [{ t: "Fecha", v: (c) => c.Fecha, tipo: "fecha" }, { t: "Tipo", v: (c) => c.Tipo, ancho: 12 }, { t: "Cambio", v: (c) => c.Descripcion, ancho: 44 },
+          { t: "Justificación", v: (c) => c.Justificacion, ancho: 36 }, { t: "Impacto", v: (c) => c.Impacto, ancho: 36 }, { t: "Nueva fecha fin", v: (c) => c.Nueva_Fecha_Fin, tipo: "fecha" },
+          { t: "Nuevo presupuesto", v: (c) => c.Nuevo_Presupuesto, tipo: "cop" }, { t: "Estado", v: (c) => c.Estado, ancho: 12, color: true }, { t: "Decisión", v: (c) => c.Fecha_Decision, tipo: "fecha" }], filas: cambiosDe(pid) },
+        { nombre: "Lecciones", columnas: [{ t: "Fecha", v: (l) => l.Fecha, tipo: "fecha" }, { t: "Tipo", v: (l) => l.Tipo, ancho: 12 }, { t: "Categoría", v: (l) => l.Categoria, ancho: 16 },
+          { t: "Qué pasó", v: (l) => l.Situacion, ancho: 40 }, { t: "Lección", v: (l) => l.Leccion, ancho: 40 }, { t: "Recomendación", v: (l) => l.Recomendacion, ancho: 40 }], filas: leccionesDe(pid) },
+        { nombre: "RACI", columnas: [{ t: "Entregable", v: (r) => r.Entregable, ancho: 36 }, ...[{ k: "PM", t: `PM (${nombreUsuario(p.PM)})` }, ...stakeholdersDe(pid).map((x) => ({ k: x.ID_Stakeholder, t: `${x.Rol} (${x.Nombre})` }))]
+          .map((c) => ({ t: c.t, v: (r) => asignRaci(r)[c.k] || "", ancho: 16 }))], filas: raciDe(pid) },
+      ], [`Proyecto: ${p.Nombre} (${pid})`]);
+    },
+  };
 
   // ---------- Tickets del helpdesk ----------
   const ticketsDe = (pid) => (S.datos.Tickets || []).filter((t) => t.ID_Proyecto === pid);

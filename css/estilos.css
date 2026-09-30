@@ -642,6 +642,10 @@ td .vacio { padding: 14px; }
 .rec-prev summary { cursor: pointer; color: var(--azul); font-weight: 600; margin: 6px 0; }
 .rec-asunto { font-weight: 600; margin-bottom: 6px; }
 .rec-prev pre { white-space: pre-wrap; font-family: var(--fuente); font-size: 13px; background: var(--superficie-2); border: 1px solid var(--borde); border-radius: 6px; padding: 12px; max-height: 38vh; overflow-y: auto; margin: 0; }
+.barra-migas { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 24px 0; flex-wrap: wrap; }
+.barra-migas .migas { padding: 0; }
+.btn-exportar .ico { width: 16px; height: 16px; color: #1D6F42; }
+@media (max-width: 760px) { .barra-migas { padding: 10px 12px 0; } .btn-exportar span { display: none; } }
 /* ---------- Hoja de vida (vista e impresión) ---------- */
 .hv-overlay { position: fixed; inset: 0; z-index: 60; background: #dde3ea; overflow: auto; }
 .hv-barra { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; background: #fff; padding: 10px 16px; border-bottom: 1px solid var(--linea); }
