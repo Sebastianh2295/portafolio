@@ -763,19 +763,32 @@
   }
   // ---------- Alertas de compromisos ----------
   // A quién escribirle: el correo del compromiso, o el de un usuario/stakeholder con ese nombre, o el texto si ya es un correo.
-  function correoDe(c) {
-    if (c.Correo_Responsable) return c.Correo_Responsable;
-    const rec = c.ID_Recurso && recursoPor({ id: c.ID_Recurso });
-    if (rec && rec.Correo) return rec.Correo;
-    const r = lc(c.Responsable);
+  // Un compromiso puede tener uno o varios responsables: Responsable, Correo_Responsable e ID_Recurso guardan listas separadas por «; ».
+  const partesLista = (v) => String(v ?? "").split(";").map((x) => x.trim());
+  function correoSuelto(nombre) {
+    const r = lc(nombre);
     if (!r) return "";
-    if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(r)) return c.Responsable.trim();
+    if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(r)) return String(nombre).trim();
     const u = S.datos.Usuarios.find((x) => lc(x.Nombre) === r || lc(x.Correo) === r);
     if (u) return u.Correo;
     const st = (S.datos.Stakeholders || []).find((x) => lc(x.Nombre) === r && x.Correo);
     return st ? st.Correo : "";
   }
-  const esMioComp = (c) => { const u = S.usuario; return lc(correoDe(c)) === lc(u.Correo) || (u.Nombre && lc(c.Responsable) === lc(u.Nombre)); };
+  function responsablesDe(c) {
+    const ns = partesLista(c.Responsable).filter(Boolean);
+    if (!ns.length) return [];
+    const ids = partesLista(c.ID_Recurso), ms = partesLista(c.Correo_Responsable).filter((x) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x));
+    return ns.map((n, i) => {
+      const r = recursoPor({ id: ids.length === ns.length ? ids[i] : "", nombre: n });
+      return { Nombre: n, Correo: (ms.length === ns.length ? ms[i] : "") || (r && r.Correo) || correoSuelto(n), ID_Recurso: r ? r.ID_Recurso : "", r };
+    });
+  }
+  const serializarResp = (rs) => ({ Responsable: rs.map((x) => x.Nombre).join("; "),
+    Correo_Responsable: rs.every((x) => validoCorreo(x.Correo)) ? rs.map((x) => x.Correo.trim()).join("; ") : rs.map((x) => x.Correo).filter(validoCorreo).join("; "),
+    ID_Recurso: rs.some((x) => x.ID_Recurso) ? rs.map((x) => x.ID_Recurso || "").join("; ") : "" });
+  const correosDe = (c) => [...new Set(responsablesDe(c).map((x) => String(x.Correo || "").trim()).filter(validoCorreo))];
+  const correoDe = (c) => correosDe(c).join("; ");
+  const esMioComp = (c) => { const u = S.usuario; return responsablesDe(c).some((x) => (x.Correo && lc(x.Correo) === lc(u.Correo)) || (u.Nombre && lc(x.Nombre) === lc(u.Nombre))); };
   function alertas() {
     const ids = new Set(visibles().map((p) => p.ID_Proyecto));
     const lista = S.datos.Compromisos.filter((c) => ids.has(c.ID_Proyecto) && !R.cerrado(c))
@@ -801,8 +814,8 @@
   const sesionDe = (c) => (c.ID_Seguimiento ? S.datos.Seguimientos.find((s) => s.ID_Seguimiento === c.ID_Seguimiento) : null);
   function correoRecordatorio(items, ccElegidos) {
     const cs = items.map((x) => x.c);
-    const para = [...new Set(cs.map(correoDe).filter(validoCorreo))];
-    const nombres = [...new Set(cs.map((c) => (recursoPor({ correo: correoDe(c), nombre: c.Responsable }) || {}).Nombre || c.Responsable).filter(Boolean))];
+    const para = [...new Set(cs.flatMap(correosDe))];
+    const nombres = [...new Set(cs.flatMap((c) => responsablesDe(c).map((x) => (x.r || {}).Nombre || x.Nombre)))];
     const saludo = nombres.length === 1 ? `Hola, ${pila(nombres[0])}:` : "Hola:";
     const proys = [...new Set(cs.map((c) => c.ID_Proyecto))].map(proyecto).filter(Boolean);
     const unoP = proys.length === 1 ? proys[0] : null;
@@ -813,7 +826,7 @@
     const detalle = (c, conProy) => [
       `Compromiso: ${c.Compromiso}`,
       conProy ? `Proyecto: ${(proyecto(c.ID_Proyecto) || {}).Nombre || c.ID_Proyecto}` : "",
-      `Responsable: ${c.Responsable || "—"}`,
+      `${responsablesDe(c).length > 1 ? "Responsables" : "Responsable"}: ${responsablesDe(c).map((x) => x.Nombre).join(", ") || "—"}`,
       `Fecha límite: ${c.Fecha_Compromiso ? fecha(c.Fecha_Compromiso) : "sin fecha"} (${venceTexto(c)})`,
       `Estado actual: ${R.estadoBase(c)}`,
       ultimoAvance(c) ? `Último avance registrado: ${ultimoAvance(c)}` : "",
@@ -859,7 +872,7 @@
   // Muestra destinatarios (con copia editable) y la vista previa; abre el correo y deja constancia.
   function enviarRecordatorio(items) {
     return new Promise((resolver) => {
-      const para = [...new Set(items.map((x) => correoDe(x.c)).filter(validoCorreo))];
+      const para = [...new Set(items.flatMap((x) => correosDe(x.c)))];
       const cand = candidatosCopia(items).filter((x) => !para.some((d) => lc(d) === lc(x.correo)));
       const o = document.createElement("div");
       o.id = "recordatorio";
@@ -1053,7 +1066,7 @@
       <div class="titulo-fila"><div><h2>${esc(c.Compromiso)}</h2><div class="sub">${esc(p.Nombre)} · ${esc(origen(c))}</div></div><button class="btn enlace" id="d-cerrar" aria-label="Cerrar">✕</button></div>
       <div class="contexto">
         <div><span class="sub">Estado</span><b>${pillComp(c)}</b></div>
-        <div><span class="sub">Responsable</span><b>${esc(c.Responsable || "—")}</b>${(() => { const r = recursoDeComp(c); return r ? `<div class="sub">${esc([r.Cargo, empresaDe(r), r.Correo].filter(Boolean).join(" · "))}</div>` : ""; })()}</div>
+        <div><span class="sub">${responsablesDe(c).length > 1 ? "Responsables" : "Responsable"}</span>${responsablesDe(c).map((x) => `<b>${esc(x.Nombre)}</b>${(() => { const rol = rolEnProyecto(c.ID_Proyecto, x); const d = [rol, x.r && x.r.Cargo, x.r && empresaDe(x.r), x.Correo].filter(Boolean); return d.length ? `<div class="sub">${esc(d.join(" · "))}</div>` : ""; })()}`).join("") || "<b>—</b>"}</div>
         <div><span class="sub">Fecha límite</span><b>${fecha(c.Fecha_Compromiso)}</b></div>
         ${c.Fecha_Cierre ? `<div><span class="sub">Cerrado el</span><b>${fecha(c.Fecha_Cierre)}</b></div>` : ""}
       </div>
@@ -2333,26 +2346,38 @@
     if (compromisosEnlazados || !(S.datos.Recursos || []).length) return;
     compromisosEnlazados = true;
     const enlaces = S.datos.Compromisos.filter((c) => !c.ID_Recurso && String(c.Responsable || "").trim()).map((c) => {
-      const r = recursoPor({ correo: c.Correo_Responsable, nombre: c.Responsable });
-      return r ? { id: c.ID_Compromiso, cambios: { ID_Recurso: r.ID_Recurso, Responsable: r.Nombre, ...(c.Correo_Responsable || !r.Correo ? {} : { Correo_Responsable: r.Correo }) } } : null;
+      const rs = responsablesDe(c);
+      if (rs.length === 1 && !rs[0].r && c.Correo_Responsable) { const r = recursoPor({ correo: c.Correo_Responsable }); if (r) rs[0] = { ...rs[0], r, ID_Recurso: r.ID_Recurso }; }
+      if (!rs.some((x) => x.r)) return null;
+      return { id: c.ID_Compromiso, cambios: serializarResp(rs.map((x) => (x.r ? { Nombre: x.r.Nombre, Correo: x.Correo || x.r.Correo || "", ID_Recurso: x.r.ID_Recurso } : x))) };
     }).filter(Boolean);
     if (!enlaces.length) return;
     try { await S.api.actualizarVarios("Compromisos", "ID_Compromiso", enlaces); } catch (e) { /* sin permiso de edición: se resuelve por nombre/correo */ }
   }
-  // Responsable de un compromiso → persona del directorio (la crea si es nueva).
-  async function resolverResponsable(nombre, correo) {
-    if (!String(nombre || "").trim()) return { Responsable: "", Correo_Responsable: correo || "", ID_Recurso: "" };
-    const r = await asegurarRecurso({ Nombre: nombre, Correo: correo });
-    return { Responsable: r.Nombre, Correo_Responsable: correo || r.Correo || "", ID_Recurso: r.ID_Recurso };
+  // Responsables de un compromiso → personas del directorio (crea las nuevas).
+  async function resolverResponsables(lista) {
+    const out = [];
+    for (const x of lista) {
+      if (!String(x.Nombre || "").trim()) continue;
+      const r = await asegurarRecurso({ Nombre: x.Nombre, Correo: x.Correo });
+      out.push({ Nombre: r.Nombre, Correo: x.Correo || r.Correo || "", ID_Recurso: r.ID_Recurso });
+    }
+    return serializarResp(out);
   }
-  const recursoDeComp = (c) => recursoPor({ id: c.ID_Recurso, correo: c.Correo_Responsable, nombre: c.Responsable });
+  const resolverResponsable = (nombre, correo) => resolverResponsables([{ Nombre: nombre, Correo: correo }]);
+  // Rol de la persona en el proyecto (si es stakeholder).
+  const stakeholderDe = (pid, x) => (S.datos.Stakeholders || []).find((s) => s.ID_Proyecto === pid && ((x.ID_Recurso && s.ID_Recurso === x.ID_Recurso) || normTxt(s.Nombre) === normTxt(x.Nombre)));
+  const rolEnProyecto = (pid, x) => (stakeholderDe(pid, x) || {}).Rol || "";
   // Cambios en un recurso se reflejan donde aparece (stakeholders y responsables de compromisos).
   async function propagarRecurso(antes, r) {
     const stk = (S.datos.Stakeholders || []).filter((x) => x.ID_Recurso === r.ID_Recurso || (!x.ID_Recurso && ((antes.Correo && lc(x.Correo) === lc(antes.Correo)) || normTxt(x.Nombre) === normTxt(antes.Nombre))));
     if (stk.length) await S.api.actualizarVarios("Stakeholders", "ID_Stakeholder", stk.map((x) => ({ id: x.ID_Stakeholder,
       cambios: { ID_Recurso: r.ID_Recurso, Nombre: r.Nombre, Correo: r.Correo, Cargo: r.Cargo, Area: r.Area, Telefono: r.Telefono, ID_Proveedor: r.ID_Proveedor } })));
-    const cmp = S.datos.Compromisos.filter((c) => c.ID_Recurso === r.ID_Recurso || (!c.ID_Recurso && ((antes.Correo && lc(c.Correo_Responsable) === lc(antes.Correo)) || (antes.Nombre && normTxt(c.Responsable) === normTxt(antes.Nombre)))));
-    if (cmp.length && (antes.Nombre !== r.Nombre || antes.Correo !== r.Correo)) await S.api.actualizarVarios("Compromisos", "ID_Compromiso", cmp.map((c) => ({ id: c.ID_Compromiso, cambios: { ID_Recurso: r.ID_Recurso, Responsable: r.Nombre, Correo_Responsable: r.Correo } })));
+    if (antes.Nombre === r.Nombre && antes.Correo === r.Correo) return;
+    const es = (x) => x.ID_Recurso === r.ID_Recurso || (!x.ID_Recurso && ((antes.Correo && lc(x.Correo) === lc(antes.Correo)) || (antes.Nombre && normTxt(x.Nombre) === normTxt(antes.Nombre))));
+    const cmp = S.datos.Compromisos.map((c) => ({ c, rs: responsablesDe(c) })).filter(({ rs }) => rs.some(es));
+    if (cmp.length) await S.api.actualizarVarios("Compromisos", "ID_Compromiso", cmp.map(({ c, rs }) => ({ id: c.ID_Compromiso,
+      cambios: serializarResp(rs.map((x) => (es(x) ? { Nombre: r.Nombre, Correo: r.Correo || "", ID_Recurso: r.ID_Recurso } : x))) })));
   }
   const dupRecurso = (fd, excluir) => (S.datos.Recursos || []).find((r) => r.ID_Recurso !== excluir && ((fd.Correo && lc(r.Correo) === lc(fd.Correo)) || normTxt(r.Nombre) === normTxt(fd.Nombre)));
   function formRecurso(r, alCrear) {
@@ -2360,7 +2385,7 @@
     const empresas = [["", "Interno (FSFB)"], ...proveedoresActivos(r && r.ID_Proveedor).map((v) => [v.ID_Proveedor, v.Nombre])];
     const usos = nuevo ? { stk: [], cmp: [] } : {
       stk: (S.datos.Stakeholders || []).filter((x) => x.ID_Recurso === r.ID_Recurso || (r.Correo && lc(x.Correo) === lc(r.Correo))),
-      cmp: S.datos.Compromisos.filter((c) => c.ID_Recurso === r.ID_Recurso || (!c.ID_Recurso && r.Correo && lc(c.Correo_Responsable) === lc(r.Correo))),
+      cmp: S.datos.Compromisos.filter((c) => responsablesDe(c).some((x) => x.ID_Recurso === r.ID_Recurso)),
     };
     const campos = [
       { k: "Nombre", label: "Nombre y apellido", ancho: true },
@@ -2604,6 +2629,7 @@
       input.dataset.idRecurso = r ? r.ID_Recurso : "";
       lista.hidden = true;
       input.dispatchEvent(new Event("change", { bubbles: true }));
+      input.dispatchEvent(new CustomEvent("elegido", { detail: { r, nuevo } }));
     };
     const pintar = () => {
       const q = normTxt(input.value);
@@ -4074,34 +4100,124 @@
     await S.api.eliminarFilas("Proyectos", "ID_Proyecto", [pid]);
   }
 
+  // Responsables del compromiso: uno o varios, del directorio de Recursos; desde aquí también se crean y editan los stakeholders del proyecto.
+  function selectorResponsables(m, pid, inicial) {
+    const cont = m.querySelector("#fc-resp");
+    const elegidos = inicial.map((x) => ({ Nombre: x.Nombre, Correo: x.Correo || "", ID_Recurso: x.ID_Recurso || "" }));
+    const yaEsta = (x) => elegidos.some((e) => (x.ID_Recurso && e.ID_Recurso === x.ID_Recurso) || normTxt(e.Nombre) === normTxt(x.Nombre));
+    const agregar = (x) => { if (!String(x.Nombre || "").trim() || yaEsta(x)) return; elegidos.push(x); pintar(); };
+    const deStk = (st) => { const r = recursoPor({ id: st.ID_Recurso, correo: st.Correo, nombre: st.Nombre }); return { Nombre: r ? r.Nombre : st.Nombre, Correo: st.Correo || (r && r.Correo) || "", ID_Recurso: r ? r.ID_Recurso : "" }; };
+    const opcionesRol = (sel) => (S.cat.Rol_Stakeholder || []).map((r) => `<option ${r === sel ? "selected" : ""}>${esc(r)}</option>`).join("");
+    cont.innerHTML = `<span class="etq">Responsables <span class="sub">(uno o varios, del directorio de Recursos)</span></span>
+      <div class="rs-chips" id="rs-chips"></div>
+      <input id="rs-buscar" data-recurso autocomplete="off" placeholder="+ Agregar responsable: busca en Recursos o escribe un nombre nuevo" aria-label="Agregar responsable">
+      <div class="rs-sug" id="rs-sug"></div>
+      <details class="rs-stk" id="rs-stk"><summary>Stakeholders del proyecto <span class="contador" id="rs-n"></span> · crear, cambiar rol o asignar</summary>
+        <ul class="eq-lista" id="rs-lista"></ul>
+        <div class="acciones"><button type="button" class="btn chico" id="rs-nuevo">+ Nuevo stakeholder</button><button type="button" class="btn chico" id="rs-rol-abrir">+ Crear rol nuevo</button></div>
+        <div id="rs-rol-form" class="eq-form" hidden><input id="rs-rol-nombre" placeholder="Nombre del rol (ej.: Líder técnico, QA)" aria-label="Nuevo rol">
+          <button type="button" class="btn primario chico" id="rs-rol-crear">Crear rol</button><button type="button" class="btn chico" id="rs-rol-cancelar">Cancelar</button></div>
+        <div id="rs-form" class="eq-form" hidden><div class="pn-grid">
+          <select id="rs-f-rol" aria-label="Rol">${opcionesRol()}</select>
+          <input id="rs-f-nombre" placeholder="Persona * (elige del directorio)" aria-label="Persona" autocomplete="off">
+          <input id="rs-f-correo" type="email" placeholder="Correo" aria-label="Correo"></div>
+          <div class="sub" id="rs-f-rec"></div>
+          <label class="check"><input type="checkbox" id="rs-f-resp" checked> Dejarlo también como responsable de este compromiso</label>
+          <div class="acciones"><button type="button" class="btn primario chico" id="rs-f-guardar">Agregar al proyecto</button><button type="button" class="btn chico" id="rs-f-cancelar">Cancelar</button></div></div>
+        <div class="error-campo" id="rs-error"></div>
+      </details>`;
+    const $c = (id) => cont.querySelector(id);
+    const err = $c("#rs-error");
+    function pintar() {
+      $c("#rs-chips").innerHTML = elegidos.map((x, i) => { const rol = rolEnProyecto(pid, x);
+        return `<span class="rs-chip">${avatar(x.Nombre)}<span><b>${esc(x.Nombre)}</b>${rol ? ` <span class="sub">· ${esc(rol)}</span>` : ""}<br><span class="sub ${x.Correo ? "" : "baja"}">${esc(x.Correo || "sin correo")}</span></span><button type="button" class="btn enlace" data-rs-quitar="${i}" aria-label="Quitar a ${esc(x.Nombre)}">✕</button></span>`; }).join("")
+        || `<span class="sub">Sin responsable asignado.</span>`;
+      cont.querySelectorAll("[data-rs-quitar]").forEach((b) => b.addEventListener("click", () => { elegidos.splice(Number(b.dataset.rsQuitar), 1); pintar(); }));
+      const stks = stakeholdersDe(pid);
+      const libres = stks.filter((st) => !yaEsta(deStk(st)));
+      $c("#rs-sug").innerHTML = libres.length ? `<span class="sub">Del proyecto:</span> ${libres.map((st) => `<button type="button" class="btn chico" data-rs-stk="${esc(st.ID_Stakeholder)}">+ ${esc(st.Nombre)}${st.Rol ? ` · ${esc(st.Rol)}` : ""}</button>`).join(" ")}` : "";
+      $c("#rs-n").textContent = stks.length;
+      $c("#rs-lista").innerHTML = stks.map((st) => `<li><b>${esc(st.Nombre)}</b> <span class="sub">${esc(st.Correo || "")}</span>
+          <select data-rs-rol="${esc(st.ID_Stakeholder)}" aria-label="Rol de ${esc(st.Nombre)}">${(S.cat.Rol_Stakeholder || []).includes(st.Rol) ? "" : `<option selected>${esc(st.Rol || "")}</option>`}${opcionesRol(st.Rol)}</select>
+          ${yaEsta(deStk(st)) ? `<span class="pill encurso">responsable</span>` : `<button type="button" class="btn chico" data-rs-stk="${esc(st.ID_Stakeholder)}">+ Responsable</button>`}</li>`).join("")
+        || `<li class="sub">Este proyecto aún no tiene stakeholders. Crea el primero con «+ Nuevo stakeholder».</li>`;
+      cont.querySelectorAll("[data-rs-stk]").forEach((b) => b.addEventListener("click", () => { const st = stks.find((x) => x.ID_Stakeholder === b.dataset.rsStk); if (st) agregar(deStk(st)); }));
+      cont.querySelectorAll("[data-rs-rol]").forEach((sel) => sel.addEventListener("change", async () => {
+        const st = stks.find((x) => x.ID_Stakeholder === sel.dataset.rsRol);
+        if (!st || sel.value === st.Rol) return;
+        cargando(true, "Guardando rol…");
+        try { await S.api.actualizarPorId("Stakeholders", "ID_Stakeholder", st.ID_Stakeholder, { Rol: sel.value }); toast(`${st.Nombre}: rol «${sel.value}»`); pintar(); }
+        catch (e) { err.textContent = "No se pudo cambiar el rol: " + e.message; } finally { cargando(false); }
+      }));
+    }
+    pintar();
+    cont.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.tagName === "INPUT") e.preventDefault(); });
+    // Buscar en el directorio
+    const buscar = $c("#rs-buscar");
+    buscar.addEventListener("elegido", (e) => {
+      const { r, nuevo } = e.detail;
+      if (r) agregar({ Nombre: r.Nombre, Correo: r.Correo || "", ID_Recurso: r.ID_Recurso });
+      else if (nuevo) agregar({ Nombre: nuevo, Correo: correoSuelto(nuevo), ID_Recurso: "" });
+      buscar.value = ""; buscar.focus();
+    });
+    buscar.addEventListener("keydown", (e) => { if (e.key === "Enter") e.preventDefault(); });
+    // Crear rol
+    $c("#rs-rol-abrir").addEventListener("click", () => { $c("#rs-rol-form").hidden = false; $c("#rs-rol-nombre").focus(); });
+    $c("#rs-rol-cancelar").addEventListener("click", () => { $c("#rs-rol-form").hidden = true; });
+    $c("#rs-rol-crear").addEventListener("click", async () => {
+      const rol = $c("#rs-rol-nombre").value.trim();
+      if (!rol) { err.textContent = "Escribe el nombre del rol."; return; }
+      if ((S.cat.Rol_Stakeholder || []).some((r) => lc(r) === lc(rol))) { err.textContent = "Ese rol ya existe."; return; }
+      cargando(true, "Creando rol…");
+      try {
+        await S.api.agregarFila("Catalogos", { Lista: "Rol_Stakeholder", Valor: rol }); armarCatalogos();
+        $c("#rs-f-rol").innerHTML = opcionesRol(rol); $c("#rs-rol-nombre").value = ""; $c("#rs-rol-form").hidden = true; err.textContent = "";
+        pintar(); toast(`Rol «${rol}» creado`);
+      } catch (e) { err.textContent = "No se pudo crear el rol: " + e.message; } finally { cargando(false); }
+    });
+    // Nuevo stakeholder del proyecto
+    selectorPersona(m, "#rs-f-nombre", { Correo: "#rs-f-correo" }, "#rs-f-rec");
+    $c("#rs-nuevo").addEventListener("click", () => { $c("#rs-form").hidden = false; $c("#rs-f-nombre").focus(); });
+    $c("#rs-f-cancelar").addEventListener("click", () => { $c("#rs-form").hidden = true; });
+    $c("#rs-f-guardar").addEventListener("click", async () => {
+      const nombre = $c("#rs-f-nombre").value.trim(), correo = $c("#rs-f-correo").value.trim(), rol = $c("#rs-f-rol").value;
+      if (!nombre) { err.textContent = "Elige o escribe la persona."; return; }
+      if (!rol) { err.textContent = "Elige el rol (o crea uno nuevo)."; return; }
+      if (correo && !validoCorreo(correo)) { err.textContent = "Correo no válido."; return; }
+      const r0 = recursoPor({ correo, nombre });
+      if (stakeholdersDe(pid).some((st) => (r0 && st.ID_Recurso === r0.ID_Recurso) || normTxt(st.Nombre) === normTxt(nombre))) { err.textContent = "Esa persona ya es stakeholder del proyecto: cámbiale el rol en la lista."; return; }
+      cargando(true, "Agregando stakeholder…");
+      try {
+        const r = await asegurarRecurso({ Nombre: nombre, Correo: correo });
+        await S.api.agregarFila("Stakeholders", { ID_Stakeholder: R.siguienteIdHijo("STK", S.datos.Stakeholders || [], "ID_Stakeholder", pid), ID_Proyecto: pid, Rol: rol,
+          Nombre: r.Nombre, Cargo: r.Cargo || "", Area: r.Area || "", Correo: correo || r.Correo || "", Telefono: r.Telefono || "", ID_Proveedor: r.ID_Proveedor || "", Dedicacion: "", ID_Recurso: r.ID_Recurso });
+        if ($c("#rs-f-resp").checked) agregar({ Nombre: r.Nombre, Correo: correo || r.Correo || "", ID_Recurso: r.ID_Recurso });
+        ["#rs-f-nombre", "#rs-f-correo"].forEach((id) => { $c(id).value = ""; }); $c("#rs-f-rec").textContent = ""; $c("#rs-form").hidden = true; err.textContent = "";
+        pintar(); toast(`${r.Nombre} agregado como ${rol}`);
+      } catch (e) { err.textContent = "No se pudo agregar: " + e.message; } finally { cargando(false); }
+    });
+    return () => elegidos.slice();
+  }
+
   function formCompromiso(c, pNuevo, segSugerida) {
     const nuevo = !c;
     const pid = nuevo ? pNuevo.ID_Proyecto : c.ID_Proyecto;
     const sesiones = R.seguimientosDe(pid, S.datos.Seguimientos).slice().reverse()
       .map((s) => [s.ID_Seguimiento, `Sesión del ${fecha(s.Fecha_Corte)}${s.Fecha_Acta && s.Fecha_Acta !== s.Fecha_Corte ? ` (acta ${fecha(s.Fecha_Acta)})` : ""}`]);
-    const gente = [...recursos().filter((r) => r.Activo !== "No").map((r) => [r.Nombre, r.Correo || ""]), ...S.datos.Usuarios.filter((u) => u.Activo === "Sí").map((u) => [u.Nombre || u.Correo, u.Correo]),
-      ...(S.datos.Stakeholders || []).filter((x) => x.ID_Proyecto === pid && x.Nombre).map((x) => [x.Nombre, x.Correo || ""])];
-    const personas = [...new Set(gente.map((g) => g[0]))].sort((a, b) => a.localeCompare(b, "es"));
-    const correoPorNombre = (n) => (gente.find((g) => lc(g[0]) === lc(n) && g[1]) || [])[1] || "";
-    // El responsable se elige del directorio de Recursos: al elegirlo se trae su correo; si es nuevo, se agrega al directorio al guardar.
-    const autollenar = { init: (m) => {
-      const r = m.querySelector('[name="Responsable"]'), co = m.querySelector('[name="Correo_Responsable"]');
-      let previo = recursoPor({ nombre: r.value });
-      selectorPersona(m, '[name="Responsable"]', {}, r.parentElement.querySelector(".sub"));
-      r.addEventListener("change", () => {
-        const rec = recursoPor({ nombre: r.value });
-        if (rec) co.value = rec.Correo || "";
-        else if (previo && co.value === previo.Correo) co.value = correoPorNombre(r.value);
-        else if (!co.value) co.value = correoPorNombre(r.value);
-        previo = rec;
-      });
-    } };
+    let leerResp = () => [];
+    const extra = {
+      init: (m) => { leerResp = selectorResponsables(m, pid, nuevo ? [] : responsablesDe(c)); },
+      recoger: (m) => {
+        const pend = m.querySelector("#rs-buscar").value.trim();
+        if (pend) return { error: `Elige «${pend}» de la lista de responsables (o bórralo) antes de guardar.` };
+        return { datos: leerResp() };
+      },
+    };
     const campos = [
       { k: "Compromiso", label: "Compromiso", tipo: "textarea", placeholder: "Qué se hará" },
       { k: "ID_Seguimiento", label: "¿De qué sesión salió?", tipo: "select", opciones: sesiones, ancho: true, textoVacio: "Sin sesión (solo del proyecto)",
         ayuda: sesiones.length ? "Elige la sesión de seguimiento donde se acordó, o déjalo sin sesión." : "Este proyecto aún no tiene sesiones; quedará atado solo al proyecto." },
-      { k: "Responsable", label: "Responsable (directorio de Recursos)", recurso: true, placeholder: "Busca en Recursos o escribe un nombre nuevo", ayuda: " " },
-      { k: "Correo_Responsable", label: "Correo del responsable", tipo: "email", placeholder: "Se trae del directorio de Recursos", ayuda: "Para enviarle recordatorios." },
+      { html: `<div id="fc-resp" class="fc-resp"></div>` },
       { k: "Fecha_Compromiso", label: "Fecha límite", tipo: "date" },
       { k: "Dias_Alerta", label: "Avisar con (días de anticipación)", tipo: "number", min: 0, max: 60, def: R.DIAS_COMPROMISO_POR_VENCER, ayuda: "Desde ese día aparece en «Por vencer» y en la campana 🔔." },
       ...(nuevo ? [{ k: "Comentario", label: "Comentario inicial (opcional)", tipo: "textarea", placeholder: "Contexto o primer avance" }] : [
@@ -4109,28 +4225,28 @@
         { k: "Fecha_Cierre", label: "Fecha de cierre", tipo: "date", ayuda: "Se llena sola al marcarlo cumplido; se borra si lo reabres." }]),
     ];
     if (nuevo) {
-      modal(`Nuevo compromiso · ${pNuevo.Nombre}`, campos, { ID_Seguimiento: segSugerida || "" }, (fd) => {
+      modal(`Nuevo compromiso · ${pNuevo.Nombre}`, campos, { ID_Seguimiento: segSugerida || "" }, (fd, resp) => {
         const fila = { ID_Compromiso: R.siguienteIdHijo("CMP", S.datos.Compromisos, "ID_Compromiso", pNuevo.ID_Proyecto), ID_Proyecto: pNuevo.ID_Proyecto, ID_Seguimiento: fd.ID_Seguimiento || "",
-          Compromiso: fd.Compromiso || "(sin descripción)", Responsable: fd.Responsable, Correo_Responsable: fd.Correo_Responsable || correoPorNombre(fd.Responsable), Dias_Alerta: fd.Dias_Alerta === "" ? "" : fd.Dias_Alerta, Fecha_Compromiso: fd.Fecha_Compromiso, Estado: "Pendiente", Fecha_Cierre: "", Registrado_Por: S.usuario.Correo };
+          Compromiso: fd.Compromiso || "(sin descripción)", Dias_Alerta: fd.Dias_Alerta === "" ? "" : fd.Dias_Alerta, Fecha_Compromiso: fd.Fecha_Compromiso, Estado: "Pendiente", Fecha_Cierre: "", Registrado_Por: S.usuario.Correo };
         guardar(async () => {
-          Object.assign(fila, await resolverResponsable(fila.Responsable, fila.Correo_Responsable));
+          Object.assign(fila, await resolverResponsables(resp));
           await S.api.agregarFila("Compromisos", fila);
           if (fd.Comentario) await S.api.agregarFila("Comentarios", nuevoComentario(fila, fd.Comentario));
         }, "Compromiso agregado");
-      }, null, autollenar);
+      }, null, extra);
       return;
     }
     const coms = comentariosDe(c.ID_Compromiso);
-    modal("Editar compromiso", campos, { ...c, Estado: R.estadoBase(c) }, (fd) => {
+    modal("Editar compromiso", campos, { ...c, Estado: R.estadoBase(c) }, (fd, resp) => {
       if (fd.Estado === "Cerrado" && !fd.Fecha_Cierre) fd.Fecha_Cierre = R.hoyISO();
       if (fd.Estado !== "Cerrado") fd.Fecha_Cierre = "";
       const cambioEstado = fd.Estado !== R.estadoBase(c);
       guardar(async () => {
-        Object.assign(fd, await resolverResponsable(fd.Responsable, fd.Correo_Responsable));
+        Object.assign(fd, await resolverResponsables(resp));
         await S.api.actualizarPorId("Compromisos", "ID_Compromiso", c.ID_Compromiso, fd);
         if (cambioEstado) await S.api.agregarFila("Comentarios", nuevoComentario(c, TEXTO_ESTADO[fd.Estado] || `Estado: ${fd.Estado}.`));
       }, "Compromiso actualizado");
-    }, null, { ...autollenar, eliminar: { texto: "Eliminar compromiso", mensaje: `Se borrará «${c.Compromiso}»${coms.length ? ` con sus ${coms.length} comentario(s)` : ""}.`,
+    }, null, { ...extra, eliminar: { texto: "Eliminar compromiso", mensaje: `Se borrará «${c.Compromiso}»${coms.length ? ` con sus ${coms.length} comentario(s)` : ""}.`,
       accion: () => guardar(async () => {
         await borrarAdjuntos(coms);
         if (coms.length) await S.api.eliminarFilas("Comentarios", "ID_Comentario", coms.map((x) => x.ID_Comentario));

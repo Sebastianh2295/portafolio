@@ -205,6 +205,19 @@ span.chip-proy { cursor: default; }
 .eq-form { margin: 8px 0; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .eq-form .pn-grid { width: 100%; }
 .eq-form > input { flex: 1; min-width: 200px; width: auto; }
+/* Responsables del compromiso (uno o varios) */
+.fc-resp { display: flex; flex-direction: column; gap: 6px; }
+.form-grid > .form-html { grid-column: 1 / -1; }
+.fc-resp [hidden], .eq-form[hidden] { display: none !important; }
+.rs-stk .eq-form .pn-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 6px; }
+.rs-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.rs-chip { display: inline-flex; align-items: center; gap: 8px; background: var(--suave); border: 1px solid var(--borde); border-radius: 18px; padding: 4px 6px 4px 4px; font-size: 13px; line-height: 1.25; max-width: 100%; }
+.rs-chip .btn.enlace { padding: 0 4px; }
+.rs-sug { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.rs-stk { border: 1px solid var(--borde); border-radius: var(--radio); padding: 6px 10px; background: var(--superficie-2); }
+.rs-stk summary { cursor: pointer; font-weight: 600; font-size: 13px; }
+.rs-stk .eq-lista li { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.rs-stk .eq-lista select { width: auto; min-width: 150px; margin-left: auto; }
 .leccion { border: 1px solid var(--borde); border-left: 4px solid var(--amarillo); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; display: grid; gap: 4px; }
 .leccion.positiva { border-left-color: var(--verde); }
 .leccion .titulo-fila { margin-bottom: 2px; }
