@@ -129,6 +129,7 @@
       catch (e) { /* sin permiso de edición: la app igual los trata como cerrados */ }
     }
     await migrarRecursos();
+    await vincularCompromisosRecursos();
     const faltan = Object.keys(CATALOGOS_BASE).filter((k) => !S.datos.Catalogos.some((f) => f.Lista === k));
     if (sembrado || !faltan.length) return;
     sembrado = true;
@@ -764,6 +765,8 @@
   // A quién escribirle: el correo del compromiso, o el de un usuario/stakeholder con ese nombre, o el texto si ya es un correo.
   function correoDe(c) {
     if (c.Correo_Responsable) return c.Correo_Responsable;
+    const rec = c.ID_Recurso && recursoPor({ id: c.ID_Recurso });
+    if (rec && rec.Correo) return rec.Correo;
     const r = lc(c.Responsable);
     if (!r) return "";
     if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(r)) return c.Responsable.trim();
@@ -1050,7 +1053,7 @@
       <div class="titulo-fila"><div><h2>${esc(c.Compromiso)}</h2><div class="sub">${esc(p.Nombre)} · ${esc(origen(c))}</div></div><button class="btn enlace" id="d-cerrar" aria-label="Cerrar">✕</button></div>
       <div class="contexto">
         <div><span class="sub">Estado</span><b>${pillComp(c)}</b></div>
-        <div><span class="sub">Responsable</span><b>${esc(c.Responsable || "—")}</b></div>
+        <div><span class="sub">Responsable</span><b>${esc(c.Responsable || "—")}</b>${(() => { const r = recursoDeComp(c); return r ? `<div class="sub">${esc([r.Cargo, empresaDe(r), r.Correo].filter(Boolean).join(" · "))}</div>` : ""; })()}</div>
         <div><span class="sub">Fecha límite</span><b>${fecha(c.Fecha_Compromiso)}</b></div>
         ${c.Fecha_Cierre ? `<div><span class="sub">Cerrado el</span><b>${fecha(c.Fecha_Cierre)}</b></div>` : ""}
       </div>
@@ -2324,13 +2327,32 @@
       if (enlaces.length) await S.api.actualizarVarios("Stakeholders", "ID_Stakeholder", enlaces);
     } catch (e) { S.datos.Recursos = []; /* sin permiso de edición */ }
   }
+  // Una vez: los compromisos que ya existían quedan enlazados a la persona del directorio (por correo o nombre).
+  let compromisosEnlazados = false;
+  async function vincularCompromisosRecursos() {
+    if (compromisosEnlazados || !(S.datos.Recursos || []).length) return;
+    compromisosEnlazados = true;
+    const enlaces = S.datos.Compromisos.filter((c) => !c.ID_Recurso && String(c.Responsable || "").trim()).map((c) => {
+      const r = recursoPor({ correo: c.Correo_Responsable, nombre: c.Responsable });
+      return r ? { id: c.ID_Compromiso, cambios: { ID_Recurso: r.ID_Recurso, Responsable: r.Nombre, ...(c.Correo_Responsable || !r.Correo ? {} : { Correo_Responsable: r.Correo }) } } : null;
+    }).filter(Boolean);
+    if (!enlaces.length) return;
+    try { await S.api.actualizarVarios("Compromisos", "ID_Compromiso", enlaces); } catch (e) { /* sin permiso de edición: se resuelve por nombre/correo */ }
+  }
+  // Responsable de un compromiso → persona del directorio (la crea si es nueva).
+  async function resolverResponsable(nombre, correo) {
+    if (!String(nombre || "").trim()) return { Responsable: "", Correo_Responsable: correo || "", ID_Recurso: "" };
+    const r = await asegurarRecurso({ Nombre: nombre, Correo: correo });
+    return { Responsable: r.Nombre, Correo_Responsable: correo || r.Correo || "", ID_Recurso: r.ID_Recurso };
+  }
+  const recursoDeComp = (c) => recursoPor({ id: c.ID_Recurso, correo: c.Correo_Responsable, nombre: c.Responsable });
   // Cambios en un recurso se reflejan donde aparece (stakeholders y responsables de compromisos).
   async function propagarRecurso(antes, r) {
     const stk = (S.datos.Stakeholders || []).filter((x) => x.ID_Recurso === r.ID_Recurso || (!x.ID_Recurso && ((antes.Correo && lc(x.Correo) === lc(antes.Correo)) || normTxt(x.Nombre) === normTxt(antes.Nombre))));
     if (stk.length) await S.api.actualizarVarios("Stakeholders", "ID_Stakeholder", stk.map((x) => ({ id: x.ID_Stakeholder,
       cambios: { ID_Recurso: r.ID_Recurso, Nombre: r.Nombre, Correo: r.Correo, Cargo: r.Cargo, Area: r.Area, Telefono: r.Telefono, ID_Proveedor: r.ID_Proveedor } })));
-    const cmp = S.datos.Compromisos.filter((c) => (antes.Correo && lc(c.Correo_Responsable) === lc(antes.Correo)) || (antes.Nombre && normTxt(c.Responsable) === normTxt(antes.Nombre)));
-    if (cmp.length && (antes.Nombre !== r.Nombre || antes.Correo !== r.Correo)) await S.api.actualizarVarios("Compromisos", "ID_Compromiso", cmp.map((c) => ({ id: c.ID_Compromiso, cambios: { Responsable: r.Nombre, Correo_Responsable: r.Correo } })));
+    const cmp = S.datos.Compromisos.filter((c) => c.ID_Recurso === r.ID_Recurso || (!c.ID_Recurso && ((antes.Correo && lc(c.Correo_Responsable) === lc(antes.Correo)) || (antes.Nombre && normTxt(c.Responsable) === normTxt(antes.Nombre)))));
+    if (cmp.length && (antes.Nombre !== r.Nombre || antes.Correo !== r.Correo)) await S.api.actualizarVarios("Compromisos", "ID_Compromiso", cmp.map((c) => ({ id: c.ID_Compromiso, cambios: { ID_Recurso: r.ID_Recurso, Responsable: r.Nombre, Correo_Responsable: r.Correo } })));
   }
   const dupRecurso = (fd, excluir) => (S.datos.Recursos || []).find((r) => r.ID_Recurso !== excluir && ((fd.Correo && lc(r.Correo) === lc(fd.Correo)) || normTxt(r.Nombre) === normTxt(fd.Nombre)));
   function formRecurso(r, alCrear) {
@@ -2338,7 +2360,7 @@
     const empresas = [["", "Interno (FSFB)"], ...proveedoresActivos(r && r.ID_Proveedor).map((v) => [v.ID_Proveedor, v.Nombre])];
     const usos = nuevo ? { stk: [], cmp: [] } : {
       stk: (S.datos.Stakeholders || []).filter((x) => x.ID_Recurso === r.ID_Recurso || (r.Correo && lc(x.Correo) === lc(r.Correo))),
-      cmp: S.datos.Compromisos.filter((c) => r.Correo && lc(c.Correo_Responsable) === lc(r.Correo)),
+      cmp: S.datos.Compromisos.filter((c) => c.ID_Recurso === r.ID_Recurso || (!c.ID_Recurso && r.Correo && lc(c.Correo_Responsable) === lc(r.Correo))),
     };
     const campos = [
       { k: "Nombre", label: "Nombre y apellido", ancho: true },
@@ -2613,6 +2635,8 @@
       elegir(it.r, it.nuevo);
     });
     input.addEventListener("blur", () => setTimeout(() => { lista.hidden = true; }, 150));
+    // Al envolver el campo se pierde el foco: se recupera y se muestra la lista de una vez.
+    if (document.activeElement !== input) input.focus(); else pintar();
   }
   document.addEventListener("focusin", (e) => { if (e.target.matches && e.target.matches("input[data-recurso]")) comboRecurso(e.target); });
 
@@ -3922,7 +3946,7 @@
       const actaElegida = acta;
       const comps = extra.nuevos.map((c, i) => ({
         ID_Compromiso: R.siguienteIdHijo("CMP", S.datos.Compromisos, "ID_Compromiso", p.ID_Proyecto, i),
-        ID_Proyecto: p.ID_Proyecto, ID_Seguimiento: idSeg, ...c, Correo_Responsable: (recursoPor({ nombre: c.Responsable }) || {}).Correo || "", Estado: "Pendiente", Fecha_Cierre: "", Registrado_Por: S.usuario.Correo,
+        ID_Proyecto: p.ID_Proyecto, ID_Seguimiento: idSeg, ...c, Correo_Responsable: "", ID_Recurso: "", Estado: "Pendiente", Fecha_Cierre: "", Registrado_Por: S.usuario.Correo,
       }));
       guardar(async () => {
         await S.api.agregarFila("Seguimientos", fila);
@@ -3933,6 +3957,7 @@
           ...(fd.Semaforo ? { Semaforo: fd.Semaforo } : {}),
           ...(fd.Bloqueos || fd.Logros ? { Comentario_Estado: fd.Bloqueos ? `Bloqueo: ${fd.Bloqueos}` : fd.Logros } : {}), ...sello(),
         });
+        for (const c of comps) Object.assign(c, await resolverResponsable(c.Responsable, ""));
         if (comps.length) await S.api.agregarFilas("Compromisos", comps);
         if (extra.cerrados.length) {
           await S.api.actualizarVarios("Compromisos", "ID_Compromiso", extra.cerrados.map((id) => ({ id, cambios: { Estado: "Cerrado", Fecha_Cierre: fd.Fecha_Corte } })));
@@ -4058,16 +4083,25 @@
       ...(S.datos.Stakeholders || []).filter((x) => x.ID_Proyecto === pid && x.Nombre).map((x) => [x.Nombre, x.Correo || ""])];
     const personas = [...new Set(gente.map((g) => g[0]))].sort((a, b) => a.localeCompare(b, "es"));
     const correoPorNombre = (n) => (gente.find((g) => lc(g[0]) === lc(n) && g[1]) || [])[1] || "";
+    // El responsable se elige del directorio de Recursos: al elegirlo se trae su correo; si es nuevo, se agrega al directorio al guardar.
     const autollenar = { init: (m) => {
       const r = m.querySelector('[name="Responsable"]'), co = m.querySelector('[name="Correo_Responsable"]');
-      r.addEventListener("change", () => { const c2 = correoPorNombre(r.value); if (c2 && !co.value) co.value = c2; });
+      let previo = recursoPor({ nombre: r.value });
+      selectorPersona(m, '[name="Responsable"]', {}, r.parentElement.querySelector(".sub"));
+      r.addEventListener("change", () => {
+        const rec = recursoPor({ nombre: r.value });
+        if (rec) co.value = rec.Correo || "";
+        else if (previo && co.value === previo.Correo) co.value = correoPorNombre(r.value);
+        else if (!co.value) co.value = correoPorNombre(r.value);
+        previo = rec;
+      });
     } };
     const campos = [
       { k: "Compromiso", label: "Compromiso", tipo: "textarea", placeholder: "Qué se hará" },
       { k: "ID_Seguimiento", label: "¿De qué sesión salió?", tipo: "select", opciones: sesiones, ancho: true, textoVacio: "Sin sesión (solo del proyecto)",
         ayuda: sesiones.length ? "Elige la sesión de seguimiento donde se acordó, o déjalo sin sesión." : "Este proyecto aún no tiene sesiones; quedará atado solo al proyecto." },
-      { k: "Responsable", label: "Responsable", recurso: true, placeholder: "Busca en Recursos o escribe un nombre nuevo" },
-      { k: "Correo_Responsable", label: "Correo del responsable", tipo: "email", placeholder: "Se llena solo si la persona está registrada", ayuda: "Para enviarle recordatorios." },
+      { k: "Responsable", label: "Responsable (directorio de Recursos)", recurso: true, placeholder: "Busca en Recursos o escribe un nombre nuevo", ayuda: " " },
+      { k: "Correo_Responsable", label: "Correo del responsable", tipo: "email", placeholder: "Se trae del directorio de Recursos", ayuda: "Para enviarle recordatorios." },
       { k: "Fecha_Compromiso", label: "Fecha límite", tipo: "date" },
       { k: "Dias_Alerta", label: "Avisar con (días de anticipación)", tipo: "number", min: 0, max: 60, def: R.DIAS_COMPROMISO_POR_VENCER, ayuda: "Desde ese día aparece en «Por vencer» y en la campana 🔔." },
       ...(nuevo ? [{ k: "Comentario", label: "Comentario inicial (opcional)", tipo: "textarea", placeholder: "Contexto o primer avance" }] : [
@@ -4079,7 +4113,7 @@
         const fila = { ID_Compromiso: R.siguienteIdHijo("CMP", S.datos.Compromisos, "ID_Compromiso", pNuevo.ID_Proyecto), ID_Proyecto: pNuevo.ID_Proyecto, ID_Seguimiento: fd.ID_Seguimiento || "",
           Compromiso: fd.Compromiso || "(sin descripción)", Responsable: fd.Responsable, Correo_Responsable: fd.Correo_Responsable || correoPorNombre(fd.Responsable), Dias_Alerta: fd.Dias_Alerta === "" ? "" : fd.Dias_Alerta, Fecha_Compromiso: fd.Fecha_Compromiso, Estado: "Pendiente", Fecha_Cierre: "", Registrado_Por: S.usuario.Correo };
         guardar(async () => {
-          if (fila.Correo_Responsable) await asegurarRecurso({ Nombre: fila.Responsable, Correo: fila.Correo_Responsable });
+          Object.assign(fila, await resolverResponsable(fila.Responsable, fila.Correo_Responsable));
           await S.api.agregarFila("Compromisos", fila);
           if (fd.Comentario) await S.api.agregarFila("Comentarios", nuevoComentario(fila, fd.Comentario));
         }, "Compromiso agregado");
@@ -4092,7 +4126,7 @@
       if (fd.Estado !== "Cerrado") fd.Fecha_Cierre = "";
       const cambioEstado = fd.Estado !== R.estadoBase(c);
       guardar(async () => {
-        if (fd.Correo_Responsable && fd.Responsable) await asegurarRecurso({ Nombre: fd.Responsable, Correo: fd.Correo_Responsable });
+        Object.assign(fd, await resolverResponsable(fd.Responsable, fd.Correo_Responsable));
         await S.api.actualizarPorId("Compromisos", "ID_Compromiso", c.ID_Compromiso, fd);
         if (cambioEstado) await S.api.agregarFila("Comentarios", nuevoComentario(c, TEXTO_ESTADO[fd.Estado] || `Estado: ${fd.Estado}.`));
       }, "Compromiso actualizado");
