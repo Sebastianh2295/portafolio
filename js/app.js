@@ -741,7 +741,7 @@
         const coms = comentariosDe(c.ID_Compromiso);
         const ult = coms[coms.length - 1];
         return `<tr ${conProyecto ? `class="clic" data-pid="${esc(c.ID_Proyecto)}"` : ""}>${conProyecto ? `<td><b>${esc(p.Nombre)}</b></td>` : ""}
-          <td>${esc(c.Compromiso)}<div class="sub">${esc(origen(c))}</div></td><td>${esc(c.Responsable)}</td><td>${fecha(c.Fecha_Compromiso)}</td>
+          <td>${esc(c.Compromiso)}<div class="sub">${esc(origen(c))}</div></td><td>${celdaResp(c, R.puedeEditar(S.usuario, p, "compromisos"))}</td><td>${fecha(c.Fecha_Compromiso)}</td>
           <td>${pillComp(c)}${e === "Cerrado" && c.Fecha_Cierre ? `<div class="sub">${fecha(c.Fecha_Cierre)}</div>` : ""}</td>
           <td class="opc">${ult ? `<span class="ult-com">${esc(resumenCom(ult))}</span><div class="sub">${esc(nombreUsuario(ult.Autor))} · ${fechaHora(ult.Fecha_Hora)}</div>` : `<span class="sub">Sin comentarios</span>`}</td>
           <td class="derecha nowrap"><button class="btn chico ${coms.length ? "" : "primario-suave"}" data-abrir-comp="${esc(c.ID_Compromiso)}">${coms.length ? `Comentarios (${coms.length})` : "Abrir"}</button>
@@ -983,7 +983,7 @@
       const ult = coms[coms.length - 1];
       return `<tr><td>${esc(c.Compromiso)}${ult ? `<div class="sub ult-com">💬 ${esc(resumenCom(ult))}</div>` : ""}</td>
         <td>${c.ID_Seguimiento ? `Sesión ${fecha(fSes(c))}` : `<span class="sub">Sin sesión</span>`}</td>
-        <td>${esc(c.Responsable || "—")}</td><td class="nowrap">${fecha(c.Fecha_Compromiso)}</td>
+        <td>${celdaResp(c, puede)}</td><td class="nowrap">${fecha(c.Fecha_Compromiso)}</td>
         <td>${pillComp(c)}${e === "Cerrado" && c.Fecha_Cierre ? `<div class="sub">${fecha(c.Fecha_Cierre)}</div>` : ""}</td>
         <td class="derecha nowrap"><button class="btn chico ${coms.length ? "" : "primario-suave"}" data-abrir-comp="${esc(c.ID_Compromiso)}">${coms.length ? `Comentarios (${coms.length})` : "Abrir"}</button>
           ${puede ? botonesEstado(c) : ""}</td></tr>`;
@@ -1053,7 +1053,7 @@
       <div class="titulo-fila"><div><h2>${esc(c.Compromiso)}</h2><div class="sub">${esc(p.Nombre)} · ${esc(origen(c))}</div></div><button class="btn enlace" id="d-cerrar" aria-label="Cerrar">✕</button></div>
       <div class="contexto">
         <div><span class="sub">Estado</span><b>${pillComp(c)}</b></div>
-        <div><span class="sub">${responsablesDe(c).length > 1 ? "Responsables" : "Responsable"}</span>${responsablesDe(c).map((x) => `<b>${esc(x.Nombre)}</b>${(() => { const rol = rolEnProyecto(c.ID_Proyecto, x); const d = [rol, x.r && x.r.Cargo, x.r && empresaDe(x.r), x.Correo].filter(Boolean); return d.length ? `<div class="sub">${esc(d.join(" · "))}</div>` : ""; })()}`).join("") || "<b>—</b>"}</div>
+        <div><span class="sub">${responsablesDe(c).length > 1 ? "Responsables" : "Responsable"}${puede ? ` <button class="btn enlace chico" data-cambiar-resp="${esc(c.ID_Compromiso)}">✎ Cambiar</button>` : ""}</span>${responsablesDe(c).map((x) => `<b>${esc(x.Nombre)}</b>${(() => { const rol = rolEnProyecto(c.ID_Proyecto, x); const d = [rol, x.r && x.r.Cargo, x.r && empresaDe(x.r), x.Correo].filter(Boolean); return d.length ? `<div class="sub">${esc(d.join(" · "))}</div>` : ""; })()}`).join("") || "<b>—</b>"}</div>
         <div><span class="sub">Fecha límite</span><b>${fecha(c.Fecha_Compromiso)}</b></div>
         ${c.Fecha_Cierre ? `<div><span class="sub">Cerrado el</span><b>${fecha(c.Fecha_Cierre)}</b></div>` : ""}
       </div>
@@ -1064,7 +1064,7 @@
         <div id="d-pend" class="adj-pend"></div>
         <div class="error-campo" id="d-error" role="alert"></div>
         <div class="acciones derecha">
-          <button class="btn peligro-suave" id="d-editar">Editar compromiso</button>
+          <button class="btn" id="d-editar">Editar compromiso</button>
           ${e !== "Cerrado" ? `<button class="btn" id="d-recordar" title="${esc(correoDe(c) ? `Correo a ${correoDe(c)}` : "Sin correo del responsable")}">✉ Recordar</button>` : ""}
           ${e === "Cerrado" ? `<button class="btn" id="d-reabrir">Reabrir</button>` : `${R.estadoBase(c) === "Pendiente" ? `<button class="btn" id="d-encurso">▶ Pasar a En curso</button>` : ""}<button class="btn" id="d-comentar-cerrar">Comentar y cerrar</button>`}
           <button class="btn primario" id="d-comentar">Comentar</button></div>` : `<p class="sub">Solo el PM del proyecto, la PMO o el Admin pueden comentar.</p>`}
@@ -4193,6 +4193,37 @@
     });
     return () => elegidos.slice();
   }
+
+  // Cambiar solo el/los responsable(s) de un compromiso, eligiendo del directorio de Recursos.
+  const celdaResp = (c, puede) => `${esc(c.Responsable || "—")}${puede ? ` <button class="btn enlace cambiar-resp" data-cambiar-resp="${esc(c.ID_Compromiso)}" title="Cambiar responsable" aria-label="Cambiar responsable de ${esc(c.Compromiso)}">✎</button>` : ""}`;
+  function formResponsables(c, alTerminar) {
+    let leerResp = () => [];
+    const antes = responsablesDe(c).map((x) => x.Nombre).join(", ") || "sin responsable";
+    modal(`Responsable · ${c.Compromiso}`, [{ html: `<div id="fc-resp" class="fc-resp"></div>` }], {}, (fd, resp) => {
+      guardar(async () => {
+        const cambios = await resolverResponsables(resp);
+        await S.api.actualizarPorId("Compromisos", "ID_Compromiso", c.ID_Compromiso, cambios);
+        const ahora = partesLista(cambios.Responsable).filter(Boolean).join(", ") || "sin responsable";
+        if (ahora !== antes) await S.api.agregarFila("Comentarios", nuevoComentario(c, `Responsable cambiado: ${antes} → ${ahora}.`));
+      }, "Responsable actualizado").then(() => { if (alTerminar) alTerminar(); });
+    }, null, {
+      init: (m) => { leerResp = selectorResponsables(m, c.ID_Proyecto, responsablesDe(c)); setTimeout(() => m.querySelector("#rs-buscar").focus(), 0); },
+      recoger: (m) => {
+        const pend = m.querySelector("#rs-buscar").value.trim();
+        if (pend) return { error: `Elige «${pend}» de la lista (o bórralo) antes de guardar.` };
+        return { datos: leerResp() };
+      },
+    });
+  }
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest && e.target.closest("[data-cambiar-resp]");
+    if (!b) return;
+    e.preventDefault(); e.stopPropagation();
+    const c = S.datos.Compromisos.find((x) => x.ID_Compromiso === b.dataset.cambiarResp);
+    if (!c) return;
+    const desdeDetalle = !!b.closest("#modal");
+    formResponsables(c, desdeDetalle ? () => detalleCompromiso(c.ID_Compromiso) : null);
+  }, true);
 
   function formCompromiso(c, pNuevo, segSugerida) {
     const nuevo = !c;
