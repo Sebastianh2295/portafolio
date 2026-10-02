@@ -725,3 +725,7 @@ td .vacio { padding: 14px; }
   .hv { box-shadow: none; max-width: none; padding: 0; overflow: visible; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .hv-marca { position: fixed; }
 }
+/* Aviso cuando Excel tarda */
+#cargando .cargando-lento { max-width: 360px; text-align: center; font-size: 13px; color: var(--texto2); margin-top: 6px; }
+#cargando .cargando-lento[hidden] { display: none; }
+#cargando .cargando-lento .btn { margin-top: 8px; }

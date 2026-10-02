@@ -293,6 +293,17 @@
     return api;
   }
 
+  // Las operaciones contra Excel se ejecutan de a una (en fila): varias a la vez hacían que Excel en la web se quedara pegado.
+  let cola = Promise.resolve();
+  function enCola(op, fn) {
+    const limite = op === "leerTodo" || op === "leerTabla" ? 120000 : 60000;
+    const p = cola.then(() => new Promise((res, rej) => {
+      const t = setTimeout(() => rej(new Error("Excel tardó demasiado en responder. Intente de nuevo; si persiste, cierre y abra el complemento.")), limite);
+      Promise.resolve().then(fn).then((v) => { clearTimeout(t); res(v); }, (e) => { clearTimeout(t); rej(e); });
+    }));
+    cola = p.catch(() => {});
+    return p;
+  }
   const OPERACIONES = ["leerTodo", "leerTabla", "agregarFila", "agregarFilas", "actualizarPorId", "actualizarVarios", "eliminarFila", "eliminarFilas", "guardarParte", "borrarArchivo", "leerParte"];
 
   async function puente() {
@@ -313,19 +324,21 @@
       const id = ++seq;
       const t = setTimeout(() => {
         pendientes.delete(id);
-        rej(new Error("Excel no respondió. Verifique que el panel lateral siga abierto o cierre esta ventana y ábrala de nuevo."));
-      }, 30000);
+        rej(new Error("Excel no respondió. Verifique que el panel lateral siga abierto, o cierre esta ventana y ábrala de nuevo desde el panel."));
+      }, op === "leerTodo" || op === "leerTabla" ? 150000 : 90000);
       pendientes.set(id, { res, rej, t });
       Office.context.ui.messageParent(JSON.stringify({ id, op, args }));
     });
     return Object.fromEntries(OPERACIONES.map((op) => [op, (...a) => llamar(op, a)]));
   }
 
+  const OpsSerie = () => Object.fromEntries(OPERACIONES.map((op) => [op, (...a) => enCola(op, () => OpsExcel[op](...a))]));
+
   async function crear(modo) {
-    if (modo === "panel") return OpsExcel;
+    if (modo === "panel") return OpsSerie();
     if (modo === "ventana") return puente();
     return demo();
   }
 
-  window.DATOS = { crear, OpsExcel, OPERACIONES };
+  window.DATOS = { crear, OpsExcel, OPERACIONES, serie: OpsSerie() };
 })();

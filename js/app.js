@@ -98,11 +98,15 @@
     document.body.appendChild(t);
     setTimeout(() => t.remove(), error ? 7000 : 3000);
   }
+  // Aviso de espera. Si Excel tarda más de lo normal, se ofrece cerrar el aviso para no quedar bloqueado.
+  let relojCarga = null;
   function cargando(on, msg = "Cargando…") {
     let o = $("#cargando");
+    clearTimeout(relojCarga);
     if (on) {
       if (!o) { o = document.createElement("div"); o.id = "cargando"; document.body.appendChild(o); }
-      o.innerHTML = `<div class="spinner"></div><div>${esc(msg)}</div>`;
+      o.innerHTML = `<div class="spinner"></div><div>${esc(msg)}</div><div class="cargando-lento" hidden>Excel está tardando más de lo normal. Puedes seguir esperando o cerrar este aviso; si el cambio no aparece, usa «Actualizar datos del Excel».<br><button class="btn chico" id="cg-cerrar">Cerrar aviso</button></div>`;
+      relojCarga = setTimeout(() => { const l = o.querySelector(".cargando-lento"); if (l && o.isConnected) { l.hidden = false; o.querySelector("#cg-cerrar").addEventListener("click", () => o.remove()); } }, 12000);
     } else if (o) o.remove();
   }
 
@@ -146,23 +150,7 @@
     await sembrarCatalogos();
     refrescarUsuario();
   }
-  // Para ver lo que otros cambiaron: al volver a la ventana, si los datos tienen más de 2 minutos, se releen en segundo plano.
-  let refrescando = false;
-  async function refrescoSilencioso() {
-    if (refrescando || !S.api || !S.usuario || Date.now() - (S.cargadoEl || 0) < 120000) return;
-    if ($("#modal, #cargando, #recordatorio, #paleta, .hv-overlay")) return;
-    refrescando = true;
-    try {
-      const nuevos = await S.api.leerTodo();
-      if ($("#modal, #cargando, #recordatorio, #paleta, .hv-overlay")) return;   // el usuario empezó a editar: se deja para después
-      S.datos = nuevos; S.cargadoEl = Date.now();
-      armarCatalogos(); refrescarUsuario();
-      const y = window.scrollY; render(); window.scrollTo(0, y);
-    } catch (e) { /* sin conexión momentánea: se intenta en el próximo regreso */ }
-    finally { refrescando = false; }
-  }
-  window.addEventListener("focus", refrescoSilencioso);
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) refrescoSilencioso(); });
+  // Nota: no se relee el Excel en segundo plano (en la ventana grande competía con los guardados). Para ver cambios de otros: menú «Actualizar datos del Excel».
   const visibles = () => R.visibles(S.usuario, S.datos.Proyectos);
   function filtrados() {
     const F = S.filtros;
@@ -186,7 +174,6 @@
       toast(exito);
     } catch (e) {
       toast("No se pudo guardar: " + e.message, true);
-      S.cargadoEl = 0;   // por si quedó a medias: la próxima vez se relee todo
     } finally {
       cargando(false);
     }
@@ -1661,6 +1648,14 @@
     $("#m-cancelar").addEventListener("click", cerrarModal);
     if (extra.eliminar) $("#m-eliminar").addEventListener("click", () => confirmar(extra.eliminar.titulo || extra.eliminar.texto, extra.eliminar.mensaje, "Eliminar", extra.eliminar.accion));
     m.addEventListener("keydown", (e) => { if (e.key === "Escape") cerrarModal(); });
+    // Enter en un campo auxiliar (crear rol, persona, proveedor…) ejecuta su propio botón, no guarda todo el formulario.
+    m.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" || e.target.tagName !== "INPUT" || e.target.name || e.defaultPrevented) return;
+      e.preventDefault();
+      const caja = e.target.closest(".eq-form, #pn-form, .prov-nuevo");
+      const btn = caja && caja.querySelector(".btn.primario");
+      if (btn && !e.target.matches("[data-recurso]")) btn.click();
+    });
     m.querySelectorAll("input,select,textarea").forEach((i) => i.addEventListener("input", () => {
       const e = i.name && m.querySelector(`[data-e="${i.name}"]`); if (e) e.textContent = ""; $("#m-error").textContent = "";
     }));
