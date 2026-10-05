@@ -32,6 +32,8 @@
     // Backlog de demanda: iniciativas asignadas por Gestión de la Demanda (llave: código Almera).
     Demandas: ["ID_Demanda", "Codigo_Almera", "Nombre", "Descripcion", "Beneficio", "Area", "Solicitante", "Sponsor", "Fecha_Recepcion", "Fecha_Deseada", "Tipo", "Categoria", "Tamano", "Obligatorio",
       "Costo_Estimado", "PM_Asignado", "Valor", "Alineacion", "Impacto_Paciente", "Urgencia", "Riesgo_Prio", "Esfuerzo", "Estado", "Fecha_Estado", "Fecha_Decision", "Decidido_Por", "Comentario_Decision", "ID_Proyecto", "Registrado_Por"],
+    // Enlaces a documentos de cada proyecto (SharePoint, OneDrive, Teams…), para encontrarlos rápido.
+    Documentos: ["ID_Documento", "ID_Proyecto", "Nombre", "URL", "Tipo", "Descripcion", "Registrado_Por", "Fecha_Registro"],
     // Sugerencias de mejora de la app (cualquier usuario las registra; Admin/PMO las gestionan).
     Sugerencias: ["ID_Sugerencia", "Fecha_Hora", "Usuario", "Modulo", "Contexto", "ID_Proyecto", "Tipo", "Prioridad", "Descripcion", "URL_Referencia", "Adjuntos", "Estado", "Respuesta", "Version_App", "Version_Implementada", "Actualizado_Por", "Actualizado_El"],
     // Registro de auditoría: quién cambió qué y cuándo.

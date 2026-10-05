@@ -134,6 +134,7 @@
   // Listas nuevas que se crean solas en la tabla Catalogos la primera vez (luego se editan desde Catálogos).
   const CATALOGOS_BASE = { Rol_Stakeholder: ["Sponsor", "Líder funcional", "Product Owner"], Estado_Ticket: ["Abierto", "En curso", "Resuelto", "Cerrado"],
     Tipo_Cambio: ["Alcance", "Tiempo", "Costo", "Recursos", "Calidad"], Tipo_Demanda: ["Proyecto nuevo", "Mejora / evolutivo", "Regulatorio / obligatorio", "Mantenimiento", "Innovación"], Categoria_Demanda: ["Estratégico", "Operativo", "Cumplimiento"],
+    Tipo_Documento: ["Acta", "Cronograma", "Contrato / orden de compra", "Especificación / requerimientos", "Diseño / arquitectura", "Presentación", "Informe", "Manual", "Carpeta", "Otro"],
     Categoria_Leccion: ["Planeación", "Técnica", "Proveedores", "Comunicación", "Equipo", "Calidad", "Gestión del cambio"] };
   let sembrado = false;
   // La primera vez, deja en el Excel los roles de stakeholder base para poder editarlos desde Catálogos.
@@ -1222,6 +1223,7 @@
     const TABS = [["resumen", "Resumen"], ["compromisos", `Compromisos <span class="contador ${vencidosN ? "rojo" : ""}">${abiertosN}</span>`],
       ["seguimientos", `Seguimientos <span class="contador">${segs.length}</span>`], ["hitos", `Hitos <span class="contador">${hitos.length}</span>`], ["riesgos", `Riesgos <span class="contador">${riesgos.filter(riesgoActivo).length}</span>`],
       ["tickets", `Tickets <span class="contador">${ticketsDe(p.ID_Proyecto).filter(ticketAbierto).length}</span>`],
+      ["documentos", `Documentos <span class="contador">${documentosDe(p.ID_Proyecto).length}</span>`],
       ["cambios", `Cambios${cambiosDe(p.ID_Proyecto).some((c) => c.Estado === "Solicitado") ? ` <span class="contador rojo">${cambiosDe(p.ID_Proyecto).filter((c) => c.Estado === "Solicitado").length}</span>` : ""}`],
       ["raci", "RACI"], ["lecciones", `Lecciones <span class="contador">${leccionesDe(p.ID_Proyecto).length}</span>`], ["auditoria", "Historial de cambios"]];
     const tab = TABS.some((t) => t[0] === S.fichaTab) ? S.fichaTab : "resumen";
@@ -1244,6 +1246,7 @@
 `,
       compromisos: () => seccionCompromisos(p, comps, segs, puedeP("compromisos")),
       tickets: () => seccionTickets(p, puedeP("compromisos")),
+      documentos: () => seccionDocumentos(p, puedeP("compromisos")),
       cambios: () => seccionCambios(p, puedeP("editarProyecto"), R.puede(u, "verTodo")),
       raci: () => seccionRACI(p, puedeP("editarProyecto")),
       lecciones: () => seccionLecciones(p, puedeP("editarProyecto")),
@@ -1293,6 +1296,7 @@
     if ($("#b-comp")) $("#b-comp").addEventListener("click", () => formCompromiso(null, p));
     if ($("#b-seg2")) $("#b-seg2").addEventListener("click", () => formSeguimiento(p));
     if ($("#b-tk")) $("#b-tk").addEventListener("click", () => formTicket(p));
+    enlazarDocumentos(el, p);
     $("#b-hv").addEventListener("click", () => hojaDeVida(p));
     if ($("#g-curvas-p") && S._curvaP) graficoCurvaS($("#g-curvas-p"), S._curvaP);
     if ($("#b-cambio")) $("#b-cambio").addEventListener("click", () => formCambio(p));
@@ -2142,7 +2146,7 @@
 
   // ---------- Auditoría ----------
   const ID_COLS = { Proyectos: "ID_Proyecto", Hitos: "ID_Hito", Seguimientos: "ID_Seguimiento", Riesgos: "ID_Riesgo", Usuarios: "Correo", Compromisos: "ID_Compromiso",
-    Comentarios: "ID_Comentario", Stakeholders: "ID_Stakeholder", Proveedores: "ID_Proveedor", Recursos: "ID_Recurso", Demandas: "ID_Demanda", Sugerencias: "ID_Sugerencia", Tickets: "ID_Ticket", Cambios: "ID_Cambio", Lecciones: "ID_Leccion", RACI: "ID_RACI", Dependencias: "ID_Dependencia" };
+    Comentarios: "ID_Comentario", Stakeholders: "ID_Stakeholder", Proveedores: "ID_Proveedor", Recursos: "ID_Recurso", Demandas: "ID_Demanda", Sugerencias: "ID_Sugerencia", Documentos: "ID_Documento", Tickets: "ID_Ticket", Cambios: "ID_Cambio", Lecciones: "ID_Leccion", RACI: "ID_RACI", Dependencias: "ID_Dependencia" };
   const CAMPO_DESC = ["Nombre", "Compromiso", "Titulo", "Hito", "Descripcion", "Entregable", "Leccion", "Texto", "Valor", "Logros"];
   const NO_AUDITAR = new Set(["Auditoria", "Archivos", "Filtros"]);
   const IGNORAR_CAMPOS = new Set(["Actualizado_Por", "Actualizado_El"]);
@@ -2259,7 +2263,7 @@
     return S.auditoria;
   }
   const NOMBRE_TABLA = { Proyectos: "Proyecto", Hitos: "Hito", Seguimientos: "Seguimiento", Riesgos: "Riesgo", Usuarios: "Usuario", Compromisos: "Compromiso", Comentarios: "Comentario",
-    Stakeholders: "Stakeholder", Sugerencias: "Sugerencia", Proveedores: "Proveedor", Recursos: "Recurso", Tickets: "Ticket", Cambios: "Cambio", Lecciones: "Lección", RACI: "RACI", Dependencias: "Dependencia", Catalogos: "Catálogo" };
+    Stakeholders: "Stakeholder", Sugerencias: "Sugerencia", Documentos: "Documento", Proveedores: "Proveedor", Recursos: "Recurso", Tickets: "Ticket", Cambios: "Cambio", Lecciones: "Lección", RACI: "RACI", Dependencias: "Dependencia", Catalogos: "Catálogo" };
   const tablaAuditoria = (lista, conProyecto) => lista.length ? `<div class="tabla-scroll"><table><thead><tr><th>Fecha</th><th>Usuario</th>${conProyecto ? "<th>Proyecto</th>" : ""}<th>Qué</th><th>Detalle</th></tr></thead><tbody>
     ${lista.map((a) => `<tr><td class="nowrap">${fechaHora(a.Fecha_Hora)}</td><td>${esc(nombreUsuario(a.Usuario))}</td>${conProyecto ? `<td>${esc((proyecto(a.ID_Proyecto) || {}).Nombre || a.ID_Proyecto || "—")}</td>` : ""}
       <td class="nowrap">${pill(a.Accion)} ${esc(NOMBRE_TABLA[a.Tabla] || a.Tabla)}</td><td class="aud-det">${esc(a.Detalle)}</td></tr>`).join("")}</tbody></table></div>` : vacio("Sin cambios registrados todavía. El registro empieza desde esta versión.");
@@ -2943,6 +2947,7 @@
     expandir: '<path d="m6 17 5-5-5-5"/><path d="m13 17 5-5-5-5"/>',
     vacio: '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
     compromiso: '<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>',
+    documento: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/>',
     ticket: '<path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M13 5v2M13 17v2M13 11v2"/>',
     ir: '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
     backlog: '<path d="M3 5h18M3 12h18M3 19h12"/><circle cx="19" cy="19" r="2"/>',
@@ -2972,7 +2977,7 @@
     ["Conocimiento", ["lecciones", "sugerencias"]],
     ["Administración", ["catalogos", "usuarios", "auditoria"]],
   ];
-  const NOMBRE_TAB = { resumen: "Resumen", compromisos: "Compromisos", seguimientos: "Seguimientos", hitos: "Hitos", riesgos: "Riesgos", tickets: "Tickets", cambios: "Cambios", raci: "RACI", lecciones: "Lecciones", auditoria: "Historial de cambios" };
+  const NOMBRE_TAB = { resumen: "Resumen", compromisos: "Compromisos", seguimientos: "Seguimientos", hitos: "Hitos", riesgos: "Riesgos", tickets: "Tickets", documentos: "Documentos", cambios: "Cambios", raci: "RACI", lecciones: "Lecciones", auditoria: "Historial de cambios" };
   function migas() {
     const v = VISTAS.find((x) => x.id === (S.vista === "ficha" ? "proyectos" : S.vista));
     const grupo = (GRUPOS_NAV.find((g) => g[1].includes(v ? v.id : "")) || ["Inicio"])[0];
@@ -2983,7 +2988,7 @@
 
   // Abrir un registro haciendo clic en cualquier parte de su fila o tarjeta (los botones siguen igual).
   // Se usa el botón principal de la fila (Abrir, Ver o Editar). Las filas de proyectos ya abren la ficha.
-  const ABRIR_SEL = ["[data-edit-seg]", "[data-abrir-comp]", "[data-al-abrir]", "[data-sg-ver]", "[data-tk]", "[data-riesgo]", "[data-hito]", "[data-stk]", "[data-prov]", "[data-rec]", "[data-u]",
+  const ABRIR_SEL = ["[data-edit-seg]", "a[data-doc-ir]", "[data-abrir-comp]", "[data-al-abrir]", "[data-sg-ver]", "[data-tk]", "[data-riesgo]", "[data-hito]", "[data-stk]", "[data-prov]", "[data-rec]", "[data-u]",
     "[data-leccion]", "[data-dep]", "[data-cambio]"];
   const ITEM_SEL = "#vista tbody tr, #vista .rg-card, #modal .alerta-item, #vista .alerta-item";
   document.addEventListener("click", (e) => {
@@ -3146,6 +3151,7 @@
     S.datos.Riesgos.filter((r) => ids.has(r.ID_Proyecto)).forEach((r) => out.push({ tipo: "Riesgos", ico: "riesgos", t: r.Descripcion, sub: `${nom(r.ID_Proyecto)} · #${numRiesgo(r)} · ${r.Estado} · ${nivelActual(r)}`, peso: riesgoActivo(r) ? 0 : 1,
       ir: () => { S.fichaTab = "riesgos"; ir("ficha", r.ID_Proyecto); formRiesgo(proyecto(r.ID_Proyecto), r); } }));
     (S.datos.Tickets || []).filter((t) => ids.has(t.ID_Proyecto)).forEach((t) => out.push({ tipo: "Tickets", ico: "ticket", t: `${t.Numero || ""} ${t.Titulo || ""}`.trim(), sub: `${nom(t.ID_Proyecto)} · ${t.Estado}`, ir: () => { S.fichaTab = "tickets"; ir("ficha", t.ID_Proyecto); } }));
+    (S.datos.Documentos || []).filter((d) => ids.has(d.ID_Proyecto)).forEach((d) => out.push({ tipo: "Documentos", ico: "documento", t: d.Nombre || d.URL, sub: `${nom(d.ID_Proyecto)} · ${d.Tipo || "Documento"}${d.Descripcion ? ` · ${d.Descripcion}` : ""}`, ir: () => window.open(d.URL, "_blank", "noopener") }));
     (S.datos.Lecciones || []).filter((l) => ids.has(l.ID_Proyecto)).forEach((l) => out.push({ tipo: "Lecciones", ico: "lecciones", t: l.Leccion, sub: `${nom(l.ID_Proyecto)} · ${l.Categoria || ""}`, ir: () => { S.fichaTab = "lecciones"; ir("ficha", l.ID_Proyecto); } }));
     return out;
   }
@@ -3155,7 +3161,7 @@
     const o = document.createElement("div");
     o.id = "paleta";
     o.innerHTML = `<div class="paleta-caja" role="dialog" aria-modal="true" aria-label="Búsqueda global">
-      <div class="paleta-in">${ico("buscar")}<input id="paleta-q" placeholder="Buscar proyectos, personas, compromisos, riesgos, tickets o pantallas…" autocomplete="off"><kbd>Esc</kbd></div>
+      <div class="paleta-in">${ico("buscar")}<input id="paleta-q" placeholder="Buscar proyectos, documentos, personas, compromisos, riesgos o pantallas…" autocomplete="off"><kbd>Esc</kbd></div>
       <div id="paleta-res" class="paleta-res" role="listbox"></div>
       <div class="paleta-pie"><span><kbd>↑</kbd><kbd>↓</kbd> moverse</span><span><kbd>Enter</kbd> abrir</span><span><kbd>Esc</kbd> cerrar</span></div></div>`;
     document.body.appendChild(o);
@@ -3164,7 +3170,7 @@
     const cerrar = () => o.remove();
     const pintar = () => {
       const terms = normTxt(q.value).split(" ").filter(Boolean);
-      const orden = ["Ir a", "Proyectos", "Demandas", "Personas", "Compromisos", "Riesgos", "Tickets", "Lecciones"];
+      const orden = ["Ir a", "Proyectos", "Documentos", "Demandas", "Personas", "Compromisos", "Riesgos", "Tickets", "Lecciones"];
       vis = (terms.length ? indice.filter((x) => { const h = normTxt(`${x.t} ${x.sub}`); return terms.every((t) => h.includes(t)); }) : indice.filter((x) => x.tipo === "Ir a" || x.tipo === "Proyectos"))
         .sort((a, b) => orden.indexOf(a.tipo) - orden.indexOf(b.tipo) || (a.peso || 0) - (b.peso || 0));
       const porTipo = {}; vis.forEach((x) => { (porTipo[x.tipo] = porTipo[x.tipo] || []).push(x); });
@@ -3505,6 +3511,8 @@
         { nombre: "Riesgos", columnas: colsRiesgo(false), filas: riesgosDe(pid).sort((a, b) => numRiesgo(a) - numRiesgo(b)) },
         { nombre: "Tickets", columnas: [{ t: "N.º", v: (t) => t.Numero, ancho: 12 }, { t: "Título", v: (t) => t.Titulo, ancho: 44 }, { t: "Estado", v: (t) => t.Estado, ancho: 12, color: true },
           { t: "Prioridad", v: (t) => t.Prioridad, ancho: 11 }, { t: "Registrado", v: (t) => t.Fecha_Registro, tipo: "fecha" }], filas: ticketsDe(pid) },
+        { nombre: "Documentos", columnas: [{ t: "Documento", v: (d) => d.Nombre, ancho: 40 }, { t: "Tipo", v: (d) => d.Tipo, ancho: 18 }, { t: "Descripción", v: (d) => d.Descripcion, ancho: 36 },
+          { t: "Enlace", v: (d) => d.URL, ancho: 60 }, { t: "Registrado", v: (d) => d.Fecha_Registro, tipo: "fecha" }], filas: documentosDe(pid) },
         { nombre: "Cambios", columnas: [{ t: "Fecha", v: (c) => c.Fecha, tipo: "fecha" }, { t: "Tipo", v: (c) => c.Tipo, ancho: 12 }, { t: "Cambio", v: (c) => c.Descripcion, ancho: 44 },
           { t: "Justificación", v: (c) => c.Justificacion, ancho: 36 }, { t: "Impacto", v: (c) => c.Impacto, ancho: 36 }, { t: "Nueva fecha fin", v: (c) => c.Nueva_Fecha_Fin, tipo: "fecha" },
           { t: "Nuevo presupuesto", v: (c) => c.Nuevo_Presupuesto, tipo: "cop" }, { t: "Estado", v: (c) => c.Estado, ancho: 12, color: true }, { t: "Decisión", v: (c) => c.Fecha_Decision, tipo: "fecha" }], filas: cambiosDe(pid) },
@@ -3769,6 +3777,101 @@
           <td class="opc sub">${t.Fecha_Registro ? fecha(t.Fecha_Registro) : ""} ${esc(nombreUsuario(t.Registrado_Por))}</td>
           <td class="derecha">${puede ? `<button class="btn chico" data-tk="${esc(t.ID_Ticket)}">Editar</button>` : ""}</td></tr>`).join("")}</tbody></table></div>`
         : vacio(todos.length ? "No hay tickets abiertos. Mira «Todos»." : `Aún no hay tickets.${puede ? " Registra el primero con «+ Ticket»." : ""}`)}</div>`;
+  }
+  // ---------- Documentos del proyecto (varios enlaces) ----------
+  const documentosDe = (pid) => (S.datos.Documentos || []).filter((d) => d.ID_Proyecto === pid).sort((a, b) => String(a.Tipo || "~").localeCompare(String(b.Tipo || "~"), "es") || String(a.Nombre).localeCompare(String(b.Nombre), "es"));
+  // Nombre legible a partir del enlace (último tramo de la ruta, sin parámetros).
+  function nombreDeURL(u) {
+    try {
+      const url = new URL(u);
+      const id = url.searchParams.get("id") || url.searchParams.get("file");
+      const seg = (id || url.pathname).split("/").filter(Boolean).pop() || url.hostname;
+      return decodeURIComponent(seg).replace(/\+/g, " ").replace(/\.(aspx)$/i, "").trim() || url.hostname;
+    } catch (e) { return u; }
+  }
+  const icoDoc = (d) => {
+    const ext = (String(d.Nombre).match(/\.(\w{2,5})$/) || String(d.URL).split("?")[0].match(/\.(\w{2,5})$/) || [])[1] || "";
+    const t = /pdf/i.test(ext) ? "PDF" : /docx?/i.test(ext) ? "W" : /xlsx?|csv/i.test(ext) ? "X" : /pptx?/i.test(ext) ? "P" : /carpeta/i.test(d.Tipo || "") ? "📁" : "🔗";
+    return `<span class="doc-ico t-${esc(t.replace(/\W/g, "") || "l")}">${t}</span>`;
+  };
+  function seccionDocumentos(p, puede) {
+    const docs = documentosDe(p.ID_Proyecto);
+    const tipos = [...new Set(docs.map((d) => d.Tipo || "Otro"))];
+    const fijos = [p.URL_Documentos && esURL(p.URL_Documentos) ? `<a class="btn" href="${esc(p.URL_Documentos)}" target="_blank" rel="noopener">📁 Carpeta de documentos ↗</a>` : "",
+      p.URL_Repositorio && esURL(p.URL_Repositorio) ? `<a class="btn" href="${esc(p.URL_Repositorio)}" target="_blank" rel="noopener">⌥ Repositorio ↗</a>` : ""].filter(Boolean).join(" ");
+    return `<div class="card"><div class="titulo-fila"><h2>Documentos del proyecto</h2>${puede ? `<div class="acciones"><button class="btn" id="b-doc-varios">+ Pegar varios enlaces</button><button class="btn primario" id="b-doc">+ Documento</button></div>` : ""}</div>
+      <p class="sub">Enlaces a los documentos del proyecto (SharePoint, OneDrive, Teams, Drive…). También los encuentras desde la búsqueda global <kbd>Ctrl K</kbd>.</p>
+      ${fijos ? `<div class="doc-fijos">${fijos}</div>` : ""}
+      ${docs.length ? `<div class="filtros"><label class="filtro crece"><span>Buscar documento</span><input id="doc-q" type="search" placeholder="Nombre, tipo o descripción" autocomplete="off"></label></div>
+        <div class="seg doc-tipos"><button class="btn chico primario" data-doc-tipo="">Todos (${docs.length})</button>${tipos.map((t) => `<button class="btn chico" data-doc-tipo="${esc(t)}">${esc(t)} (${docs.filter((d) => (d.Tipo || "Otro") === t).length})</button>`).join("")}</div>
+        <div class="tabla-scroll"><table class="tabla-docs"><thead><tr><th>Documento</th><th>Tipo</th><th class="opc">Descripción</th><th class="opc">Registrado</th><th></th></tr></thead><tbody>
+        ${docs.map((d) => `<tr data-doc="${esc(d.ID_Documento)}" data-buscar="${esc(normTxt(`${d.Nombre} ${d.Tipo} ${d.Descripcion} ${d.URL}`))}" data-tipo="${esc(d.Tipo || "Otro")}">
+          <td>${icoDoc(d)} <a href="${esc(d.URL)}" target="_blank" rel="noopener" data-doc-ir>${esc(d.Nombre || nombreDeURL(d.URL))}</a></td><td>${pill(d.Tipo || "Otro")}</td><td class="opc">${esc(d.Descripcion || "")}</td>
+          <td class="opc sub nowrap">${d.Fecha_Registro ? fecha(d.Fecha_Registro) : ""}<br>${esc(nombreUsuario(d.Registrado_Por))}</td>
+          <td class="derecha nowrap"><button class="btn chico" data-doc-copiar="${esc(d.URL)}" title="Copiar el enlace">Copiar enlace</button>${puede ? ` <button class="btn chico" data-doc-editar="${esc(d.ID_Documento)}">Editar</button>` : ""}</td></tr>`).join("")}</tbody></table></div>
+        <p class="sub" id="doc-nada" hidden>Ningún documento coincide.</p>`
+        : vacio(`Aún no hay documentos.${puede ? " Agrega el primero con «+ Documento» o pega varios enlaces de una vez." : ""}`)}</div>`;
+  }
+  function enlazarDocumentos(el, p) {
+    if ($("#b-doc")) $("#b-doc").addEventListener("click", () => formDocumento(p));
+    if ($("#b-doc-varios")) $("#b-doc-varios").addEventListener("click", () => formDocumentosVarios(p));
+    el.querySelectorAll("[data-doc-editar]").forEach((b) => b.addEventListener("click", () => formDocumento(p, (S.datos.Documentos || []).find((d) => d.ID_Documento === b.dataset.docEditar))));
+    el.querySelectorAll("[data-doc-copiar]").forEach((b) => b.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(b.dataset.docCopiar); toast("Enlace copiado"); } catch (e) { const t = document.createElement("textarea"); t.value = b.dataset.docCopiar; document.body.appendChild(t); t.select(); try { document.execCommand("copy"); toast("Enlace copiado"); } catch (e2) { toast("No se pudo copiar", true); } t.remove(); }
+    }));
+    const q = el.querySelector("#doc-q");
+    if (!q) return;
+    let tipo = "";
+    const filtrar = () => {
+      const terms = normTxt(q.value).split(" ").filter(Boolean);
+      let n = 0;
+      el.querySelectorAll("tr[data-doc]").forEach((tr) => { const ok = (!tipo || tr.dataset.tipo === tipo) && terms.every((t) => tr.dataset.buscar.includes(t)); tr.hidden = !ok; if (ok) n++; });
+      el.querySelector("#doc-nada").hidden = n > 0;
+    };
+    q.addEventListener("input", filtrar);
+    el.querySelectorAll("[data-doc-tipo]").forEach((b) => b.addEventListener("click", () => { tipo = b.dataset.docTipo; el.querySelectorAll("[data-doc-tipo]").forEach((x) => x.classList.toggle("primario", x === b)); filtrar(); }));
+  }
+  const nuevoIdDoc = (pid, i = 0) => R.siguienteIdHijo("DOC", S.datos.Documentos || [], "ID_Documento", pid, i);
+  function formDocumento(p, d) {
+    const nuevo = !d;
+    const campos = [
+      { k: "URL", label: "Enlace (URL)", tipo: "url", placeholder: "https://…sharepoint.com/…", ancho: true },
+      { k: "Nombre", label: "Nombre del documento", placeholder: "Se llena solo con el nombre del archivo; puedes cambiarlo", ancho: true },
+      { k: "Tipo", label: "Tipo", tipo: "select", opciones: S.cat.Tipo_Documento, def: "Otro" },
+      { k: "Descripcion", label: "Descripción (opcional)", placeholder: "Para qué sirve o qué versión es" },
+    ];
+    const init = (m) => {
+      const u = m.querySelector("[name=URL]"), n = m.querySelector("[name=Nombre]");
+      u.addEventListener("change", () => { if (!n.value.trim() && esURL(u.value.trim())) n.value = nombreDeURL(u.value.trim()); });
+      if (nuevo) u.focus();
+    };
+    const validar = (fd) => (!fd.URL ? "Pega el enlace del documento." : !esURL(fd.URL) ? "El enlace debe empezar por https://" :
+      documentosDe(p.ID_Proyecto).some((x) => x.URL === fd.URL && (nuevo || x.ID_Documento !== d.ID_Documento)) ? "Ese enlace ya está registrado en este proyecto." : "");
+    modal(nuevo ? `Nuevo documento · ${p.Nombre}` : "Editar documento", campos, nuevo ? {} : d, (fd) => {
+      fd.Nombre = fd.Nombre || nombreDeURL(fd.URL);
+      if (nuevo) guardar(() => S.api.agregarFila("Documentos", { ID_Documento: nuevoIdDoc(p.ID_Proyecto), ID_Proyecto: p.ID_Proyecto, ...fd, Registrado_Por: S.usuario.Correo, Fecha_Registro: R.hoyISO() }), "Documento agregado");
+      else guardar(() => S.api.actualizarPorId("Documentos", "ID_Documento", d.ID_Documento, fd), "Documento actualizado");
+    }, validar, { init, ...(nuevo ? {} : { eliminar: { texto: "Quitar documento", mensaje: `Se quitará «${d.Nombre}» de la lista (el archivo en SharePoint no se borra).`,
+      accion: () => guardar(() => S.api.eliminarFilas("Documentos", "ID_Documento", [d.ID_Documento]), "Documento quitado") } }) });
+  }
+  // Pegar varios enlaces de una vez: uno por línea, opcionalmente «Nombre | enlace».
+  function formDocumentosVarios(p) {
+    modal(`Pegar varios enlaces · ${p.Nombre}`, [
+      { k: "Lista", label: "Enlaces (uno por línea)", tipo: "textarea", placeholder: "https://…/Cronograma.xlsx\nActa de inicio | https://…/Acta inicio.pdf\nhttps://…/Especificación.docx" },
+      { k: "Tipo", label: "Tipo para todos", tipo: "select", opciones: S.cat.Tipo_Documento, def: "Otro", ayuda: "Luego puedes cambiar el tipo de cada uno." },
+    ], {}, (fd) => {
+      const ya = new Set(documentosDe(p.ID_Proyecto).map((x) => x.URL));
+      const filas = [];
+      String(fd.Lista).split(/\n+/).map((l) => l.trim()).filter(Boolean).forEach((l) => {
+        const m = l.match(/^(.*?)\s*[|;\t]\s*(https?:\/\/\S+)\s*$/) || l.match(/^(https?:\/\/\S+)$/);
+        if (!m) return;
+        const url = (m[2] || m[1]).trim(), nombre = m[2] ? m[1].trim() : nombreDeURL(url);
+        if (ya.has(url) || filas.some((f) => f.URL === url)) return;
+        filas.push({ ID_Documento: nuevoIdDoc(p.ID_Proyecto, filas.length), ID_Proyecto: p.ID_Proyecto, Nombre: nombre, URL: url, Tipo: fd.Tipo, Descripcion: "", Registrado_Por: S.usuario.Correo, Fecha_Registro: R.hoyISO() });
+      });
+      if (!filas.length) return toast("No encontré enlaces nuevos (deben empezar por https:// y no estar ya registrados).", true);
+      guardar(() => S.api.agregarFilas("Documentos", filas), `${filas.length} documento(s) agregados`);
+    }, (fd) => (!String(fd.Lista || "").match(/https?:\/\//) ? "Pega al menos un enlace que empiece por https://" : ""));
   }
   function formTicket(p, t) {
     const nuevo = !t;

@@ -806,3 +806,11 @@ input[data-chips][hidden] { display: none !important; }
 .multi-resp .combo-lista { min-width: 300px; z-index: 40; }
 .ses-comps th:nth-child(1) { width: 36%; }
 .ses-comps th:nth-child(2) { width: 28%; }
+/* Documentos del proyecto */
+.doc-fijos { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 12px; }
+.doc-tipos { margin: 0 0 10px; flex-wrap: wrap; }
+.tabla-docs td a[data-doc-ir] { font-weight: 600; color: var(--azul); text-decoration: none; word-break: break-word; }
+.tabla-docs td a[data-doc-ir]:hover { text-decoration: underline; }
+.doc-ico { display: inline-flex; align-items: center; justify-content: center; min-width: 26px; height: 22px; border-radius: 4px; font-size: 11px; font-weight: 700; color: #fff; background: #6b7a8c; margin-right: 6px; vertical-align: middle; padding: 0 4px; }
+.doc-ico.t-PDF { background: #c0392b; } .doc-ico.t-W { background: #2b579a; } .doc-ico.t-X { background: #217346; } .doc-ico.t-P { background: #d24726; } .doc-ico.t-l, .doc-ico.t- { background: var(--suave); color: var(--azul); }
+tr[data-doc][hidden] { display: none; }
