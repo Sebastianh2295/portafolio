@@ -4117,11 +4117,6 @@
       <div><span class="sub">Último reporte</span><b>${ult ? `${fecha(ult.Fecha_Corte)} · ${pct(ult.Avance_Real)} · ${esc(ult.Semaforo)}` : "Es el primer reporte"}</b></div>
       <div><span class="sub">Plan registrado</span><b>${pct(p.Avance_Planeado)}</b></div>
       <div><span class="sub">Frecuencia</span><b>${esc(p.Frecuencia_Seguimiento)}</b></div></div>`;
-    const filaComp = (c = {}) => `<div class="comp-fila">
-      <input class="c-texto" placeholder="Compromiso (qué se hará)" aria-label="Compromiso" value="${esc(c.Compromiso || "")}">
-      <input class="c-resp" placeholder="Responsable(s) de Recursos" title="Puedes elegir varias personas: se separan con «;»" aria-label="Responsables" data-recurso data-multi autocomplete="off" value="${esc(separarNombres(c.Responsable).join("; "))}">
-      <input class="c-fecha" type="date" aria-label="Fecha límite" value="${esc(c.Fecha_Compromiso || "")}" title="${esc(c.Fecha_Texto && !c.Fecha_Compromiso ? `En el acta: ${c.Fecha_Texto}` : "")}">
-      <button type="button" class="btn chico c-quitar" aria-label="Quitar compromiso">✕</button></div>`;
     const despues = `
       <div class="sugerencia" id="sug-sem" aria-live="polite"></div>
       ${abiertos.length ? `<div class="form-seccion">4. Compromisos anteriores<span class="sub"> · marca los que ya se cumplieron</span></div>
@@ -4527,6 +4522,12 @@
       }, "Compromiso eliminado") } });
   }
 
+  // Fila rápida de compromiso (registrar o editar una sesión).
+  const filaComp = (c = {}) => `<div class="comp-fila">
+      <input class="c-texto" placeholder="Compromiso (qué se hará)" aria-label="Compromiso" value="${esc(c.Compromiso || "")}">
+      <input class="c-resp" placeholder="Responsable(s) de Recursos" title="Puedes elegir varias personas: se separan con «;»" aria-label="Responsables" data-recurso data-multi autocomplete="off" value="${esc(separarNombres(c.Responsable).join("; "))}">
+      <input class="c-fecha" type="date" aria-label="Fecha límite" value="${esc(c.Fecha_Compromiso || "")}" title="${esc(c.Fecha_Texto && !c.Fecha_Compromiso ? `En el acta: ${c.Fecha_Texto}` : "")}">
+      <button type="button" class="btn chico c-quitar" aria-label="Quitar compromiso">✕</button></div>`;
   function formEditarSeguimiento(s) {
     const p = proyecto(s.ID_Proyecto);
     const segs = R.seguimientosDe(s.ID_Proyecto, S.datos.Seguimientos);
@@ -4545,16 +4546,29 @@
       { seccion: "3. Acta de la sesión" },
       { k: "Fecha_Acta", label: "Fecha del acta", tipo: "date" },
       { k: "URL_Acta", label: "Enlace al acta (opcional)", tipo: "url", placeholder: "https://…" },
+      { seccion: `4. Compromisos de esta sesión (${comps.length})`, ayuda: "cambia estado o fecha aquí; ábrelos para comentar" },
+      { html: `${comps.length ? `<div class="tabla-scroll"><table class="no-orden ses-comps"><thead><tr><th>Compromiso</th><th>Responsable(s)</th><th>Fecha límite</th><th>Estado</th><th></th></tr></thead><tbody>
+        ${comps.map((c) => `<tr data-sc="${esc(c.ID_Compromiso)}"><td>${esc(c.Compromiso)}${comentariosDe(c.ID_Compromiso).length ? `<div class="sub">💬 ${comentariosDe(c.ID_Compromiso).length} comentario(s)</div>` : ""}</td>
+          <td>${esc(c.Responsable || "—")}</td>
+          <td><input type="date" class="sc-fecha" value="${esc(c.Fecha_Compromiso || "")}" aria-label="Fecha límite"></td>
+          <td><select class="sc-estado" aria-label="Estado">${R.ESTADOS_COMPROMISO.map((e) => `<option ${e === R.estadoBase(c) ? "selected" : ""}>${esc(e)}</option>`).join("")}</select>${R.estadoCompromiso(c) === "Vencido" ? ` ${pill("Vencido")}` : ""}</td>
+          <td class="derecha"><button type="button" class="btn chico" data-sc-abrir="${esc(c.ID_Compromiso)}">Abrir</button></td></tr>`).join("")}</tbody></table></div>` : `<p class="sub">Esta sesión aún no tiene compromisos.</p>`}
+        <div id="ses-nuevos"></div><button type="button" class="btn chico" id="b-ses-comp">+ Agregar compromiso a esta sesión</button>` },
     ];
     const bloqueActa = `<div class="carga-acta">
       <div><b>Archivo del acta</b><div class="sub" id="acta-actual">${s.Acta_Archivo ? `Guardada: ${esc(s.Acta_Archivo)}` : "Esta sesión no tiene acta guardada."}</div></div>
       <div class="acciones">${s.Acta_Archivo ? `<button type="button" class="btn" id="b-ver-acta">Ver</button><button type="button" class="btn" id="b-quitar-acta">Quitar</button>` : ""}
         <button type="button" class="btn primario" id="b-reemplazar-acta">${s.Acta_Archivo ? "Reemplazar PDF" : "Subir PDF"}</button></div>
       <div id="acta-estado" class="acta-estado" aria-live="polite"></div></div>`;
-    const despues = `<p class="sub">${comps.length ? `Esta sesión tiene ${comps.length} compromiso(s); edítalos en la tabla «Compromisos» de la ficha.` : "Esta sesión no tiene compromisos."}${esUltimo ? " Es la última sesión: al guardar también se actualiza el avance y el semáforo del proyecto." : ""}</p>`;
+    const despues = esUltimo ? `<p class="sub">Es la última sesión: al guardar también se actualiza el avance y el semáforo del proyecto.</p>` : "";
     let accionActa = null;   // null = sin cambio · { tipo: "subir", bytes, nombre } · { tipo: "quitar" }
     const init = (m) => {
       const est = $("#acta-estado");
+      // Compromisos de la sesión: abrir uno y agregar nuevos.
+      m.querySelectorAll("[data-sc-abrir]").forEach((b) => b.addEventListener("click", () => detalleCompromiso(b.dataset.scAbrir)));
+      const contN = m.querySelector("#ses-nuevos");
+      const enlazarN = () => contN.querySelectorAll(".c-quitar").forEach((b) => { b.onclick = () => b.parentElement.remove(); });
+      m.querySelector("#b-ses-comp").addEventListener("click", () => { contN.insertAdjacentHTML("beforeend", filaComp()); enlazarN(); contN.lastElementChild.querySelector("input").focus(); });
       if ($("#b-ver-acta")) $("#b-ver-acta").addEventListener("click", () => { const volver = () => formEditarSeguimiento(s); verActa(s.ID_Seguimiento, s.Acta_Archivo).then(() => { const c = $("#v-cerrar"); if (c) c.addEventListener("click", volver, { once: true }); }); });
       if ($("#b-quitar-acta")) $("#b-quitar-acta").addEventListener("click", () => { accionActa = { tipo: "quitar" }; est.className = "acta-estado error"; est.textContent = "El acta se quitará al guardar."; });
       $("#b-reemplazar-acta").addEventListener("click", () => elegirPDF(async (archivo) => {
@@ -4570,11 +4584,43 @@
         } catch (e) { est.className = "acta-estado error"; est.textContent = "No se pudo leer el PDF: " + e.message; }
       }));
     };
-    modal(`Editar sesión del ${fecha(s.Fecha_Corte)} · ${p ? p.Nombre : ""}`, campos, s, (fd) => {
+    const recoger = (m) => {
+      const cambiosC = [...m.querySelectorAll("tr[data-sc]")].map((tr) => {
+        const c = comps.find((x) => x.ID_Compromiso === tr.dataset.sc);
+        const estado = tr.querySelector(".sc-estado").value, f = tr.querySelector(".sc-fecha").value;
+        const ch = {};
+        if (estado !== R.estadoBase(c)) { ch.Estado = estado; ch.Fecha_Cierre = estado === "Cerrado" ? R.hoyISO() : ""; }
+        if (f !== String(c.Fecha_Compromiso || "")) ch.Fecha_Compromiso = f;
+        return Object.keys(ch).length ? { c, cambios: ch } : null;
+      }).filter(Boolean);
+      const nuevosC = [];
+      for (const f of m.querySelectorAll("#ses-nuevos .comp-fila")) {
+        const t = f.querySelector(".c-texto").value.trim(), inp = f.querySelector(".c-resp"), r = inp.value.trim(), d = f.querySelector(".c-fecha").value;
+        if (!t && !r && !d) continue;
+        if (!t) return { error: "Escribe la descripción del compromiso nuevo (o quita la fila)." };
+        nuevosC.push({ Compromiso: t, Responsable: r, Fecha_Compromiso: d, _nuevos: inp._nuevos || new Set() });
+      }
+      return { datos: { cambiosC, nuevosC } };
+    };
+    modal(`Editar sesión del ${fecha(s.Fecha_Corte)} · ${p ? p.Nombre : ""}`, campos, s, (fd, extra) => {
       if (!fd.Fecha_Corte) fd.Fecha_Corte = s.Fecha_Corte || R.hoyISO();
       fd.Semana = R.semanaISO(fd.Fecha_Corte);
       const accion = accionActa;
       guardar(async () => {
+        if (extra.cambiosC.length) {
+          await S.api.actualizarVarios("Compromisos", "ID_Compromiso", extra.cambiosC.map(({ c, cambios }) => ({ id: c.ID_Compromiso, cambios })));
+          const coms = extra.cambiosC.filter((x) => x.cambios.Estado).map(({ c, cambios }) => nuevoComentario(c, `${TEXTO_ESTADO[cambios.Estado] || `Estado: ${cambios.Estado}.`} (desde la edición de la sesión del ${fecha(fd.Fecha_Corte)})`));
+          if (coms.length) await S.api.agregarFilas("Comentarios", coms);
+        }
+        if (extra.nuevosC.length) {
+          const filas = [];
+          for (const [i, c] of extra.nuevosC.entries()) {
+            const resp = await resolverResponsables(separarNombres(c.Responsable).map((n) => ({ Nombre: n })), c._nuevos);
+            filas.push({ ID_Compromiso: R.siguienteIdHijo("CMP", S.datos.Compromisos, "ID_Compromiso", s.ID_Proyecto, i), ID_Proyecto: s.ID_Proyecto, ID_Seguimiento: s.ID_Seguimiento,
+              Compromiso: c.Compromiso, ...resp, Fecha_Compromiso: c.Fecha_Compromiso, Estado: "Pendiente", Fecha_Cierre: "", Registrado_Por: S.usuario.Correo });
+          }
+          await S.api.agregarFilas("Compromisos", filas);
+        }
         const cambios = { ...fd };
         if (accion && accion.tipo === "quitar") { await S.api.borrarArchivo(s.ID_Seguimiento); cambios.Acta_Archivo = ""; }
         if (accion && accion.tipo === "subir") { await subirActa(s.ID_Seguimiento, accion.bytes, accion.nombre); cambios.Acta_Archivo = accion.nombre; }
@@ -4586,7 +4632,7 @@
           ...(fd.Avance_Real !== "" ? { Avance_Real: fd.Avance_Real } : {}), ...(fd.Semaforo ? { Semaforo: fd.Semaforo } : {}), ...(fd.Ejecutado !== "" ? { Ejecutado: fd.Ejecutado } : {}), ...sello() });
       }, "Sesión actualizada");
     }, (fd) => (fd.Fecha_Corte && fd.Fecha_Corte > R.hoyISO() ? "La fecha de corte no puede ser futura." : ""), {
-      antes: bloqueActa, despues, init,
+      antes: bloqueActa, despues, init, recoger,
       eliminar: { texto: "Eliminar sesión", titulo: `Eliminar la sesión del ${fecha(s.Fecha_Corte)}`,
         mensaje: `Se borrará la sesión${comps.length ? `, sus ${comps.length} compromiso(s)` : ""}${s.Acta_Archivo ? " y el acta guardada" : ""}. No se puede deshacer.`,
         accion: () => guardar(async () => {

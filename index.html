@@ -4,7 +4,7 @@
   <script>
     /* Actualización automática: si GitHub tiene una versión más nueva que la guardada en caché
        por Excel, se recarga la página con esa versión. */
-    window.APP_VERSION = "38";
+    window.APP_VERSION = "39";
     (function () {
       try {
         fetch("version.json?t=" + Date.now(), { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (j) {
@@ -22,17 +22,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Portafolio de Proyectos</title>
   <link rel="icon" href="assets/icon-32.png">
-  <link rel="stylesheet" href="css/estilos.css?v=38">
+  <link rel="stylesheet" href="css/estilos.css?v=39">
   <!-- Office.js: conecta la app con el Excel abierto. Fuera de Excel la app entra en modo demostración. -->
   <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
   <div id="app"></div>
-  <script src="js/demo-data.js?v=38"></script>
-  <script src="js/reglas.js?v=38"></script>
-  <script src="js/datos.js?v=38"></script>
-  <script src="js/actas.js?v=38"></script>
-  <script src="js/app.js?v=38"></script>
+  <script src="js/demo-data.js?v=39"></script>
+  <script src="js/reglas.js?v=39"></script>
+  <script src="js/datos.js?v=39"></script>
+  <script src="js/actas.js?v=39"></script>
+  <script src="js/app.js?v=39"></script>
 </body>
 </html>
