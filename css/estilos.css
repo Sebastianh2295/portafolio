@@ -771,3 +771,9 @@ table.recortada > tbody > tr:nth-child(n+13) { display: none; }
 #fp-equipo .eq-lista li { font-size: 13px; padding: 3px 0; }
 #fp-equipo .eq-lista + .ver-todos { margin-top: 0; }
 #fp-equipo ul.recortada > li:nth-child(n+7) { display: none; }
+/* Proyectos de cada recurso como etiquetas */
+.rec-proys { min-width: 180px; }
+.chip-proy-rec { display: inline-block; border: 1px solid var(--borde); background: var(--suave); color: var(--azul); border-radius: 12px; padding: 1px 9px; margin: 2px 4px 2px 0; font: inherit; font-size: 12px; cursor: pointer; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
+.chip-proy-rec:hover { background: var(--azul); color: #fff; }
+.chip-proy-rec.inactivo { opacity: .55; }
+.com-edit { width: 100%; }

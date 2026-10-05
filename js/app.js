@@ -1073,7 +1073,7 @@
         ${c.Fecha_Cierre ? `<div><span class="sub">Cerrado el</span><b>${fecha(c.Fecha_Cierre)}</b></div>` : ""}
       </div>
       <div class="form-seccion">Seguimiento del compromiso <span class="contador">${coms.length}</span></div>
-      <div class="hilo">${coms.map((x) => `<div class="com"><div class="com-cab"><b>${esc(nombreUsuario(x.Autor))}</b><span class="sub">${fechaHora(x.Fecha_Hora)}${lc(x.Autor) === lc(S.usuario.Correo) || R.tieneRol(S.usuario, "Admin") ? ` <button class="btn enlace com-borrar" data-borrar-com="${esc(x.ID_Comentario)}" title="Eliminar este comentario">Eliminar</button>` : ""}</span></div>${x.Texto ? `<div class="com-texto">${esc(x.Texto)}</div>` : ""}${htmlAdjuntos(x)}</div>`).join("") || `<div class="vacio">Aún no hay comentarios. Escribe el primero: avances, dudas o bloqueos de este compromiso.</div>`}</div>
+      <div class="hilo">${coms.map((x) => `<div class="com"><div class="com-cab"><b>${esc(nombreUsuario(x.Autor))}</b><span class="sub">${fechaHora(x.Fecha_Hora)}${x.Editado_El ? ` · editado` : ""}${lc(x.Autor) === lc(S.usuario.Correo) || R.tieneRol(S.usuario, "Admin") ? ` <button class="btn enlace com-borrar" data-editar-com="${esc(x.ID_Comentario)}" title="Editar este comentario">Editar</button> <button class="btn enlace com-borrar" data-borrar-com="${esc(x.ID_Comentario)}" title="Eliminar este comentario">Eliminar</button>` : ""}</span></div><div class="com-texto" data-texto-com="${esc(x.ID_Comentario)}" ${x.Texto ? "" : "hidden"}>${esc(x.Texto || "")}</div>${htmlAdjuntos(x)}</div>`).join("") || `<div class="vacio">Aún no hay comentarios. Escribe el primero: avances, dudas o bloqueos de este compromiso.</div>`}</div>
       ${puede ? `<textarea id="d-texto" rows="3" placeholder="Escribe un comentario: qué se avanzó, qué falta, quién debe actuar… (puedes pegar aquí una imagen con Ctrl+V)"></textarea>
         <div class="adj-barra"><button type="button" class="btn chico" id="d-adjuntar">📎 Adjuntar archivo</button><span class="sub">o pega una imagen del correo con Ctrl+V · máx. 5 MB por archivo</span></div>
         <div id="d-pend" class="adj-pend"></div>
@@ -1092,6 +1092,25 @@
       const x = coms.find((y) => y.ID_Comentario === b.dataset.borrarCom);
       confirmar("Eliminar comentario", `Se eliminará el comentario «${String(x.Texto || "").slice(0, 90)}»${adjuntosDe(x).length ? " y sus adjuntos" : ""}.`, "Eliminar", async () => {
         await guardar(async () => { await borrarAdjuntos([x]); await S.api.eliminarFilas("Comentarios", "ID_Comentario", [x.ID_Comentario]); }, "Comentario eliminado");
+        detalleCompromiso(id);
+      });
+    }));
+    // Editar un comentario propio (o cualquiera, si es Admin) en el mismo hilo.
+    m.querySelectorAll("[data-editar-com]").forEach((b) => b.addEventListener("click", () => {
+      const x = coms.find((y) => y.ID_Comentario === b.dataset.editarCom);
+      const div = m.querySelector(`[data-texto-com="${CSS.escape(x.ID_Comentario)}"]`);
+      if (!div || div.querySelector("textarea")) return;
+      div.hidden = false;
+      div.innerHTML = `<textarea rows="3" class="com-edit">${esc(x.Texto || "")}</textarea><div class="acciones"><button class="btn primario chico" data-ce-ok>Guardar</button><button class="btn chico" data-ce-no>Cancelar</button></div>`;
+      const ta = div.querySelector("textarea"); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
+      const cancelar = () => detalleCompromiso(id);
+      ta.addEventListener("keydown", (ev) => { if (ev.key === "Escape") { ev.stopPropagation(); cancelar(); } });
+      div.querySelector("[data-ce-no]").addEventListener("click", cancelar);
+      div.querySelector("[data-ce-ok]").addEventListener("click", async () => {
+        const nuevo = ta.value.trim();
+        if (!nuevo && !adjuntosDe(x).length) { ta.focus(); return; }
+        if (nuevo === String(x.Texto || "").trim()) return cancelar();
+        await guardar(() => S.api.actualizarPorId("Comentarios", "ID_Comentario", x.ID_Comentario, { Texto: nuevo, Editado_El: ahora() }), "Comentario editado");
         detalleCompromiso(id);
       });
     }));
@@ -2496,7 +2515,9 @@
     const q = S.recQ || "";
     const cap = capacidad();
     const asig = (r) => cap.find((x) => (r.Correo && lc(x.correo) === lc(r.Correo)) || normTxt(x.nombre) === normTxt(r.Nombre));
-    const lista = recursos().filter((r) => !q || normTxt(`${r.Nombre} ${r.Correo} ${r.Cargo} ${r.Area} ${empresaDe(r)}`).includes(normTxt(q)));
+    const fp = S.recP || "";
+    const lista = recursos().filter((r) => (!q || normTxt(`${r.Nombre} ${r.Correo} ${r.Cargo} ${r.Area} ${empresaDe(r)}`).includes(normTxt(q))) && (!fp || proyectosDeRecurso(r).some((x) => x.p.ID_Proyecto === fp)));
+    const etiquetasProy = (r) => proyectosDeRecurso(r).map(({ p, roles }) => `<button class="chip-proy-rec ${/cerrad|finaliz|cancel/i.test(p.Estado || "") ? "inactivo" : ""}" data-pid="${esc(p.ID_Proyecto)}" title="${esc(`${p.Nombre}: ${roles.join(", ")}`)}">${esc(p.Nombre)}</button>`).join("") || `<span class="sub">Sin proyectos</span>`;
     const dups = gruposDuplicados();
     const dudosos = recursosDudosos();
     el.innerHTML = `<div class="titulo-fila"><h1>Recursos</h1>${puede ? `<button class="btn primario" id="b-rec">+ Recurso</button>` : ""}</div>
@@ -2504,17 +2525,19 @@
         <p class="sub">Se crearon con texto como «Ana / Luis». Al eliminarlos, los compromisos que los tenían quedan con cada persona por separado (si ya existe en el directorio).</p>
         <ul class="lista">${dudosos.map((r) => `<li><label class="check"><input type="checkbox" class="rec-dud" value="${esc(r.ID_Recurso)}" ${separarNombres(r.Nombre).length > 1 ? "checked" : ""}> <b>${esc(r.Nombre)}</b> <span class="sub">${esc([r.Correo, separarNombres(r.Nombre).length > 1 ? `→ ${separarNombres(r.Nombre).join(" · ")}` : ""].filter(Boolean).join(" "))}</span></label></li>`).join("")}</ul>
         <button class="btn" id="rec-dud-borrar">Eliminar los marcados</button></div>` : ""}
-      <div class="filtros"><label class="filtro crece"><span>Buscar</span><input id="rec-q" type="search" value="${esc(q)}" placeholder="Nombre, correo, cargo, área o empresa"></label></div>
+      <div class="filtros"><label class="filtro crece"><span>Buscar</span><input id="rec-q" type="search" value="${esc(q)}" placeholder="Nombre, correo, cargo, área o empresa"></label>
+        <label class="filtro"><span>Proyecto</span><select id="rec-p"><option value="">Todos</option>${visibles().slice().sort((a, b) => String(a.Nombre).localeCompare(String(b.Nombre), "es")).map((p) => `<option value="${esc(p.ID_Proyecto)}" ${p.ID_Proyecto === fp ? "selected" : ""}>${esc(p.Nombre)}</option>`).join("")}</select></label></div>
       ${dups.length && puede ? `<div class="card aviso-dup"><h2>Posibles duplicados <span class="contador rojo">${dups.length}</span></h2>
         <ul class="lista">${dups.map((g, i) => `<li>${g.map((r) => `<b>${esc(r.Nombre)}</b>${r.Correo ? ` <span class="sub">${esc(r.Correo)}</span>` : ""}`).join(" · ")} <button class="btn chico" data-fusionar="${i}">Fusionar</button></li>`).join("")}</ul></div>` : ""}
       <div class="card"><p class="sub">Directorio único de personas del portafolio. En stakeholders, equipo y responsables de compromisos se eligen de aquí y sus datos se llenan solos; a alguien nuevo lo agregas con «+ Agregar como recurso nuevo» o con «+ Recurso».</p>
-        ${lista.length ? `<div class="tabla-scroll"><table><thead><tr><th>Persona</th><th>Empresa</th><th>Área</th><th>Contacto</th><th>Asignado</th><th></th></tr></thead><tbody>
+        ${lista.length ? `<div class="tabla-scroll"><table><thead><tr><th>Persona</th><th>Proyectos</th><th>Empresa</th><th>Área</th><th>Contacto</th><th>Asignado</th><th></th></tr></thead><tbody>
           ${lista.map((r) => { const a = asig(r), c = num0(r.Capacidad) ?? 100; return `<tr class="${r.Activo === "No" ? "inactivo" : ""}"><td>${persona(r.Nombre, r.Cargo)}${r.Activo === "No" ? ` <span class="pill noaplica">Inactivo</span>` : ""}</td>
-            <td>${esc(empresaDe(r))}</td><td>${esc(r.Area || "—")}</td><td>${contacto(r.Correo, r.Telefono)}</td>
+            <td class="rec-proys">${etiquetasProy(r)}</td><td>${esc(empresaDe(r))}</td><td>${esc(r.Area || "—")}</td><td>${contacto(r.Correo, r.Telefono)}</td>
             <td class="nowrap">${a ? `${a.total}% de ${c}%${a.total > c ? ` <span class="baja">⚠</span>` : ""}<div class="sub">${a.asign.length} asignación(es)</div>` : `<span class="sub">— de ${c}%</span>`}</td>
             <td class="derecha">${puede ? `<button class="btn chico" data-rec="${esc(r.ID_Recurso)}">Editar</button>` : ""}</td></tr>`; }).join("")}</tbody></table></div>`
         : vacio(q ? "Nadie coincide con la búsqueda." : "Aún no hay recursos. Se crean solos con las personas que ya existen o con «+ Recurso».")}</div>`;
     const qi = $("#rec-q"); qi.addEventListener("change", () => { S.recQ = qi.value; render(); });
+    $("#rec-p").addEventListener("change", (e) => { S.recP = e.target.value; render(); });
     if ($("#b-rec")) $("#b-rec").addEventListener("click", () => formRecurso());
     el.querySelectorAll("[data-rec]").forEach((b) => b.addEventListener("click", () => formRecurso(recursoId(b.dataset.rec))));
     el.querySelectorAll("[data-fusionar]").forEach((b) => b.addEventListener("click", () => fusionar(dups[Number(b.dataset.fusionar)])));
@@ -2531,6 +2554,18 @@
         if (cambios.length) await S.api.actualizarVarios("Compromisos", "ID_Compromiso", cambios);
       }, `${ids.length} registro(s) eliminados`));
     });
+  }
+  // En qué proyectos (visibles para el usuario) está cada persona y con qué papel.
+  function proyectosDeRecurso(r) {
+    const mapa = new Map();
+    const add = (pid, rol) => { const p = proyecto(pid); if (!p || !R.esMio(S.usuario, p)) return; const x = mapa.get(pid) || { p, roles: [] }; if (!x.roles.includes(rol)) x.roles.push(rol); mapa.set(pid, x); };
+    const mismo = (id, correo, nombre) => (id && id === r.ID_Recurso) || (r.Correo && correo && lc(correo) === lc(r.Correo)) || (!id && nombre && normTxt(nombre) === normTxt(r.Nombre));
+    S.datos.Proyectos.forEach((p) => { if (r.Correo && lc(p.PM) === lc(r.Correo)) add(p.ID_Proyecto, "PM"); });
+    (S.datos.Stakeholders || []).forEach((x) => { if (mismo(x.ID_Recurso, x.Correo, x.Nombre)) add(x.ID_Proyecto, x.Rol || "Equipo"); });
+    const nComp = {};
+    S.datos.Compromisos.forEach((c) => { if (!R.cerrado(c) && responsablesDe(c).some((x) => mismo(x.ID_Recurso, x.Correo, x.Nombre))) nComp[c.ID_Proyecto] = (nComp[c.ID_Proyecto] || 0) + 1; });
+    Object.entries(nComp).forEach(([pid, n]) => add(pid, `${n} compromiso${n > 1 ? "s" : ""} abierto${n > 1 ? "s" : ""}`));
+    return [...mapa.values()].sort((a, b) => String(a.p.Nombre).localeCompare(String(b.p.Nombre), "es"));
   }
   // Recursos creados a partir de texto con varias personas («Ana / Luis», «Ana; Luis», «Ana y Luis»).
   function recursosDudosos() {
@@ -3371,10 +3406,11 @@
       filas: filtrados().slice().sort((a, b) => (puntaje(b) ?? -1) - (puntaje(a) ?? -1)) }], filtrosGenerales()),
     recursos: () => {
       const q = S.recQ || "", cap = capacidad();
-      const lista = recursos().filter((r) => !q || normTxt(`${r.Nombre} ${r.Correo} ${r.Cargo} ${r.Area} ${empresaDe(r)}`).includes(normTxt(q)));
+      const fp = S.recP || "";
+    const lista = recursos().filter((r) => (!q || normTxt(`${r.Nombre} ${r.Correo} ${r.Cargo} ${r.Area} ${empresaDe(r)}`).includes(normTxt(q))) && (!fp || proyectosDeRecurso(r).some((x) => x.p.ID_Proyecto === fp)));
       const asig = (r) => cap.find((x) => (r.Correo && lc(x.correo) === lc(r.Correo)) || normTxt(x.nombre) === normTxt(r.Nombre));
       return exportarExcel("Recursos", [{ nombre: "Recursos", columnas: [{ t: "Nombre", v: (r) => r.Nombre, ancho: 30 }, { t: "Cargo", v: (r) => r.Cargo }, { t: "Área", v: (r) => r.Area },
-        { t: "Empresa", v: (r) => empresaDe(r) }, { t: "Correo", v: (r) => r.Correo, ancho: 28 }, { t: "Teléfono", v: (r) => r.Telefono, ancho: 14 },
+        { t: "Empresa", v: (r) => empresaDe(r) }, { t: "Proyectos", v: (r) => proyectosDeRecurso(r).map(({ p, roles }) => `${p.Nombre} (${roles.join(", ")})`).join("; "), ancho: 40 }, { t: "Correo", v: (r) => r.Correo, ancho: 28 }, { t: "Teléfono", v: (r) => r.Telefono, ancho: 14 },
         { t: "Capacidad", v: (r) => num0(r.Capacidad) ?? 100, tipo: "pct" }, { t: "Asignado", v: (r) => (asig(r) || {}).total || 0, tipo: "pct" }, { t: "Activo", v: (r) => r.Activo || "Sí", ancho: 8 }], filas: lista }],
         q ? [`Búsqueda: «${q}»`] : []);
     },

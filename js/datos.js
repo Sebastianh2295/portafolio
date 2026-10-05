@@ -49,9 +49,9 @@
     Riesgos: ["ID_Seguimiento", "Origen", "Fecha_Identificacion"],
     Seguimientos: ["Fecha_Acta", "URL_Acta", "Acta_Archivo", "Ejecutado"],
     Compromisos: ["Correo_Responsable", "Dias_Alerta", "ID_Recurso"],
-    Comentarios: ["Adjuntos"],
+    Comentarios: ["Adjuntos", "Editado_El"],
   };
-  const COLS_FECHA = ["Fecha_Recepcion", "Fecha_Deseada", "Fecha_Estado", "Fecha_Identificacion", "Fecha_Fin_Base", "Nueva_Fecha_Fin", "Fecha_Decision", "Fecha", "Fecha_Registro", "Fecha_Inicio", "Fecha_Fin_Plan", "Actualizado_El", "Fecha_Plan", "Fecha_Real", "Fecha_Corte", "Fecha_Compromiso", "Fecha_Cierre", "Fecha_Acta"];
+  const COLS_FECHA = ["Editado_El", "Fecha_Recepcion", "Fecha_Deseada", "Fecha_Estado", "Fecha_Identificacion", "Fecha_Fin_Base", "Nueva_Fecha_Fin", "Fecha_Decision", "Fecha", "Fecha_Registro", "Fecha_Inicio", "Fecha_Fin_Plan", "Actualizado_El", "Fecha_Plan", "Fecha_Real", "Fecha_Corte", "Fecha_Compromiso", "Fecha_Cierre", "Fecha_Acta"];
 
   // Excel puede convertir "2026-09-28" en número de serie; aquí se devuelve a texto ISO.
   const serialAISO = (v) => new Date(Math.round((v - 25569) * 86400000)).toISOString().slice(0, 10);
