@@ -781,3 +781,14 @@ table.recortada > tbody > tr:nth-child(n+13) { display: none; }
 .comp-fila { align-items: start; }
 .comp-fila textarea.c-texto { resize: none; overflow: hidden; min-height: 38px; line-height: 1.35; padding-top: 8px; padding-bottom: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .comp-fila .c-quitar { margin-top: 4px; }
+/* Compromisos dentro de «Editar sesión» */
+.ses-comps { table-layout: fixed; width: 100%; }
+.ses-comps th:nth-child(1) { width: 40%; }
+.ses-comps th:nth-child(2) { width: 24%; }
+.ses-comps th:nth-child(3) { width: 140px; }
+.ses-comps th:nth-child(4) { width: 130px; }
+.ses-comps th:nth-child(5) { width: 70px; }
+.ses-comps td { vertical-align: top; }
+.ses-comps textarea.sc-texto { width: 100%; resize: none; overflow: hidden; min-height: 38px; line-height: 1.35; }
+.ses-comps .sc-resp, .ses-comps .sc-fecha, .ses-comps .sc-estado { width: 100%; min-width: 0; }
+.ses-comps .combo { width: 100%; }

@@ -39,7 +39,7 @@
       const alto = pag.getViewport({ scale: 1 }).height;
       const tc = await pag.getTextContent();
       paginas.push(tc.items.filter((i) => i.str && i.str.trim()).map((i) => ({
-        t: i.str.trim(), x: i.transform[4], y: alto - i.transform[5], w: i.width,
+        t: i.str.trim(), x: i.transform[4], y: alto - i.transform[5], w: i.width, h: Math.abs(i.transform[3]) || i.height || 10,
       })));
     }
     return paginas;
@@ -79,7 +79,8 @@
         const centro = (desdeI, hastaI) => { const g = linea.slice(desdeI, hastaI); return (g[0].x + g[g.length - 1].x + g[g.length - 1].w) / 2; };
         const c = [iNo >= 0 ? centro(iNo, iDesc) : null, centro(iDesc, iResp), centro(iResp, iFecha), centro(iFecha, linea.length)];
         desde = desc.y + 2;
-        const debajo = items.filter((i) => i.y > desde);
+        const corte = items.filter((i) => i.y > desde && /^(hora de finalizaci|lista de participantes|fecha\s*[–-]\s*hora|fecha emisi|propiedad intelectual)/i.test(i.t)).reduce((m, i) => Math.min(m, i.y), Infinity);
+        const debajo = items.filter((i) => i.y > desde && i.y < corte - 2);   // solo lo que está dentro de la tabla
         const primerTexto = debajo.filter((i) => i.x > (c[0] ?? 0) + 8).reduce((m, i) => Math.min(m, i.x), Infinity);
         const L1 = primerTexto - 6;
         const L2 = 2 * c[1] - L1, L3 = 2 * c[2] - L2;
@@ -102,11 +103,24 @@
       // Si hay texto por encima del primer número, las celdas están centradas verticalmente.
       const centradas = contenido.some((i) => i.y < numeros[0].y - 3);
       const grupos = numeros.map((n) => ({ n: n.t.replace(".", ""), items: [[], [], []] }));
-      for (const i of contenido) {
-        let k;
-        if (centradas) k = numeros.reduce((mejor, n, j) => (Math.abs(n.y - i.y) < Math.abs(numeros[mejor].y - i.y) ? j : mejor), 0);
-        else { k = numeros.findIndex((n, j) => i.y >= n.y - 3 && (j === numeros.length - 1 || i.y < numeros[j + 1].y - 3)); if (k < 0) continue; }
-        grupos[k].items[col(i) - 1].push(i);
+      const cercano = (y) => numeros.reduce((mejor, n, j) => (Math.abs(n.y - y) < Math.abs(numeros[mejor].y - y) ? j : mejor), 0);
+      if (centradas) {
+        /* Celdas centradas verticalmente: en cada columna se arman bloques de renglones seguidos (una celda)
+           y el bloque completo va a la fila cuyo número está más cerca de su centro. Así una descripción
+           larga no se parte entre dos compromisos. */
+        for (let c = 1; c <= 3; c++) {
+          const its = contenido.filter((i) => col(i) === c).sort((a, b) => a.y - b.y || a.x - b.x);
+          const lineas = [];
+          its.forEach((i) => { const l = lineas[lineas.length - 1]; if (l && Math.abs(l.y - i.y) < 3) l.items.push(i); else lineas.push({ y: i.y, h: i.h, items: [i] }); });
+          const bloques = [];
+          lineas.forEach((l, j) => { const prev = lineas[j - 1]; if (!prev || l.y - prev.y > Math.max(prev.h, l.h) * 1.55) bloques.push([]); bloques[bloques.length - 1].push(l); });
+          bloques.forEach((bl) => { const k = cercano((bl[0].y + bl[bl.length - 1].y) / 2); grupos[k].items[c - 1].push(...bl.flatMap((l) => l.items)); });
+        }
+      } else {
+        for (const i of contenido) {
+          const k = numeros.findIndex((n, j) => i.y >= n.y - 3 && (j === numeros.length - 1 || i.y < numeros[j + 1].y - 3));
+          if (k >= 0) grupos[k].items[col(i) - 1].push(i);
+        }
       }
       grupos.forEach((g) => {
         const [desc, resp, fechaTxt] = g.items.map(unir);

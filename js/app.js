@@ -4551,10 +4551,10 @@
       { seccion: "3. Acta de la sesión" },
       { k: "Fecha_Acta", label: "Fecha del acta", tipo: "date" },
       { k: "URL_Acta", label: "Enlace al acta (opcional)", tipo: "url", placeholder: "https://…" },
-      { seccion: `4. Compromisos de esta sesión (${comps.length})`, ayuda: "cambia estado o fecha aquí; ábrelos para comentar" },
+      { seccion: `4. Compromisos de esta sesión (${comps.length})`, ayuda: "edita aquí el texto, responsables, fecha y estado; ábrelos para comentar" },
       { html: `${comps.length ? `<div class="tabla-scroll"><table class="no-orden ses-comps"><thead><tr><th>Compromiso</th><th>Responsable(s)</th><th>Fecha límite</th><th>Estado</th><th></th></tr></thead><tbody>
-        ${comps.map((c) => `<tr data-sc="${esc(c.ID_Compromiso)}"><td>${esc(c.Compromiso)}${comentariosDe(c.ID_Compromiso).length ? `<div class="sub">💬 ${comentariosDe(c.ID_Compromiso).length} comentario(s)</div>` : ""}</td>
-          <td>${esc(c.Responsable || "—")}</td>
+        ${comps.map((c) => `<tr data-sc="${esc(c.ID_Compromiso)}"><td><textarea class="c-texto sc-texto" rows="1" aria-label="Compromiso">${esc(c.Compromiso || "")}</textarea>${comentariosDe(c.ID_Compromiso).length ? `<div class="sub">💬 ${comentariosDe(c.ID_Compromiso).length} comentario(s)</div>` : ""}</td>
+          <td><input class="sc-resp" data-recurso data-multi autocomplete="off" aria-label="Responsables" placeholder="Responsable(s) de Recursos" value="${esc(responsablesDe(c).map((x) => x.Nombre).join("; "))}"></td>
           <td><input type="date" class="sc-fecha" value="${esc(c.Fecha_Compromiso || "")}" aria-label="Fecha límite"></td>
           <td><select class="sc-estado" aria-label="Estado">${R.ESTADOS_COMPROMISO.map((e) => `<option ${e === R.estadoBase(c) ? "selected" : ""}>${esc(e)}</option>`).join("")}</select>${R.estadoCompromiso(c) === "Vencido" ? ` ${pill("Vencido")}` : ""}</td>
           <td class="derecha"><button type="button" class="btn chico" data-sc-abrir="${esc(c.ID_Compromiso)}">Abrir</button></td></tr>`).join("")}</tbody></table></div>` : `<p class="sub">Esta sesión aún no tiene compromisos.</p>`}
@@ -4593,7 +4593,11 @@
       const cambiosC = [...m.querySelectorAll("tr[data-sc]")].map((tr) => {
         const c = comps.find((x) => x.ID_Compromiso === tr.dataset.sc);
         const estado = tr.querySelector(".sc-estado").value, f = tr.querySelector(".sc-fecha").value;
+        const texto = tr.querySelector(".sc-texto").value.replace(/\s+/g, " ").trim(), inpR = tr.querySelector(".sc-resp");
+        const resp = separarNombres(inpR.value);
         const ch = {};
+        if (texto && texto !== String(c.Compromiso || "").trim()) ch.Compromiso = texto;
+        if (resp.join("|") !== responsablesDe(c).map((x) => x.Nombre).join("|")) ch._resp = { nombres: resp, nuevos: inpR._nuevos || new Set() };
         if (estado !== R.estadoBase(c)) { ch.Estado = estado; ch.Fecha_Cierre = estado === "Cerrado" ? R.hoyISO() : ""; }
         if (f !== String(c.Fecha_Compromiso || "")) ch.Fecha_Compromiso = f;
         return Object.keys(ch).length ? { c, cambios: ch } : null;
@@ -4613,6 +4617,11 @@
       const accion = accionActa;
       guardar(async () => {
         if (extra.cambiosC.length) {
+          for (const x of extra.cambiosC) {
+            if (!x.cambios._resp) continue;
+            const { nombres, nuevos } = x.cambios._resp; delete x.cambios._resp;
+            Object.assign(x.cambios, await resolverResponsables(nombres.map((n) => ({ Nombre: n })), nuevos));
+          }
           await S.api.actualizarVarios("Compromisos", "ID_Compromiso", extra.cambiosC.map(({ c, cambios }) => ({ id: c.ID_Compromiso, cambios })));
           const coms = extra.cambiosC.filter((x) => x.cambios.Estado).map(({ c, cambios }) => nuevoComentario(c, `${TEXTO_ESTADO[cambios.Estado] || `Estado: ${cambios.Estado}.`} (desde la edición de la sesión del ${fecha(fd.Fecha_Corte)})`));
           if (coms.length) await S.api.agregarFilas("Comentarios", coms);
