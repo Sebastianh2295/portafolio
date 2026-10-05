@@ -3002,6 +3002,7 @@
   const plegadas = () => leerLocal("pmo_plegadas", []);
   const clavePliegue = (titulo) => `${S.vista}|${titulo}`;
   function compactar(raiz) {
+    raiz.querySelectorAll("textarea.c-texto:not([data-alto])").forEach((t) => { if (t.offsetParent) { t.dataset.alto = "1"; autoAlto(t); } });
     // 1) Listas con muchos elementos: se ven los primeros y un botón «Ver todos».
     raiz.querySelectorAll("ul.lista, ul.mini, ul.eq-lista, ul.alertas, ul.cat-lista, ul.deps").forEach((ul) => {
       const n = [...ul.children].filter((li) => li.tagName === "LI").length;
@@ -3069,6 +3070,10 @@
       sec.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); alternar(); } });
     });
   }
+  // Campos de compromiso: el texto largo baja de renglón y la caja crece sola.
+  const autoAlto = (t) => { t.style.height = "auto"; t.style.height = `${t.scrollHeight + 2}px`; };
+  document.addEventListener("input", (e) => { if (e.target.matches && e.target.matches("textarea.c-texto")) autoAlto(e.target); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.matches && e.target.matches("textarea.c-texto")) e.preventDefault(); });   // un compromiso es un solo párrafo
   let compactarPend = false;
   new MutationObserver(() => {
     if (compactarPend) return;
@@ -4524,7 +4529,7 @@
 
   // Fila rápida de compromiso (registrar o editar una sesión).
   const filaComp = (c = {}) => `<div class="comp-fila">
-      <input class="c-texto" placeholder="Compromiso (qué se hará)" aria-label="Compromiso" value="${esc(c.Compromiso || "")}">
+      <textarea class="c-texto" rows="1" placeholder="Compromiso (qué se hará)" aria-label="Compromiso">${esc(String(c.Compromiso || "").replace(/\s*\n+\s*/g, " "))}</textarea>
       <input class="c-resp" placeholder="Responsable(s) de Recursos" title="Puedes elegir varias personas: se separan con «;»" aria-label="Responsables" data-recurso data-multi autocomplete="off" value="${esc(separarNombres(c.Responsable).join("; "))}">
       <input class="c-fecha" type="date" aria-label="Fecha límite" value="${esc(c.Fecha_Compromiso || "")}" title="${esc(c.Fecha_Texto && !c.Fecha_Compromiso ? `En el acta: ${c.Fecha_Texto}` : "")}">
       <button type="button" class="btn chico c-quitar" aria-label="Quitar compromiso">✕</button></div>`;

@@ -777,3 +777,7 @@ table.recortada > tbody > tr:nth-child(n+13) { display: none; }
 .chip-proy-rec:hover { background: var(--azul); color: #fff; }
 .chip-proy-rec.inactivo { opacity: .55; }
 .com-edit { width: 100%; }
+/* Compromisos largos: el texto baja de renglón */
+.comp-fila { align-items: start; }
+.comp-fila textarea.c-texto { resize: none; overflow: hidden; min-height: 38px; line-height: 1.35; padding-top: 8px; padding-bottom: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.comp-fila .c-quitar { margin-top: 4px; }
