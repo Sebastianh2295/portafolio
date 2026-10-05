@@ -193,19 +193,39 @@
       await ctx.sync();
       return { t, filas: ids.values.map((r, i) => ({ i, id: String(r[0]), parte: Number(partes.values[i][0]) })).filter((x) => x.id === String(id)) };
     },
-    async borrarArchivo(id) {
+    async borrarArchivo(id) { return OpsExcel.borrarArchivos([id]); },
+    // Borra todas las partes de uno o varios archivos en una sola operación (antes era una llamada por archivo).
+    async borrarArchivos(ids) {
+      if (!ids || !ids.length) return 0;
       return Excel.run(async (ctx) => {
-        const { t, filas } = await OpsExcel._filasArchivo(ctx, id);
-        if (!filas.length) return true;
-        const total = t.getDataBodyRange().load("rowCount");
+        const t = ctx.workbook.tables.getItemOrNullObject("Archivos");
         await ctx.sync();
-        const orden = filas.map((f) => f.i).sort((a, b) => b - a);
-        for (const i of orden) {
-          if (total.rowCount === 1) { const r = t.getDataBodyRange().getRow(0); r.load("columnCount"); await ctx.sync(); r.values = [Array(r.columnCount).fill("")]; }
-          else { t.rows.getItemAt(i).delete(); total.rowCount -= 1; }
+        if (t.isNullObject) return 0;
+        const col = t.columns.getItem("ID_Archivo").getDataBodyRange().load("values");
+        await ctx.sync();
+        const buscar = new Set(ids.map(String));
+        const indices = col.values.map((r, i) => (buscar.has(String(r[0])) ? i : -1)).filter((i) => i >= 0).sort((a, b) => b - a);
+        if (!indices.length) return 0;
+        let quedan = col.values.length;
+        for (const i of indices) {
+          if (quedan === 1) { const r = t.getDataBodyRange().getRow(0); r.load("columnCount"); await ctx.sync(); r.values = [Array(r.columnCount).fill("")]; }
+          else { t.rows.getItemAt(i).delete(); quedan -= 1; }
         }
         await ctx.sync();
-        return true;
+        return indices.length;
+      });
+    },
+    // Qué partes hay guardadas de un archivo (para verificar que quedó completo).
+    async partesArchivo(id) {
+      return Excel.run(async (ctx) => {
+        const t = ctx.workbook.tables.getItemOrNullObject("Archivos");
+        await ctx.sync();
+        if (t.isNullObject) return [];
+        const ids = t.columns.getItem("ID_Archivo").getDataBodyRange().load("values");
+        const partes = t.columns.getItem("Parte").getDataBodyRange().load("values");
+        const totales = t.columns.getItem("Total").getDataBodyRange().load("values");
+        await ctx.sync();
+        return ids.values.map((r, i) => ({ id: String(r[0]), parte: Number(partes.values[i][0]), total: Number(totales.values[i][0]) })).filter((x) => x.id === String(id)).map(({ parte, total }) => ({ parte, total }));
       });
     },
     async leerParte(id, parte) {
@@ -272,6 +292,8 @@
       async leerTabla(nombre) { return copia(db[nombre] || []); },
       async guardarParte(f) { (archivos[f.ID_Archivo] = archivos[f.ID_Archivo] || [])[f.Parte] = copia(f); return true; },
       async borrarArchivo(id) { delete archivos[id]; return true; },
+      async borrarArchivos(ids) { ids.forEach((id) => delete archivos[id]); return ids.length; },
+      async partesArchivo(id) { return (archivos[id] || []).filter(Boolean).map((f) => ({ parte: Number(f.Parte), total: Number(f.Total) })); },
       async leerParte(id, parte) { const f = (archivos[id] || [])[parte]; if (!f) throw new Error("En modo demostración el acta solo existe mientras la página está abierta."); return f; },
       async agregarFilas(tabla, objs) { db[tabla].push(...copia(objs)); return true; },
       async agregarFila(tabla, obj) { return api.agregarFilas(tabla, [obj]); },
@@ -304,7 +326,7 @@
     cola = p.catch(() => {});
     return p;
   }
-  const OPERACIONES = ["leerTodo", "leerTabla", "agregarFila", "agregarFilas", "actualizarPorId", "actualizarVarios", "eliminarFila", "eliminarFilas", "guardarParte", "borrarArchivo", "leerParte"];
+  const OPERACIONES = ["leerTodo", "leerTabla", "agregarFila", "agregarFilas", "actualizarPorId", "actualizarVarios", "eliminarFila", "eliminarFilas", "guardarParte", "borrarArchivo", "borrarArchivos", "partesArchivo", "leerParte"];
 
   async function puente() {
     let seq = 0;

@@ -105,8 +105,16 @@
     clearTimeout(relojCarga);
     if (on) {
       if (!o) { o = document.createElement("div"); o.id = "cargando"; document.body.appendChild(o); }
-      o.innerHTML = `<div class="spinner"></div><div>${esc(msg)}</div><div class="cargando-lento" hidden>Excel está tardando más de lo normal. Puedes seguir esperando o cerrar este aviso; si el cambio no aparece, usa «Actualizar datos del Excel».<br><button class="btn chico" id="cg-cerrar">Cerrar aviso</button></div>`;
-      relojCarga = setTimeout(() => { const l = o.querySelector(".cargando-lento"); if (l && o.isConnected) { l.hidden = false; o.querySelector("#cg-cerrar").addEventListener("click", () => o.remove()); } }, 12000);
+      o.innerHTML = `<div class="spinner"></div><div>${esc(msg)}</div><div class="cargando-lento" hidden>Excel está tardando más de lo normal. Puedes seguir esperando o cerrar este aviso; si el cambio no aparece, usa «Actualizar datos del Excel».<div class="cargando-op"></div><button class="btn chico" id="cg-cerrar">Cerrar aviso</button></div>`;
+      const t0 = Date.now();
+      relojCarga = setTimeout(function mostrarLento() {
+        const l = o.querySelector(".cargando-lento");
+        if (!l || !o.isConnected) return;
+        if (l.hidden) { l.hidden = false; o.querySelector("#cg-cerrar").addEventListener("click", () => o.remove()); }
+        const det = o.querySelector(".cargando-op");
+        if (det) det.textContent = `${opsEnCurso()} · ${Math.round((Date.now() - t0) / 1000)} s`;
+        relojCarga = setTimeout(mostrarLento, 1000);
+      }, 12000);
     } else if (o) o.remove();
   }
 
@@ -686,7 +694,8 @@
     return { bytes, tipo, nombre, tam: bytes.length };
   }
   async function borrarAdjuntos(comentarios) {
-    for (const x of comentarios) for (const a of adjuntosDe(x)) { try { await S.api.borrarArchivo(a.id); } catch (e) { /* ya no existe */ } }
+    const ids = comentarios.flatMap((x) => adjuntosDe(x).map((a) => a.id));
+    if (ids.length) { try { await S.api.borrarArchivos(ids); } catch (e) { /* ya no existen */ } }
   }
   function htmlAdjuntos(x) {
     const lista = adjuntosDe(x);
@@ -1515,19 +1524,36 @@
   async function guardarArchivo(id, bytes, nombre, tipo, etiqueta = "el archivo") {
     const b64 = ACTAS.aBase64(bytes);
     const total = Math.max(1, Math.ceil(b64.length / TAM_PARTE));
-    await S.api.borrarArchivo(id);
-    for (let i = 0; i < total; i++) {
-      cargando(true, `Guardando ${etiqueta} en Excel… ${i + 1} de ${total}`);
-      await S.api.guardarParte({ ID_Archivo: id, Parte: i, Total: total, Nombre: nombre, Tipo: tipo || "application/octet-stream", Datos: b64.slice(i * TAM_PARTE, (i + 1) * TAM_PARTE) });
+    // Se sube, se verifica que estén todas las partes (una vez cada una) y, si no, se repite una vez.
+    for (let intento = 1; intento <= 2; intento++) {
+      await S.api.borrarArchivo(id);
+      for (let i = 0; i < total; i++) {
+        cargando(true, `Guardando ${etiqueta} en Excel… ${i + 1} de ${total}${intento > 1 ? " (reintento)" : ""}`);
+        await S.api.guardarParte({ ID_Archivo: id, Parte: i, Total: total, Nombre: nombre, Tipo: tipo || "application/octet-stream", Datos: b64.slice(i * TAM_PARTE, (i + 1) * TAM_PARTE) });
+      }
+      cargando(true, `Verificando ${etiqueta}…`);
+      if (archivoCompleto(await S.api.partesArchivo(id), total)) { delete cacheArchivos[id]; return; }
     }
+    throw new Error(`${etiqueta} no quedó completo en Excel. Intente subirlo de nuevo.`);
   }
+  // Completo = las partes 0..total-1, cada una una sola vez y con el mismo total.
+  const archivoCompleto = (partes, total) => partes.length === total && partes.every((x) => x.total === total) && new Set(partes.map((x) => x.parte)).size === total;
   const cacheArchivos = {};
   async function leerArchivo(id, avance) {
     if (cacheArchivos[id]) return cacheArchivos[id];
+    const b64 = await leerBase64(id, avance);
+    const primera = b64.primera;
+    return (cacheArchivos[id] = { bytes: ACTAS.deBase64(b64.datos), nombre: primera.Nombre, tipo: primera.Tipo });
+  }
+  // Lee todas las partes de un archivo; si faltan o están mezcladas, avisa con un error claro.
+  async function leerBase64(id, avance) {
+    const partes = S.api.partesArchivo ? await S.api.partesArchivo(id) : null;
+    if (partes && !partes.length) throw new Error("no está guardado en el Excel.");
+    if (partes && !archivoCompleto(partes, partes[0].total)) throw new Error("quedó incompleto cuando se guardó (faltan partes o hay partes repetidas). Vuelve a subirlo.");
     const primera = await S.api.leerParte(id, 0);
-    let b64 = primera.Datos;
-    for (let i = 1; i < primera.Total; i++) { if (avance) avance(i + 1, primera.Total); b64 += (await S.api.leerParte(id, i)).Datos; }
-    return (cacheArchivos[id] = { bytes: ACTAS.deBase64(b64), nombre: primera.Nombre, tipo: primera.Tipo });
+    let datos = primera.Datos;
+    for (let i = 1; i < primera.Total; i++) { if (avance) avance(i + 1, primera.Total); const p = await S.api.leerParte(id, i); if (Number(p.Total) !== Number(primera.Total)) throw new Error("tiene partes de dos versiones distintas. Vuelve a subirlo."); datos += p.Datos; }
+    return { datos, primera };
   }
   async function subirActa(idSeg, bytes, nombre) { await guardarArchivo(idSeg, bytes, nombre, "application/pdf", "el acta"); }
   async function verActa(idSeg, nombre) {
@@ -1541,19 +1567,19 @@
     $("#v-cerrar").addEventListener("click", cerrarModal);
     m.addEventListener("keydown", (e) => { if (e.key === "Escape") cerrarModal(); });
     try {
-      const primera = await S.api.leerParte(idSeg, 0);
-      let b64 = primera.Datos;
-      for (let i = 1; i < primera.Total; i++) {
-        $("#v-paginas").innerHTML = `<div class="vacio">Abriendo el acta… ${i + 1} de ${primera.Total}</div>`;
-        b64 += (await S.api.leerParte(idSeg, i)).Datos;
-      }
-      const bytes = ACTAS.deBase64(b64);
+      const { datos } = await leerBase64(idSeg, (i, n) => { const v = $("#v-paginas"); if (v) v.innerHTML = `<div class="vacio">Abriendo el acta… ${i} de ${n}</div>`; });
+      const bytes = ACTAS.deBase64(datos);
       const d = $("#v-descargar");
       if (d) { d.href = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" })); d.download = nombre || "acta.pdf"; d.hidden = false; }
       await ACTAS.mostrar(bytes, $("#v-paginas"));
     } catch (e) {
       const c = $("#v-paginas");
-      if (c) c.innerHTML = vacio("No se pudo abrir el acta: " + e.message);
+      const s = S.datos.Seguimientos.find((x) => x.ID_Seguimiento === idSeg);
+      const puedeSubir = s && R.puedeEditar(S.usuario, proyecto(s.ID_Proyecto) || {}, "seguimiento");
+      if (c) {
+        c.innerHTML = `${vacio("No se pudo abrir el acta: el archivo " + e.message)}${puedeSubir ? `<div class="acciones" style="justify-content:center"><button class="btn primario" id="v-resubir">Volver a subir el acta (PDF)</button></div>` : ""}`;
+        const b = $("#v-resubir"); if (b) b.addEventListener("click", () => adjuntarActa(idSeg, true));
+      }
     }
   }
   function elegirPDF(alElegir) {
@@ -1563,7 +1589,7 @@
     i.click();
   }
   // Adjuntar el acta a una sesión ya registrada; si trae compromisos y la sesión no tiene, ofrece agregarlos.
-  function adjuntarActa(idSeg) {
+  function adjuntarActa(idSeg, reemplazo) {
     const s = S.datos.Seguimientos.find((x) => x.ID_Seguimiento === idSeg);
     if (!s) return;
     elegirPDF(async (archivo) => {
@@ -1572,7 +1598,7 @@
       let res;
       try { res = await ACTAS.leerActa(archivo); } catch (e) { cargando(false); toast("No se pudo leer el PDF: " + e.message, true); return; }
       cargando(false);
-      const yaTiene = S.datos.Compromisos.some((c) => c.ID_Seguimiento === idSeg);
+      const yaTiene = reemplazo || S.datos.Compromisos.some((c) => c.ID_Seguimiento === idSeg);
       await guardar(async () => {
         await subirActa(idSeg, res.datos, archivo.name);
         await S.api.actualizarPorId("Seguimientos", "ID_Seguimiento", idSeg, { Acta_Archivo: archivo.name, ...(s.Fecha_Acta ? {} : { Fecha_Acta: res.fecha }) });
@@ -2095,6 +2121,28 @@
   const CAMPO_DESC = ["Nombre", "Compromiso", "Titulo", "Hito", "Descripcion", "Entregable", "Leccion", "Texto", "Valor", "Logros"];
   const NO_AUDITAR = new Set(["Auditoria", "Archivos", "Filtros"]);
   const IGNORAR_CAMPOS = new Set(["Actualizado_Por", "Actualizado_El"]);
+  // Qué está haciendo Excel ahora (para el aviso de espera).
+  const EN_CURSO = new Map();
+  let seqOp = 0;
+  const ETQ_OP = { leerTodo: "Leyendo todo el Excel", leerTabla: "Leyendo la tabla", agregarFila: "Agregando en", agregarFilas: "Agregando en", actualizarPorId: "Actualizando", actualizarVarios: "Actualizando",
+    eliminarFila: "Eliminando en", eliminarFilas: "Eliminando en", guardarParte: "Subiendo archivo", borrarArchivo: "Borrando archivo", borrarArchivos: "Borrando archivos", partesArchivo: "Verificando archivo", leerParte: "Leyendo archivo" };
+  function opsEnCurso() {
+    const l = [...EN_CURSO.values()];
+    if (!l.length) return "Esperando respuesta de Excel";
+    return "Ahora: " + l.map((x) => `${x.etq} (${Math.round((Date.now() - x.t0) / 1000)} s)`).join(", ");
+  }
+  function conMedicion(api) {
+    const w = {};
+    Object.keys(api).forEach((op) => {
+      if (typeof api[op] !== "function") { w[op] = api[op]; return; }
+      w[op] = async (...a) => {
+        const id = ++seqOp;
+        EN_CURSO.set(id, { etq: `${ETQ_OP[op] || op}${typeof a[0] === "string" && /^(agregar|actualizar|eliminar|leerTabla)/.test(op) ? " " + a[0] : ""}`, t0: Date.now() });
+        try { return await api[op](...a); } finally { EN_CURSO.delete(id); }
+      };
+    });
+    return w;
+  }
   function conAuditoria(api) {
     const pend = [];
     let timer = null;
@@ -3962,7 +4010,7 @@
         ID_Seguimiento: idSeg, ID_Proyecto: p.ID_Proyecto, Fecha_Corte: fd.Fecha_Corte, Semana: R.semanaISO(fd.Fecha_Corte),
         Avance_Real: fd.Avance_Real, Semaforo: fd.Semaforo, Ejecutado: fd.Ejecutado, Logros: fd.Logros, Proximos_Pasos: fd.Proximos_Pasos,
         Bloqueos: fd.Bloqueos, Reportado_Por: S.usuario.Correo, Fecha_Acta: fd.Fecha_Acta, URL_Acta: fd.URL_Acta,
-        Acta_Archivo: acta ? acta.nombre : "",
+        Acta_Archivo: "",   // se marca solo cuando el PDF quedó completo en Excel
       };
       const actaElegida = acta;
       const comps = extra.nuevos.map((c, i) => ({
@@ -3987,7 +4035,10 @@
           cerradosC.forEach((c) => { const nc = nuevoComentario(c, `Cerrado en la sesión de seguimiento del ${fecha(fd.Fecha_Corte)}.`); nuevosCom.push(nc); });
           if (nuevosCom.length) await S.api.agregarFilas("Comentarios", nuevosCom);
         }
-        if (actaElegida) await subirActa(idSeg, actaElegida.bytes, actaElegida.nombre);
+        if (actaElegida) {
+          try { await subirActa(idSeg, actaElegida.bytes, actaElegida.nombre); await S.api.actualizarPorId("Seguimientos", "ID_Seguimiento", idSeg, { Acta_Archivo: actaElegida.nombre }); }
+          catch (e) { toast("La sesión quedó registrada, pero el acta no se pudo guardar: " + e.message + " Usa «Adjuntar acta» en la sesión.", true); }
+        }
       }, `Seguimiento registrado${comps.length ? ` con ${comps.length} compromiso(s)` : ""}${actaElegida ? " y acta guardada" : ""}`);
     }, (fd) => (fd.Fecha_Corte && fd.Fecha_Corte > R.hoyISO() ? "La fecha de corte no puede ser futura." : ""), { antes: cargaActa + contexto, despues, init, recoger });
   }
@@ -4078,7 +4129,8 @@
   // ---------- Editar y eliminar registros ----------
   async function eliminarProyecto(pid) {
     const segs = S.datos.Seguimientos.filter((s) => s.ID_Proyecto === pid);
-    for (const s of segs.filter((x) => x.Acta_Archivo)) await S.api.borrarArchivo(s.ID_Seguimiento);
+    const actas = segs.filter((x) => x.Acta_Archivo).map((x) => x.ID_Seguimiento);
+    if (actas.length) await S.api.borrarArchivos(actas);
     const borrar = (tabla, col, filas) => (filas.length ? S.api.eliminarFilas(tabla, col, filas.map((f) => f[col])) : null);
     await borrarAdjuntos((S.datos.Comentarios || []).filter((x) => x.ID_Proyecto === pid));
     await borrar("Comentarios", "ID_Comentario", (S.datos.Comentarios || []).filter((x) => x.ID_Proyecto === pid));
@@ -4363,7 +4415,7 @@
     S.modo = typeof Office === "undefined" ? "demo" : modoDesdeURL();
     cargando(true, "Conectando con Excel…");
     try {
-      S.api = conAuditoria(await DATOS.crear(S.modo));
+      S.api = conAuditoria(conMedicion(await DATOS.crear(S.modo)));
       await recargar();
       const correo = leerSesion();
       S.usuario = S.datos.Usuarios.find((x) => lc(x.Correo) === lc(correo) && x.Activo === "Sí") || null;

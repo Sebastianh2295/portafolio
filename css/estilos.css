@@ -729,3 +729,4 @@ td .vacio { padding: 14px; }
 #cargando .cargando-lento { max-width: 360px; text-align: center; font-size: 13px; color: var(--texto2); margin-top: 6px; }
 #cargando .cargando-lento[hidden] { display: none; }
 #cargando .cargando-lento .btn { margin-top: 8px; }
+#cargando .cargando-op { margin-top: 6px; font-weight: 600; color: var(--texto); }
