@@ -2961,6 +2961,86 @@
     if (b && !b.disabled) b.click();
   });
 
+  // ---------- Listas largas: recortar, minimizar tarjetas y secciones ----------
+  // Se aplica solo a todo lo que aparece en pantalla (vistas, formularios y fichas), sin tocar cada módulo.
+  const LIM_LISTA = 6, LIM_TABLA = 12;
+  const plegadas = () => leerLocal("pmo_plegadas", []);
+  const clavePliegue = (titulo) => `${S.vista}|${titulo}`;
+  function compactar(raiz) {
+    // 1) Listas con muchos elementos: se ven los primeros y un botón «Ver todos».
+    raiz.querySelectorAll("ul.lista, ul.mini, ul.eq-lista, ul.alertas, ul.cat-lista, ul.deps").forEach((ul) => {
+      const n = [...ul.children].filter((li) => li.tagName === "LI").length;
+      if (!ul._verTodos) {
+        if (n <= LIM_LISTA + 1) return;
+        ul.classList.add("recortada");
+        const b = document.createElement("button");
+        b.type = "button"; b.className = "btn enlace ver-todos";
+        b.addEventListener("click", (e) => { e.stopPropagation(); ul.classList.toggle("recortada"); ul._pintarVer(); });
+        ul._verTodos = b;
+        ul.after(b);
+      }
+      // La lista puede cambiar (p. ej. al agregar una persona): se recalcula el botón.
+      ul._pintarVer = () => { const k = [...ul.children].filter((li) => li.tagName === "LI").length; if (k <= LIM_LISTA + 1) ul.classList.remove("recortada"); ul._verTodos.hidden = k <= LIM_LISTA + 1; ul._verTodos.textContent = ul.classList.contains("recortada") ? `Ver todos (${k}) ▾` : "Ver menos ▴"; };
+      ul._pintarVer();
+    });
+    // 2) Tablas largas en las vistas: se ven las primeras filas (sigue funcionando el orden por columna).
+    raiz.querySelectorAll("#vista table:not(.raci):not(.no-recortar) > tbody").forEach((tb) => {
+      const tabla = tb.closest("table");
+      if (tabla.dataset.compacto || tb.querySelector("tr.grupo")) return;
+      const n = tb.rows.length;
+      if (n <= LIM_TABLA + 3) return;
+      tabla.dataset.compacto = "1";
+      tabla.classList.add("recortada");
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "btn chico ver-todos-tabla";
+      const txt = () => (tabla.classList.contains("recortada") ? `Ver las ${n} filas ▾` : "Ver menos ▴");
+      b.textContent = txt();
+      b.addEventListener("click", () => { tabla.classList.toggle("recortada"); b.textContent = txt(); });
+      (tabla.closest(".tabla-scroll") || tabla).after(b);
+    });
+    // 3) Tarjetas con título: botón para minimizarlas (se recuerda en este equipo).
+    raiz.querySelectorAll("#vista .card").forEach((card) => {
+      if (card.dataset.plegable) return;
+      const h = card.querySelector(":scope > .titulo-fila h2, :scope > h2");
+      if (!h) return;
+      card.dataset.plegable = "1";
+      const titulo = h.textContent.trim().replace(/\s+\d+$/, "");
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "btn-plegar"; b.title = "Minimizar o expandir"; b.setAttribute("aria-label", `Minimizar ${titulo}`);
+      const pintar = () => { const p = card.classList.contains("plegada"); b.textContent = p ? "▸" : "▾"; b.setAttribute("aria-expanded", String(!p)); };
+      if (plegadas().includes(clavePliegue(titulo))) card.classList.add("plegada");
+      pintar();
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        card.classList.toggle("plegada"); pintar();
+        const k = clavePliegue(titulo), l = plegadas().filter((x) => x !== k);
+        guardarLocal("pmo_plegadas", card.classList.contains("plegada") ? [...l, k] : l);
+      });
+      h.prepend(b);
+    });
+    // 4) Secciones de los formularios: clic en el título para minimizar la sección.
+    raiz.querySelectorAll("#modal .form-grid > .form-seccion").forEach((sec) => {
+      if (sec.dataset.plegable) return;
+      sec.dataset.plegable = "1";
+      sec.classList.add("plegable");
+      sec.setAttribute("role", "button"); sec.tabIndex = 0; sec.title = "Clic para minimizar o expandir esta sección";
+      const alternar = () => {
+        const cerrar = !sec.classList.contains("plegada");
+        sec.classList.toggle("plegada", cerrar);
+        let el = sec.nextElementSibling;
+        while (el && !el.classList.contains("form-seccion")) { el.classList.toggle("oculto-seccion", cerrar); el = el.nextElementSibling; }
+      };
+      sec.addEventListener("click", (e) => { if (!e.target.closest("button, a, input, select")) alternar(); });
+      sec.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); alternar(); } });
+    });
+  }
+  let compactarPend = false;
+  new MutationObserver(() => {
+    if (compactarPend) return;
+    compactarPend = true;
+    requestAnimationFrame(() => { compactarPend = false; compactar(document); });
+  }).observe(document.body || document.documentElement, { childList: true, subtree: true });
+
   // Ordenar cualquier tabla con clic en el encabezado (ignora tablas agrupadas o de edición).
   document.addEventListener("click", (e) => {
     const th = e.target.closest && e.target.closest("#vista table:not(.raci):not(.no-orden) thead th");

@@ -752,3 +752,22 @@ td .vacio { padding: 14px; }
 #vista tbody tr:has([data-abrir-comp], [data-al-abrir], [data-sg-ver], [data-tk], [data-riesgo], [data-hito], [data-stk], [data-prov], [data-rec], [data-u], [data-leccion], [data-dep], [data-cambio], [data-edit-seg]),
 #vista .rg-card:has([data-riesgo]), .alerta-item:has([data-al-abrir]) { cursor: pointer; }
 #vista tbody tr:has([data-abrir-comp], [data-sg-ver], [data-tk], [data-riesgo], [data-hito], [data-stk], [data-prov], [data-rec], [data-u], [data-leccion], [data-dep], [data-cambio], [data-edit-seg]):hover { background: var(--hover); }
+/* Listas largas recortadas, tarjetas y secciones minimizables */
+ul.recortada > li:nth-child(n+7) { display: none; }
+.ver-todos { display: inline-block; margin: 2px 0 6px; font-size: 13px; }
+table.recortada > tbody > tr:nth-child(n+13) { display: none; }
+.ver-todos-tabla { margin: 8px 0 0; }
+.btn-plegar { border: 0; background: transparent; color: var(--texto2); cursor: pointer; font-size: 13px; width: 22px; height: 22px; margin-right: 4px; border-radius: 4px; vertical-align: middle; }
+.btn-plegar:hover { background: var(--hover); color: var(--texto); }
+.card.plegada > *:not(.titulo-fila):not(h2) { display: none !important; }
+.card.plegada > .titulo-fila > *:not(h2) { display: none !important; }
+.card.plegada { padding-bottom: 10px; }
+.form-seccion.plegable { cursor: pointer; user-select: none; }
+.form-seccion.plegable::before { content: "▾ "; color: var(--texto2); }
+.form-seccion.plegable.plegada::before { content: "▸ "; }
+.oculto-seccion { display: none !important; }
+/* Equipo del proyecto en el formulario: más compacto */
+#fp-equipo .eq-lista { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); column-gap: 18px; }
+#fp-equipo .eq-lista li { font-size: 13px; padding: 3px 0; }
+#fp-equipo .eq-lista + .ver-todos { margin-top: 0; }
+#fp-equipo ul.recortada > li:nth-child(n+7) { display: none; }
