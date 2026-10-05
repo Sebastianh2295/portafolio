@@ -755,7 +755,7 @@
         const p = proyecto(c.ID_Proyecto) || {};
         const coms = comentariosDe(c.ID_Compromiso);
         const ult = coms[coms.length - 1];
-        return `<tr ${conProyecto ? `class="clic" data-pid="${esc(c.ID_Proyecto)}"` : ""}>${conProyecto ? `<td><b>${esc(p.Nombre)}</b></td>` : ""}
+        return `<tr>${conProyecto ? `<td><button class="btn enlace" data-pid="${esc(c.ID_Proyecto)}" title="Ir al proyecto"><b>${esc(p.Nombre)}</b></button></td>` : ""}
           <td>${esc(c.Compromiso)}<div class="sub">${esc(origen(c))}</div></td><td>${celdaResp(c, R.puedeEditar(S.usuario, p, "compromisos"))}</td><td>${fecha(c.Fecha_Compromiso)}</td>
           <td>${pillComp(c)}${e === "Cerrado" && c.Fecha_Cierre ? `<div class="sub">${fecha(c.Fecha_Cierre)}</div>` : ""}</td>
           <td class="opc">${ult ? `<span class="ult-com">${esc(resumenCom(ult))}</span><div class="sub">${esc(nombreUsuario(ult.Autor))} · ${fechaHora(ult.Fecha_Hora)}</div>` : `<span class="sub">Sin comentarios</span>`}</td>
@@ -2895,6 +2895,21 @@
     if (S.vista === "ficha") { const p = proyecto(S.pid); if (p) partes.push(`<span>${esc(p.Nombre)}</span>`, `<span>${esc(NOMBRE_TAB[S.fichaTab] || "Resumen")}</span>`); }
     return `<nav class="migas" aria-label="Ubicación">${partes.join('<span class="sep">›</span>')}</nav>`;
   }
+
+  // Abrir un registro haciendo clic en cualquier parte de su fila o tarjeta (los botones siguen igual).
+  // Se usa el botón principal de la fila (Abrir, Ver o Editar). Las filas de proyectos ya abren la ficha.
+  const ABRIR_SEL = ["[data-edit-seg]", "[data-abrir-comp]", "[data-al-abrir]", "[data-sg-ver]", "[data-tk]", "[data-riesgo]", "[data-hito]", "[data-stk]", "[data-prov]", "[data-rec]", "[data-u]",
+    "[data-leccion]", "[data-dep]", "[data-cambio]"];
+  const ITEM_SEL = "#vista tbody tr, #vista .rg-card, #modal .alerta-item, #vista .alerta-item";
+  document.addEventListener("click", (e) => {
+    if (e.button !== 0 || !e.target.closest) return;
+    if (e.target.closest("button, a, input, select, textarea, label, summary, details, [contenteditable], .combo, [data-pid]")) return;
+    const item = e.target.closest(ITEM_SEL);
+    if (!item) return;
+    if (String(window.getSelection ? window.getSelection() : "").trim()) return;   // estaba seleccionando texto para copiar
+    const b = ABRIR_SEL.map((sel) => item.querySelector(sel)).find(Boolean);   // en orden de prioridad (la sesión antes que sus compromisos)
+    if (b && !b.disabled) b.click();
+  });
 
   // Ordenar cualquier tabla con clic en el encabezado (ignora tablas agrupadas o de edición).
   document.addEventListener("click", (e) => {

@@ -748,3 +748,7 @@ td .vacio { padding: 14px; }
 .pill.descartada { background: #eceff3; color: #5f6b7a; }
 .pill.error { background: #fde8e6; color: #a93226; }
 #tx-texto { width: 100%; font-family: Consolas, monospace; font-size: 12px; }
+/* Filas y tarjetas que se abren con un clic en cualquier parte */
+#vista tbody tr:has([data-abrir-comp], [data-al-abrir], [data-sg-ver], [data-tk], [data-riesgo], [data-hito], [data-stk], [data-prov], [data-rec], [data-u], [data-leccion], [data-dep], [data-cambio], [data-edit-seg]),
+#vista .rg-card:has([data-riesgo]), .alerta-item:has([data-al-abrir]) { cursor: pointer; }
+#vista tbody tr:has([data-abrir-comp], [data-sg-ver], [data-tk], [data-riesgo], [data-hito], [data-stk], [data-prov], [data-rec], [data-u], [data-leccion], [data-dep], [data-cambio], [data-edit-seg]):hover { background: var(--hover); }
