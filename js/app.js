@@ -21,6 +21,7 @@
     { id: "capacidad", t: "Capacidad del equipo" },
     { id: "priorizacion", t: "Priorización" },
     { id: "lecciones", t: "Lecciones aprendidas" },
+    { id: "sugerencias", t: "Sugerencias de mejora" },
     { id: "catalogos", t: "Catálogos", permiso: "catalogos" },
     { id: "usuarios", t: "Usuarios", permiso: "usuarios" },
     { id: "auditoria", t: "Auditoría", permiso: "usuarios" },
@@ -64,6 +65,9 @@
     priorizacion: ["Ordena el portafolio por un puntaje de 0 a 100 según valor, urgencia, complejidad y esfuerzo.",
       "La calificación de cada proyecto se hace en «Editar proyecto» → Priorización.",
       "La matriz valor vs. esfuerzo ayuda a ver ganancias rápidas y proyectos a reconsiderar."],
+    sugerencias: ["Aquí quedan todas las mejoras, errores e ideas que se reportan sobre la app, con su estado.",
+      "Desde cualquier pantalla usa «💡 Sugerir mejora» (arriba a la derecha): la app guarda sola en qué módulo y proyecto estabas.",
+      "Admin y PMO cambian el estado y responden. Marca varias y usa «Copiar para Claude» para pedir los cambios de una vez."],
     lecciones: ["Todas las lecciones aprendidas del portafolio en un solo lugar.",
       "Busca por palabra clave o filtra por categoría antes de arrancar un proyecto parecido.",
       "Se registran en la pestaña «Lecciones» de cada proyecto."],
@@ -238,7 +242,8 @@
     const al = alertas(); const nAl = al.vencidos.length + al.pronto.length;
     const oscuro = document.documentElement.dataset.tema === "oscuro";
     S.navMini = leerLocal("pmo_nav_mini", false);
-    const itemNav = (v) => `<button class="nav ${v.id === activa ? "activa" : ""}" data-vista="${v.id}" title="${esc(v.t)}">${ico(v.id)}<span>${esc(v.t)}</span></button>`;
+    const nSug = gestionaSug() ? (S.datos.Sugerencias || []).filter((x) => (x.Estado || "Nueva") === "Nueva").length : 0;
+    const itemNav = (v) => `<button class="nav ${v.id === activa ? "activa" : ""}" data-vista="${v.id}" title="${esc(v.t)}">${ico(v.id)}<span>${esc(v.t)}</span>${v.id === "sugerencias" && nSug ? `<span class="nav-badge" title="${nSug} sugerencia(s) nueva(s)">${nSug}</span>` : ""}</button>`;
     app().innerHTML = `
       <div class="shell ${S.navMini ? "mini" : ""}">
         <header class="appbar">
@@ -265,7 +270,7 @@
           <button class="nav nav-colapsar" id="b-colapsar" title="${S.navMini ? "Expandir menú" : "Contraer menú"}">${ico(S.navMini ? "expandir" : "colapsar")}<span>Contraer menú</span></button>
         </aside>
         <div class="nav-velo" id="nav-velo"></div>
-        <main class="contenido"><div class="barra-migas">${migas()}${EXPORTADORES[S.vista] && S.datos ? `<button class="btn chico btn-exportar" id="b-exportar" title="Descarga en Excel lo que ves, con los filtros aplicados">${ico("exportar")}<span>${S.vista === "ficha" ? (S.fichaTab === "riesgos" ? "Exportar riesgos (formato FSFB)" : "Exportar proyecto a Excel") : "Exportar a Excel"}</span></button>` : ""}</div><section id="vista"></section></main>
+        <main class="contenido"><div class="barra-migas">${migas()}<button class="btn chico btn-sugerir" id="b-sugerir" title="Proponer un cambio o reportar un error de esta pantalla">💡 <span>Sugerir mejora</span></button>${EXPORTADORES[S.vista] && S.datos ? `<button class="btn chico btn-exportar" id="b-exportar" title="Descarga en Excel lo que ves, con los filtros aplicados">${ico("exportar")}<span>${S.vista === "ficha" ? (S.fichaTab === "riesgos" ? "Exportar riesgos (formato FSFB)" : "Exportar proyecto a Excel") : "Exportar a Excel"}</span></button>` : ""}</div><section id="vista"></section></main>
       </div>`;
     document.querySelectorAll(".nav[data-vista]").forEach((b) => b.addEventListener("click", () => { document.body.classList.remove("nav-abierta"); ir(b.dataset.vista); }));
     document.querySelectorAll("[data-miga]").forEach((b) => b.addEventListener("click", () => ir(b.dataset.miga)));
@@ -277,6 +282,7 @@
     $("#b-colapsar").addEventListener("click", () => { guardarLocal("pmo_nav_mini", !S.navMini); render(); });
     $("#b-buscar").addEventListener("click", abrirBusqueda);
     if ($("#b-exportar")) $("#b-exportar").addEventListener("click", () => EXPORTADORES[S.vista]());
+    $("#b-sugerir").addEventListener("click", () => formSugerencia());
     const mu = $("#menu-usuario"), bu = $("#b-usuario");
     bu.addEventListener("click", (e) => { e.stopPropagation(); mu.hidden = !mu.hidden; bu.setAttribute("aria-expanded", String(!mu.hidden)); });
     $("#b-tema").addEventListener("click", () => { aplicarTema(oscuro ? "claro" : "oscuro"); render(); });
@@ -296,7 +302,7 @@
       cargando(true, "Leyendo Excel…");
       try { await recargar(); render(); toast("Datos actualizados"); } catch (e) { toast(e.message, true); } finally { cargando(false); }
     });
-    const vistas = { dashboard: vDashboard, avances: vAvances, seguimiento: vSeguimiento, proyectos: vProyectos, ficha: vFicha, backlog: vBacklog, recursos: vRecursos, capacidad: vCapacidad, priorizacion: vPriorizacion, lecciones: vLecciones, auditoria: vAuditoria, cronograma: vCronograma, riesgos: vRiesgos, catalogos: vCatalogos, usuarios: vUsuarios };
+    const vistas = { dashboard: vDashboard, avances: vAvances, seguimiento: vSeguimiento, proyectos: vProyectos, ficha: vFicha, backlog: vBacklog, recursos: vRecursos, capacidad: vCapacidad, priorizacion: vPriorizacion, lecciones: vLecciones, sugerencias: vSugerencias, auditoria: vAuditoria, cronograma: vCronograma, riesgos: vRiesgos, catalogos: vCatalogos, usuarios: vUsuarios };
     const el = $("#vista");
     (vistas[S.vista] || vDashboard)(el);
     el.insertAdjacentHTML("afterbegin", ayuda(S.vista));
@@ -2117,7 +2123,7 @@
 
   // ---------- Auditoría ----------
   const ID_COLS = { Proyectos: "ID_Proyecto", Hitos: "ID_Hito", Seguimientos: "ID_Seguimiento", Riesgos: "ID_Riesgo", Usuarios: "Correo", Compromisos: "ID_Compromiso",
-    Comentarios: "ID_Comentario", Stakeholders: "ID_Stakeholder", Proveedores: "ID_Proveedor", Recursos: "ID_Recurso", Demandas: "ID_Demanda", Tickets: "ID_Ticket", Cambios: "ID_Cambio", Lecciones: "ID_Leccion", RACI: "ID_RACI", Dependencias: "ID_Dependencia" };
+    Comentarios: "ID_Comentario", Stakeholders: "ID_Stakeholder", Proveedores: "ID_Proveedor", Recursos: "ID_Recurso", Demandas: "ID_Demanda", Sugerencias: "ID_Sugerencia", Tickets: "ID_Ticket", Cambios: "ID_Cambio", Lecciones: "ID_Leccion", RACI: "ID_RACI", Dependencias: "ID_Dependencia" };
   const CAMPO_DESC = ["Nombre", "Compromiso", "Titulo", "Hito", "Descripcion", "Entregable", "Leccion", "Texto", "Valor", "Logros"];
   const NO_AUDITAR = new Set(["Auditoria", "Archivos", "Filtros"]);
   const IGNORAR_CAMPOS = new Set(["Actualizado_Por", "Actualizado_El"]);
@@ -2234,7 +2240,7 @@
     return S.auditoria;
   }
   const NOMBRE_TABLA = { Proyectos: "Proyecto", Hitos: "Hito", Seguimientos: "Seguimiento", Riesgos: "Riesgo", Usuarios: "Usuario", Compromisos: "Compromiso", Comentarios: "Comentario",
-    Stakeholders: "Stakeholder", Proveedores: "Proveedor", Recursos: "Recurso", Tickets: "Ticket", Cambios: "Cambio", Lecciones: "Lección", RACI: "RACI", Dependencias: "Dependencia", Catalogos: "Catálogo" };
+    Stakeholders: "Stakeholder", Sugerencias: "Sugerencia", Proveedores: "Proveedor", Recursos: "Recurso", Tickets: "Ticket", Cambios: "Cambio", Lecciones: "Lección", RACI: "RACI", Dependencias: "Dependencia", Catalogos: "Catálogo" };
   const tablaAuditoria = (lista, conProyecto) => lista.length ? `<div class="tabla-scroll"><table><thead><tr><th>Fecha</th><th>Usuario</th>${conProyecto ? "<th>Proyecto</th>" : ""}<th>Qué</th><th>Detalle</th></tr></thead><tbody>
     ${lista.map((a) => `<tr><td class="nowrap">${fechaHora(a.Fecha_Hora)}</td><td>${esc(nombreUsuario(a.Usuario))}</td>${conProyecto ? `<td>${esc((proyecto(a.ID_Proyecto) || {}).Nombre || a.ID_Proyecto || "—")}</td>` : ""}
       <td class="nowrap">${pill(a.Accion)} ${esc(NOMBRE_TABLA[a.Tabla] || a.Tabla)}</td><td class="aud-det">${esc(a.Detalle)}</td></tr>`).join("")}</tbody></table></div>` : vacio("Sin cambios registrados todavía. El registro empieza desde esta versión.");
@@ -2836,6 +2842,7 @@
     capacidad: '<path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/>',
     priorizacion: '<path d="M3 3v18h18"/><path d="M7 16h4"/><path d="M7 11h8"/><path d="M7 6h12"/>',
     lecciones: '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>',
+    sugerencias: '<path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.1V17h6v-.2c0-.8.4-1.6 1-2.1A7 7 0 0 0 12 2z"/>',
     catalogos: '<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M2 14h4M10 8h4M18 16h4"/>',
     usuarios: '<circle cx="12" cy="8" r="4"/><path d="M6 21v-2a6 6 0 0 1 12 0v2"/>',
     auditoria: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
@@ -2877,7 +2884,7 @@
     ["Inicio", ["dashboard", "avances", "seguimiento"]],
     ["Portafolio", ["backlog", "proyectos", "cronograma", "riesgos", "priorizacion"]],
     ["Personas", ["recursos", "capacidad"]],
-    ["Conocimiento", ["lecciones"]],
+    ["Conocimiento", ["lecciones", "sugerencias"]],
     ["Administración", ["catalogos", "usuarios", "auditoria"]],
   ];
   const NOMBRE_TAB = { resumen: "Resumen", compromisos: "Compromisos", seguimientos: "Seguimientos", hitos: "Hitos", riesgos: "Riesgos", tickets: "Tickets", cambios: "Cambios", raci: "RACI", lecciones: "Lecciones", auditoria: "Historial de cambios" };
@@ -3148,6 +3155,12 @@
   ];
   // Qué exporta cada pantalla.
   const EXPORTADORES = {
+    sugerencias: () => exportarExcel("Sugerencias de mejora", [{ nombre: "Sugerencias", columnas: [
+      { t: "ID", v: (x) => x.ID_Sugerencia, ancho: 11 }, { t: "Fecha", v: (x) => String(x.Fecha_Hora).slice(0, 10), tipo: "fecha" }, { t: "Sugerida por", v: (x) => nombreUsuario(x.Usuario) },
+      { t: "Módulo", v: (x) => x.Modulo }, { t: "Dónde", v: (x) => x.Contexto, ancho: 26 }, { t: "Tipo", v: (x) => x.Tipo, ancho: 11 }, { t: "Prioridad", v: (x) => x.Prioridad, ancho: 10 },
+      { t: "Descripción", v: (x) => x.Descripcion, ancho: 60 }, { t: "Adjuntos", v: (x) => adjuntosDe(x).length, tipo: "num", ancho: 9 }, { t: "Enlace", v: (x) => x.URL_Referencia, ancho: 26 },
+      { t: "Estado", v: (x) => x.Estado || "Nueva", ancho: 12 }, { t: "Respuesta", v: (x) => x.Respuesta, ancho: 40 }, { t: "Versión implementada", v: (x) => x.Version_Implementada, ancho: 12 }],
+      filas: sugerenciasFiltradas() }], [S.sugF && S.sugF.estado ? `Estado: ${S.sugF.estado}` : "", S.sugF && S.sugF.modulo ? `Módulo: ${S.sugF.modulo}` : "", S.sugF && S.sugF.mias ? "Solo las mías" : ""].filter(Boolean)),
     backlog: () => exportarExcel("Backlog de demanda", [{ nombre: "Backlog", columnas: [
       { t: "#", v: (d) => demandasFiltradas().indexOf(d) + 1, tipo: "num", ancho: 6 }, { t: "Código Almera", v: (d) => d.Codigo_Almera, ancho: 16 }, { t: "Iniciativa", v: (d) => d.Nombre, ancho: 34 },
       { t: "Necesidad", v: (d) => d.Descripcion, ancho: 40 }, { t: "Beneficio", v: (d) => d.Beneficio, ancho: 36 }, { t: "Área", v: (d) => d.Area }, { t: "Solicitante", v: (d) => d.Solicitante }, { t: "Sponsor", v: (d) => d.Sponsor },
@@ -4403,6 +4416,208 @@
           if (comps.length) await S.api.eliminarFilas("Compromisos", "ID_Compromiso", comps.map((c) => c.ID_Compromiso));
           await S.api.eliminarFilas("Seguimientos", "ID_Seguimiento", [s.ID_Seguimiento]);
         }, "Sesión eliminada") },
+    });
+  }
+
+  // ---------- Sugerencias de mejora de la app ----------
+  const TIPOS_SUG = ["Mejora", "Error", "Idea nueva"];
+  const PRIOS_SUG = ["Alta", "Media", "Baja"];
+  const ESTADOS_SUG = ["Nueva", "En análisis", "Planeada", "Hecha", "Descartada"];
+  const gestionaSug = () => R.puede(S.usuario, "verTodo");
+  const sugerencias = () => (S.datos.Sugerencias || []).slice().sort((a, b) => String(b.Fecha_Hora).localeCompare(String(a.Fecha_Hora)));
+  // Dónde está el usuario cuando sugiere (módulo, proyecto y pestaña).
+  function contextoActual() {
+    const v = VISTAS.find((x) => x.id === S.vista);
+    if (S.vista === "ficha") { const p = proyecto(S.pid); return { Modulo: "Ficha del proyecto", Contexto: `${p ? p.Nombre : ""} › ${NOMBRE_TAB[S.fichaTab] || "Resumen"}`, ID_Proyecto: p ? p.ID_Proyecto : "" }; }
+    return { Modulo: v ? v.t : "General", Contexto: "", ID_Proyecto: "" };
+  }
+  const MODULOS_SUG = () => ["General", "Ficha del proyecto", ...VISTAS.map((v) => v.t)];
+  function formSugerencia(sg) {
+    const nuevo = !sg;
+    const ctx = nuevo ? contextoActual() : sg;
+    const yaAdj = nuevo ? [] : adjuntosDe(sg);
+    const pend = [];
+    const campos = [
+      { k: "Tipo", label: "Tipo", tipo: "select", opciones: TIPOS_SUG, def: "Mejora" },
+      { k: "Prioridad", label: "Prioridad", tipo: "select", opciones: PRIOS_SUG, def: "Media" },
+      { k: "Modulo", label: "Módulo", tipo: "select", opciones: MODULOS_SUG(), def: ctx.Modulo },
+      { k: "Contexto", label: "Dónde exactamente (opcional)", placeholder: "Pestaña, botón o campo", def: ctx.Contexto },
+      { k: "Descripcion", label: "¿Qué cambio necesitas?", tipo: "textarea", placeholder: "Describe la mejora o el error: qué pasa hoy y qué esperas. Puedes pegar aquí una captura con Ctrl+V." },
+      { html: `<div class="adj-barra"><button type="button" class="btn chico" id="sg-adjuntar">📎 Adjuntar captura o archivo</button><span class="sub">o pega una imagen en la descripción con Ctrl+V · máx. 5 MB</span></div><div id="sg-pend" class="adj-pend"></div>${yaAdj.length ? `<div class="sub">Ya adjuntos: ${yaAdj.map((a) => esc(a.n)).join(", ")}</div>` : ""}` },
+      { k: "URL_Referencia", label: "Enlace de referencia (opcional)", tipo: "url", placeholder: "https://…sharepoint.com/… (captura, documento o ejemplo)" },
+    ];
+    const init = (m) => {
+      const err = m.querySelector("#m-error");
+      const pintar = () => {
+        m.querySelector("#sg-pend").innerHTML = pend.map((a, i) => `<span class="adj-chip">${esImagen(a.tipo) ? `<img src="${a.url}" alt="">` : "📄"} ${esc(a.nombre)} <span class="sub">${tamano(a.tam)}</span><button type="button" class="btn enlace" data-sg-quitar="${i}" aria-label="Quitar">✕</button></span>`).join("");
+        m.querySelectorAll("[data-sg-quitar]").forEach((b) => b.addEventListener("click", () => { pend.splice(Number(b.dataset.sgQuitar), 1); pintar(); }));
+      };
+      const agregar = async (files) => {
+        for (const f of files) {
+          const a = await prepararArchivo(f);
+          if (a.tam > MAX_ADJ) { err.textContent = `«${a.nombre}» pesa más de 5 MB.`; continue; }
+          a.url = esImagen(a.tipo) ? URL.createObjectURL(new Blob([a.bytes], { type: a.tipo })) : "";
+          pend.push(a);
+        }
+        pintar();
+      };
+      m.querySelector("[name=Descripcion]").addEventListener("paste", (ev) => {
+        const files = [...(ev.clipboardData ? ev.clipboardData.items : [])].filter((i) => i.kind === "file").map((i) => i.getAsFile()).filter(Boolean)
+          .map((f, k) => (f.name && f.name !== "image.png" ? f : new File([f], `captura-${Date.now()}-${k + 1}.${(f.type.split("/")[1] || "png")}`, { type: f.type })));
+        if (files.length) { ev.preventDefault(); agregar(files); }
+      });
+      m.querySelector("#sg-adjuntar").addEventListener("click", () => { const i = document.createElement("input"); i.type = "file"; i.multiple = true; i.addEventListener("change", () => agregar([...i.files])); i.click(); });
+      m.querySelector("[name=Descripcion]").focus();
+    };
+    const subirAdj = async (idSug, base) => {
+      const adj = base.slice();
+      for (let k = 0; k < pend.length; k++) {
+        const a = pend[k], id = `ADJ-${idSug}-${Date.now().toString(36)}-${k + 1}`;
+        await guardarArchivo(id, a.bytes, a.nombre, a.tipo, `el adjunto ${k + 1} de ${pend.length}`);
+        adj.push({ id, n: a.nombre, t: a.tipo, s: a.tam });
+      }
+      return adj.length ? JSON.stringify(adj) : "";
+    };
+    const validar = (fd) => (!fd.Descripcion ? "Describe la mejora o el error." : "");
+    if (nuevo) {
+      modal("💡 Sugerir una mejora", campos, {}, (fd) => {
+        const n = (S.datos.Sugerencias || []).reduce((mx, x) => Math.max(mx, parseInt(String(x.ID_Sugerencia).replace(/\D/g, ""), 10) || 0), 0) + 1;
+        const fila = { ID_Sugerencia: `SUG-${String(n).padStart(4, "0")}`, Fecha_Hora: ahora(), Usuario: S.usuario.Correo, ...fd, ID_Proyecto: fd.Modulo === ctx.Modulo ? ctx.ID_Proyecto : "",
+          Adjuntos: "", Estado: "Nueva", Respuesta: "", Version_App: window.APP_VERSION || "", Version_Implementada: "", Actualizado_Por: S.usuario.Correo, Actualizado_El: R.hoyISO() };
+        guardar(async () => { fila.Adjuntos = await subirAdj(fila.ID_Sugerencia, []); await S.api.agregarFila("Sugerencias", fila); }, `¡Gracias! Sugerencia ${fila.ID_Sugerencia} registrada`);
+      }, validar, { init });
+      return;
+    }
+    const puedeBorrar = gestionaSug() || (lc(sg.Usuario) === lc(S.usuario.Correo) && (sg.Estado || "Nueva") === "Nueva");
+    modal(`Editar ${sg.ID_Sugerencia}`, campos, sg, (fd) => {
+      guardar(async () => { const Adjuntos = await subirAdj(sg.ID_Sugerencia, yaAdj); await S.api.actualizarPorId("Sugerencias", "ID_Sugerencia", sg.ID_Sugerencia, { ...fd, Adjuntos, Actualizado_Por: S.usuario.Correo, Actualizado_El: R.hoyISO() }); }, "Sugerencia actualizada");
+    }, validar, { init, ...(puedeBorrar ? { eliminar: { texto: "Eliminar sugerencia", mensaje: `Se borrará ${sg.ID_Sugerencia}${yaAdj.length ? " con sus adjuntos" : ""}.`,
+      accion: () => guardar(async () => { await borrarAdjuntos([sg]); await S.api.eliminarFilas("Sugerencias", "ID_Sugerencia", [sg.ID_Sugerencia]); }, "Sugerencia eliminada") } } : {}) });
+  }
+  // Admin/PMO: estado, respuesta y versión en que quedó.
+  function gestionarSugerencia(sg) {
+    modal(`Gestionar ${sg.ID_Sugerencia}`, [
+      { html: `<div class="sg-resumen">${pill(sg.Tipo || "Mejora")} ${pill(sg.Prioridad || "Media")} <b>${esc(sg.Modulo)}</b>${sg.Contexto ? ` · ${esc(sg.Contexto)}` : ""}<p>${esc(sg.Descripcion)}</p><div class="sub">${esc(nombreUsuario(sg.Usuario))} · ${fechaHora(sg.Fecha_Hora)}</div></div>` },
+      { k: "Estado", label: "Estado", tipo: "select", opciones: ESTADOS_SUG, def: "Nueva" },
+      { k: "Version_Implementada", label: "Versión en que quedó", placeholder: "Ej.: 34", def: "" },
+      { k: "Respuesta", label: "Respuesta para quien la sugirió", tipo: "textarea", placeholder: "Qué se hizo, por qué se descartó o cuándo se hará" },
+    ], { ...sg, Estado: sg.Estado || "Nueva" }, (fd) => {
+      if (fd.Estado === "Hecha" && !fd.Version_Implementada) fd.Version_Implementada = window.APP_VERSION || "";
+      guardar(() => S.api.actualizarPorId("Sugerencias", "ID_Sugerencia", sg.ID_Sugerencia, { ...fd, Actualizado_Por: S.usuario.Correo, Actualizado_El: R.hoyISO() }), "Sugerencia actualizada");
+    });
+  }
+  function detalleSugerencia(sg) {
+    cerrarModal();
+    const m = document.createElement("div");
+    m.id = "modal";
+    const mia = lc(sg.Usuario) === lc(S.usuario.Correo);
+    m.innerHTML = `<div class="modal-caja" role="dialog" aria-modal="true" aria-label="Sugerencia">
+      <div class="titulo-fila"><div><h2>${esc(sg.ID_Sugerencia)} · ${esc(sg.Tipo || "Mejora")}</h2><div class="sub">${esc(sg.Modulo)}${sg.Contexto ? ` · ${esc(sg.Contexto)}` : ""}</div></div><button class="btn enlace" id="sg-cerrar" aria-label="Cerrar">✕</button></div>
+      <div class="contexto">
+        <div><span class="sub">Estado</span><b>${pill(sg.Estado || "Nueva")}</b></div>
+        <div><span class="sub">Prioridad</span><b>${pill(sg.Prioridad || "Media")}</b></div>
+        <div><span class="sub">Sugerida por</span><b>${esc(nombreUsuario(sg.Usuario))}</b><div class="sub">${fechaHora(sg.Fecha_Hora)} · versión ${esc(sg.Version_App || "—")}</div></div>
+        ${sg.Version_Implementada ? `<div><span class="sub">Implementada en</span><b>versión ${esc(sg.Version_Implementada)}</b></div>` : ""}
+      </div>
+      <div class="form-seccion">Descripción</div><p class="sg-desc">${esc(sg.Descripcion)}</p>
+      ${sg.URL_Referencia ? `<p><a href="${esc(sg.URL_Referencia)}" target="_blank" rel="noopener">🔗 Enlace de referencia</a></p>` : ""}
+      ${htmlAdjuntos(sg)}
+      ${sg.Respuesta ? `<div class="form-seccion">Respuesta</div><p class="sg-desc">${esc(sg.Respuesta)}</p>` : ""}
+      <div class="acciones derecha">${mia || gestionaSug() ? `<button class="btn" id="sg-editar">Editar</button>` : ""}${gestionaSug() ? `<button class="btn primario" id="sg-gestionar">Cambiar estado / responder</button>` : ""}</div></div>`;
+    document.body.appendChild(m);
+    $("#sg-cerrar").addEventListener("click", cerrarModal);
+    m.addEventListener("keydown", (e) => { if (e.key === "Escape") cerrarModal(); });
+    if ($("#sg-editar")) $("#sg-editar").addEventListener("click", () => formSugerencia(sg));
+    if ($("#sg-gestionar")) $("#sg-gestionar").addEventListener("click", () => gestionarSugerencia(sg));
+    enlazarAdjuntos(m);
+  }
+  function sugerenciasFiltradas() {
+    const F = S.sugF || (S.sugF = { estado: "abiertas", modulo: "", tipo: "", prio: "", mias: false, q: "" });
+    return sugerencias().filter((x) => {
+      const e = x.Estado || "Nueva";
+      return (F.estado === "abiertas" ? !["Hecha", "Descartada"].includes(e) : !F.estado || e === F.estado) && (!F.modulo || x.Modulo === F.modulo) && (!F.tipo || x.Tipo === F.tipo) &&
+        (!F.prio || x.Prioridad === F.prio) && (!F.mias || lc(x.Usuario) === lc(S.usuario.Correo)) && (!F.q || normTxt(`${x.ID_Sugerencia} ${x.Descripcion} ${x.Contexto} ${x.Respuesta}`).includes(normTxt(F.q)));
+    });
+  }
+  // Texto ordenado por módulo para pedir los cambios a Claude.
+  function textoParaClaude(lista) {
+    const porMod = {};
+    lista.forEach((x) => (porMod[x.Modulo || "General"] = porMod[x.Modulo || "General"] || []).push(x));
+    const ordenP = { Alta: 0, Media: 1, Baja: 2 };
+    return [`Mejoras pedidas para la app Portafolio PMO (versión actual ${window.APP_VERSION || ""}) — ${lista.length} sugerencia(s):`, "",
+      ...Object.keys(porMod).sort().flatMap((mod) => [`## ${mod}`, ...porMod[mod].sort((a, b) => (ordenP[a.Prioridad] ?? 1) - (ordenP[b.Prioridad] ?? 1)).map((x) =>
+        `- [${x.ID_Sugerencia}] (${x.Tipo || "Mejora"} · prioridad ${x.Prioridad || "Media"})${x.Contexto ? ` En «${x.Contexto}»:` : ""} ${String(x.Descripcion || "").replace(/\s+/g, " ").trim()}` +
+        `${adjuntosDe(x).length ? ` [${adjuntosDe(x).length} captura(s) en la app]` : ""}${x.URL_Referencia ? ` Referencia: ${x.URL_Referencia}` : ""} — ${nombreUsuario(x.Usuario)}, ${fecha(String(x.Fecha_Hora).slice(0, 10))}`), ""]),
+      "Al terminar, indícame la versión para marcarlas como «Hecha»."].join("\n");
+  }
+  function mostrarTexto(titulo, texto) {
+    cerrarModal();
+    const m = document.createElement("div");
+    m.id = "modal";
+    m.innerHTML = `<div class="modal-caja" role="dialog" aria-modal="true" aria-label="${esc(titulo)}"><div class="titulo-fila"><h2>${esc(titulo)}</h2><button class="btn enlace" id="tx-cerrar">✕</button></div>
+      <p class="sub">Cópialo y pégalo en el chat con Claude. Si tienen capturas, adjúntalas también.</p><textarea id="tx-texto" rows="16" readonly>${esc(texto)}</textarea>
+      <div class="acciones derecha"><button class="btn primario" id="tx-copiar">Copiar</button></div></div>`;
+    document.body.appendChild(m);
+    $("#tx-cerrar").addEventListener("click", cerrarModal);
+    const ta = $("#tx-texto"); ta.focus(); ta.select();
+    $("#tx-copiar").addEventListener("click", async () => {
+      ta.select();
+      try { await navigator.clipboard.writeText(texto); toast("Texto copiado"); } catch (e) { try { document.execCommand("copy"); toast("Texto copiado"); } catch (e2) { toast("Selecciona el texto y cópialo con Ctrl+C", true); } }
+    });
+  }
+  function vSugerencias(el) {
+    const F = S.sugF || (S.sugF = { estado: "abiertas", modulo: "", tipo: "", prio: "", mias: false, q: "" });
+    const todas = sugerencias(), lista = sugerenciasFiltradas(), gest = gestionaSug();
+    const cuenta = (e) => todas.filter((x) => (x.Estado || "Nueva") === e).length;
+    const modulos = [...new Set(todas.map((x) => x.Modulo).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
+    const sel = (id, val, ops, vacioTxt) => `<select id="${id}"><option value="">${vacioTxt}</option>${ops.map((o) => { const [v, t] = Array.isArray(o) ? o : [o, o]; return `<option value="${esc(v)}" ${v === val ? "selected" : ""}>${esc(t)}</option>`; }).join("")}</select>`;
+    el.innerHTML = `
+      <div class="titulo-fila"><h1>Sugerencias de mejora</h1><button class="btn primario" id="sg-nueva">💡 Nueva sugerencia</button></div>
+      <div class="kpis sg-kpis">${ESTADOS_SUG.map((e) => `<button class="kpi sg-kpi ${F.estado === e ? "activo" : ""}" data-sg-estado="${esc(e)}"><span class="kpi-v">${cuenta(e)}</span><span class="kpi-t">${esc(e)}</span></button>`).join("")}</div>
+      <div class="filtros">
+        <label class="filtro crece"><span>Buscar</span><input id="sg-q" type="search" placeholder="ID, descripción o respuesta" value="${esc(F.q)}"></label>
+        <label class="filtro"><span>Estado</span>${sel("sg-f-estado", F.estado, [["abiertas", "Abiertas (sin cerrar)"], ...ESTADOS_SUG], "Todas")}</label>
+        <label class="filtro"><span>Módulo</span>${sel("sg-f-mod", F.modulo, modulos, "Todos")}</label>
+        <label class="filtro"><span>Tipo</span>${sel("sg-f-tipo", F.tipo, TIPOS_SUG, "Todos")}</label>
+        <label class="filtro"><span>Prioridad</span>${sel("sg-f-prio", F.prio, PRIOS_SUG, "Todas")}</label>
+        <label class="check"><input type="checkbox" id="sg-mias" ${F.mias ? "checked" : ""}> Solo las mías</label>
+      </div>
+      ${gest && lista.length ? `<div class="sg-barra"><label class="check"><input type="checkbox" id="sg-todas"> Seleccionar todas</label><span class="sub" id="sg-nsel">0 seleccionadas</span>
+        <button class="btn chico" id="sg-claude" disabled>📋 Copiar para Claude</button>
+        <select id="sg-bulk-estado" aria-label="Nuevo estado">${ESTADOS_SUG.map((e) => `<option>${esc(e)}</option>`).join("")}</select><input id="sg-bulk-ver" placeholder="Versión" aria-label="Versión" style="width:90px">
+        <button class="btn chico" id="sg-bulk" disabled>Cambiar estado</button></div>` : ""}
+      <div class="card">${lista.length ? `<div class="tabla-scroll"><table class="tabla-sug"><thead><tr>${gest ? "<th></th>" : ""}<th>ID</th><th>Módulo</th><th>Sugerencia</th><th>Tipo</th><th>Prioridad</th><th>Estado</th><th class="opc">Por</th><th></th></tr></thead>
+        <tbody>${lista.map((x) => `<tr>${gest ? `<td><input type="checkbox" class="sg-sel" value="${esc(x.ID_Sugerencia)}" aria-label="Seleccionar ${esc(x.ID_Sugerencia)}"></td>` : ""}
+          <td class="nowrap"><b>${esc(x.ID_Sugerencia)}</b><div class="sub">${fecha(String(x.Fecha_Hora).slice(0, 10))}</div></td>
+          <td>${esc(x.Modulo)}${x.Contexto ? `<div class="sub">${esc(x.Contexto)}</div>` : ""}</td>
+          <td class="sg-txt">${esc(String(x.Descripcion || "").slice(0, 220))}${String(x.Descripcion || "").length > 220 ? "…" : ""}${adjuntosDe(x).length ? ` <span class="sub">📎 ${adjuntosDe(x).length}</span>` : ""}${x.Respuesta ? `<div class="sub">↳ ${esc(String(x.Respuesta).slice(0, 140))}</div>` : ""}</td>
+          <td>${pill(x.Tipo || "Mejora")}</td><td>${pill(x.Prioridad || "Media")}</td>
+          <td>${pill(x.Estado || "Nueva")}${x.Version_Implementada ? `<div class="sub">v${esc(x.Version_Implementada)}</div>` : ""}</td>
+          <td class="opc">${esc(nombreUsuario(x.Usuario))}</td>
+          <td class="derecha nowrap"><button class="btn chico" data-sg-ver="${esc(x.ID_Sugerencia)}">Ver</button>${gest ? ` <button class="btn chico" data-sg-gest="${esc(x.ID_Sugerencia)}">Gestionar</button>` : ""}</td></tr>`).join("")}</tbody></table></div>`
+        : vacio(todas.length ? "No hay sugerencias con estos filtros." : "Aún no hay sugerencias. Usa «💡 Sugerir mejora» en cualquier pantalla.")}</div>`;
+    const buscar = (id) => (S.datos.Sugerencias || []).find((x) => x.ID_Sugerencia === id);
+    const set = (k, v) => { F[k] = v; render(); };
+    $("#sg-nueva").addEventListener("click", () => formSugerencia());
+    el.querySelectorAll("[data-sg-estado]").forEach((b) => b.addEventListener("click", () => set("estado", F.estado === b.dataset.sgEstado ? "abiertas" : b.dataset.sgEstado)));
+    $("#sg-q").addEventListener("change", (e) => set("q", e.target.value.trim()));
+    $("#sg-f-estado").addEventListener("change", (e) => set("estado", e.target.value));
+    $("#sg-f-mod").addEventListener("change", (e) => set("modulo", e.target.value));
+    $("#sg-f-tipo").addEventListener("change", (e) => set("tipo", e.target.value));
+    $("#sg-f-prio").addEventListener("change", (e) => set("prio", e.target.value));
+    $("#sg-mias").addEventListener("change", (e) => set("mias", e.target.checked));
+    el.querySelectorAll("[data-sg-ver]").forEach((b) => b.addEventListener("click", () => detalleSugerencia(buscar(b.dataset.sgVer))));
+    el.querySelectorAll("[data-sg-gest]").forEach((b) => b.addEventListener("click", () => gestionarSugerencia(buscar(b.dataset.sgGest))));
+    if (!gest || !lista.length) return;
+    const elegidas = () => [...el.querySelectorAll(".sg-sel:checked")].map((i) => buscar(i.value)).filter(Boolean);
+    const act = () => { const n = elegidas().length; $("#sg-nsel").textContent = `${n} seleccionada${n === 1 ? "" : "s"}`; $("#sg-claude").disabled = !n; $("#sg-bulk").disabled = !n; };
+    el.querySelectorAll(".sg-sel").forEach((c) => c.addEventListener("change", act));
+    $("#sg-todas").addEventListener("change", (e) => { el.querySelectorAll(".sg-sel").forEach((c) => { c.checked = e.target.checked; }); act(); });
+    $("#sg-claude").addEventListener("click", () => mostrarTexto("Copiar para Claude", textoParaClaude(elegidas())));
+    $("#sg-bulk").addEventListener("click", () => {
+      const l = elegidas(), estado = $("#sg-bulk-estado").value, ver = $("#sg-bulk-ver").value.trim() || (estado === "Hecha" ? window.APP_VERSION || "" : "");
+      guardar(() => S.api.actualizarVarios("Sugerencias", "ID_Sugerencia", l.map((x) => ({ id: x.ID_Sugerencia, cambios: { Estado: estado, ...(ver ? { Version_Implementada: ver } : {}), Actualizado_Por: S.usuario.Correo, Actualizado_El: R.hoyISO() } }))),
+        `${l.length} sugerencia(s) en «${estado}»`);
     });
   }
 
