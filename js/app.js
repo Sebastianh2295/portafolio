@@ -2404,16 +2404,22 @@
     try { await S.api.actualizarVarios("Compromisos", "ID_Compromiso", enlaces); } catch (e) { /* sin permiso de edición: se resuelve por nombre/correo */ }
   }
   // Responsables de un compromiso → personas del directorio (crea las nuevas).
-  async function resolverResponsables(lista) {
+  // Solo se crea en Recursos a quien se eligió con «+ Agregar como recurso nuevo» (crearNuevos); el texto libre queda como nombre, sin crear basura en el directorio.
+  async function resolverResponsables(lista, crearNuevos) {
     const out = [];
     for (const x of lista) {
-      if (!String(x.Nombre || "").trim()) continue;
-      const r = await asegurarRecurso({ Nombre: x.Nombre, Correo: x.Correo });
-      out.push({ Nombre: r.Nombre, Correo: x.Correo || r.Correo || "", ID_Recurso: r.ID_Recurso });
+      const nombre = String(x.Nombre || "").trim();
+      if (!nombre) continue;
+      const ya = recursoPor({ id: x.ID_Recurso, correo: x.Correo, nombre });
+      const crear = !ya && (crearNuevos === true || (crearNuevos instanceof Set && crearNuevos.has(normTxt(nombre))));
+      const r = ya ? await asegurarRecurso({ ...x, Nombre: ya.Nombre, ID_Recurso: ya.ID_Recurso }) : crear ? await asegurarRecurso({ Nombre: nombre, Correo: x.Correo }) : null;
+      out.push(r ? { Nombre: r.Nombre, Correo: x.Correo || r.Correo || "", ID_Recurso: r.ID_Recurso } : { Nombre: nombre, Correo: x.Correo || correoSuelto(nombre), ID_Recurso: "" });
     }
     return serializarResp(out);
   }
-  const resolverResponsable = (nombre, correo) => resolverResponsables([{ Nombre: nombre, Correo: correo }]);
+  const resolverResponsable = (nombre, correo) => resolverResponsables([{ Nombre: nombre, Correo: correo }], true);
+  // «Ana Pérez / Luis Gómez», «Ana; Luis», «Ana y Luis» → varios nombres.
+  const separarNombres = (t) => String(t || "").split(/\s*(?:;|\/|\s+y\s+|\s+&\s+)\s*/i).map((x) => x.trim()).filter(Boolean);
   // Rol de la persona en el proyecto (si es stakeholder).
   const stakeholderDe = (pid, x) => (S.datos.Stakeholders || []).find((s) => s.ID_Proyecto === pid && ((x.ID_Recurso && s.ID_Recurso === x.ID_Recurso) || normTxt(s.Nombre) === normTxt(x.Nombre)));
   const rolEnProyecto = (pid, x) => (stakeholderDe(pid, x) || {}).Rol || "";
@@ -2492,11 +2498,16 @@
     const asig = (r) => cap.find((x) => (r.Correo && lc(x.correo) === lc(r.Correo)) || normTxt(x.nombre) === normTxt(r.Nombre));
     const lista = recursos().filter((r) => !q || normTxt(`${r.Nombre} ${r.Correo} ${r.Cargo} ${r.Area} ${empresaDe(r)}`).includes(normTxt(q)));
     const dups = gruposDuplicados();
+    const dudosos = recursosDudosos();
     el.innerHTML = `<div class="titulo-fila"><h1>Recursos</h1>${puede ? `<button class="btn primario" id="b-rec">+ Recurso</button>` : ""}</div>
+      ${dudosos.length && puede ? `<div class="card aviso-dup"><h2>Registros que parecen varias personas en uno <span class="contador rojo">${dudosos.length}</span></h2>
+        <p class="sub">Se crearon con texto como «Ana / Luis». Al eliminarlos, los compromisos que los tenían quedan con cada persona por separado (si ya existe en el directorio).</p>
+        <ul class="lista">${dudosos.map((r) => `<li><label class="check"><input type="checkbox" class="rec-dud" value="${esc(r.ID_Recurso)}" ${separarNombres(r.Nombre).length > 1 ? "checked" : ""}> <b>${esc(r.Nombre)}</b> <span class="sub">${esc([r.Correo, separarNombres(r.Nombre).length > 1 ? `→ ${separarNombres(r.Nombre).join(" · ")}` : ""].filter(Boolean).join(" "))}</span></label></li>`).join("")}</ul>
+        <button class="btn" id="rec-dud-borrar">Eliminar los marcados</button></div>` : ""}
       <div class="filtros"><label class="filtro crece"><span>Buscar</span><input id="rec-q" type="search" value="${esc(q)}" placeholder="Nombre, correo, cargo, área o empresa"></label></div>
       ${dups.length && puede ? `<div class="card aviso-dup"><h2>Posibles duplicados <span class="contador rojo">${dups.length}</span></h2>
         <ul class="lista">${dups.map((g, i) => `<li>${g.map((r) => `<b>${esc(r.Nombre)}</b>${r.Correo ? ` <span class="sub">${esc(r.Correo)}</span>` : ""}`).join(" · ")} <button class="btn chico" data-fusionar="${i}">Fusionar</button></li>`).join("")}</ul></div>` : ""}
-      <div class="card"><p class="sub">Directorio único de personas del portafolio. En stakeholders, equipo y responsables de compromisos se eligen de aquí y sus datos se llenan solos; si escribes a alguien nuevo, se agrega automáticamente.</p>
+      <div class="card"><p class="sub">Directorio único de personas del portafolio. En stakeholders, equipo y responsables de compromisos se eligen de aquí y sus datos se llenan solos; a alguien nuevo lo agregas con «+ Agregar como recurso nuevo» o con «+ Recurso».</p>
         ${lista.length ? `<div class="tabla-scroll"><table><thead><tr><th>Persona</th><th>Empresa</th><th>Área</th><th>Contacto</th><th>Asignado</th><th></th></tr></thead><tbody>
           ${lista.map((r) => { const a = asig(r), c = num0(r.Capacidad) ?? 100; return `<tr class="${r.Activo === "No" ? "inactivo" : ""}"><td>${persona(r.Nombre, r.Cargo)}${r.Activo === "No" ? ` <span class="pill noaplica">Inactivo</span>` : ""}</td>
             <td>${esc(empresaDe(r))}</td><td>${esc(r.Area || "—")}</td><td>${contacto(r.Correo, r.Telefono)}</td>
@@ -2507,6 +2518,29 @@
     if ($("#b-rec")) $("#b-rec").addEventListener("click", () => formRecurso());
     el.querySelectorAll("[data-rec]").forEach((b) => b.addEventListener("click", () => formRecurso(recursoId(b.dataset.rec))));
     el.querySelectorAll("[data-fusionar]").forEach((b) => b.addEventListener("click", () => fusionar(dups[Number(b.dataset.fusionar)])));
+    if ($("#rec-dud-borrar")) $("#rec-dud-borrar").addEventListener("click", () => {
+      const ids = [...el.querySelectorAll(".rec-dud:checked")].map((i) => i.value);
+      if (!ids.length) return toast("Marca al menos uno.", true);
+      confirmar("Eliminar registros", `Se eliminarán ${ids.length} registro(s) del directorio de Recursos.`, "Eliminar", () => guardar(async () => {
+        const set = new Set(ids);
+        // Compromisos que apuntaban a esos registros: cada nombre se vuelve a enlazar por separado.
+        const cambios = S.datos.Compromisos.map((c) => ({ c, rs: responsablesDe(c) })).filter(({ rs }) => rs.some((x) => set.has(x.ID_Recurso)))
+          .map(({ c, rs }) => ({ id: c.ID_Compromiso, cambios: serializarResp(rs.flatMap((x) => (set.has(x.ID_Recurso) ? separarNombres(x.Nombre) : [x.Nombre]).map((n) => {
+            const r = recursoPor({ nombre: n }); return r && !set.has(r.ID_Recurso) ? { Nombre: r.Nombre, Correo: r.Correo || "", ID_Recurso: r.ID_Recurso } : { Nombre: n, Correo: correoSuelto(n), ID_Recurso: "" }; }))) }));
+        await S.api.eliminarFilas("Recursos", "ID_Recurso", ids);
+        if (cambios.length) await S.api.actualizarVarios("Compromisos", "ID_Compromiso", cambios);
+      }, `${ids.length} registro(s) eliminados`));
+    });
+  }
+  // Recursos creados a partir de texto con varias personas («Ana / Luis», «Ana; Luis», «Ana y Luis»).
+  function recursosDudosos() {
+    const L = S.datos.Recursos || [];
+    return L.filter((r) => {
+      const n = String(r.Nombre || "");
+      if (/[\/;]|\s&\s/.test(n) || separarNombres(n).length > 1) return true;
+      // Nombre que contiene completo a otra persona del directorio y algo más (p. ej. «Ana Pérez Luis Gómez»).
+      return n.split(/\s+/).length >= 5 && L.some((o) => o !== r && String(o.Nombre).split(/\s+/).length >= 2 && normTxt(n).includes(normTxt(o.Nombre)) && normTxt(n) !== normTxt(o.Nombre));
+    });
   }
   // Conecta un campo de nombre a Recursos: al elegir a alguien llena sus datos; muestra si es nuevo.
   function selectorPersona(m, nombreSel, relleno, avisoSel) {
@@ -2673,7 +2707,22 @@
     lista.className = "combo-lista"; lista.hidden = true; lista.setAttribute("role", "listbox");
     caja.appendChild(lista);
     let items = [], activo = -1;
+    const multi = input.hasAttribute("data-multi");
+    // En modo varios («A; B»), se busca y se reemplaza solo el último nombre.
+    const segmentos = () => input.value.split(";");
+    const actualTxt = () => (multi ? segmentos().pop() : input.value).trim();
     const elegir = (r, nuevo) => {
+      if (multi) {
+        const previos = segmentos().slice(0, -1).map((x) => x.trim()).filter(Boolean);
+        const nombre = r ? r.Nombre : nuevo;
+        if (!r) (input._nuevos = input._nuevos || new Set()).add(normTxt(nombre));
+        input.value = [...previos.filter((x) => normTxt(x) !== normTxt(nombre)), nombre].join("; ") + "; ";
+        lista.hidden = true;
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+        input.focus();
+        return;
+      }
+      if (!r) (input._nuevos = input._nuevos || new Set()).add(normTxt(nuevo));
       input.value = r ? r.Nombre : nuevo;
       input.dataset.idRecurso = r ? r.ID_Recurso : "";
       lista.hidden = true;
@@ -2681,10 +2730,11 @@
       input.dispatchEvent(new CustomEvent("elegido", { detail: { r, nuevo } }));
     };
     const pintar = () => {
-      const q = normTxt(input.value);
-      const rs = recursos().filter((r) => r.Activo !== "No" && (!q || normTxt(`${r.Nombre} ${r.Correo} ${r.Cargo} ${empresaDe(r)}`).includes(q))).slice(0, 8);
+      const q = normTxt(actualTxt());
+      const ya = multi ? new Set(segmentos().slice(0, -1).map((x) => normTxt(x.trim()))) : new Set();
+      const rs = recursos().filter((r) => r.Activo !== "No" && !ya.has(normTxt(r.Nombre)) && (!q || normTxt(`${r.Nombre} ${r.Correo} ${r.Cargo} ${empresaDe(r)}`).includes(q))).slice(0, 8);
       const exacto = rs.some((r) => normTxt(r.Nombre) === q);
-      items = [...rs.map((r) => ({ r })), ...(q && !exacto ? [{ nuevo: input.value.trim() }] : [])];
+      items = [...rs.map((r) => ({ r })), ...(q && !exacto && !/[;\/]/.test(actualTxt()) ? [{ nuevo: actualTxt() }] : [])];
       activo = items.length ? 0 : -1;
       lista.innerHTML = items.map((it, i) => it.r
         ? `<li role="option" data-i="${i}" class="${i === activo ? "activo" : ""}"><b>${esc(it.r.Nombre)}</b><span class="sub">${esc([it.r.Cargo, empresaDe(it.r), it.r.Correo].filter(Boolean).join(" · "))}</span></li>`
@@ -3953,7 +4003,7 @@
       <div><span class="sub">Frecuencia</span><b>${esc(p.Frecuencia_Seguimiento)}</b></div></div>`;
     const filaComp = (c = {}) => `<div class="comp-fila">
       <input class="c-texto" placeholder="Compromiso (qué se hará)" aria-label="Compromiso" value="${esc(c.Compromiso || "")}">
-      <input class="c-resp" placeholder="Responsable (de Recursos)" aria-label="Responsable" data-recurso autocomplete="off" value="${esc(c.Responsable || "")}">
+      <input class="c-resp" placeholder="Responsable(s) de Recursos" title="Puedes elegir varias personas: se separan con «;»" aria-label="Responsables" data-recurso data-multi autocomplete="off" value="${esc(separarNombres(c.Responsable).join("; "))}">
       <input class="c-fecha" type="date" aria-label="Fecha límite" value="${esc(c.Fecha_Compromiso || "")}" title="${esc(c.Fecha_Texto && !c.Fecha_Compromiso ? `En el acta: ${c.Fecha_Texto}` : "")}">
       <button type="button" class="btn chico c-quitar" aria-label="Quitar compromiso">✕</button></div>`;
     const despues = `
@@ -4026,7 +4076,8 @@
         const t = f.querySelector(".c-texto").value.trim(), r = f.querySelector(".c-resp").value.trim(), d = f.querySelector(".c-fecha").value;
         if (!t && !r && !d) continue;
         if (d && fd.Fecha_Corte && d < fd.Fecha_Corte) return { error: `La fecha del compromiso «${t || "sin descripción"}» no puede ser anterior a la fecha de corte.` };
-        nuevos.push({ Compromiso: t || "(sin descripción)", Responsable: r, Fecha_Compromiso: d });
+        const inp = f.querySelector(".c-resp");
+        nuevos.push({ Compromiso: t || "(sin descripción)", Responsable: r, Fecha_Compromiso: d, _nuevos: inp._nuevos || new Set() });
       }
       const cerrados = [...m.querySelectorAll(".comp-previos input:checked")].map((i) => i.value);
       return { datos: { nuevos, cerrados } };
@@ -4054,7 +4105,7 @@
           ...(fd.Semaforo ? { Semaforo: fd.Semaforo } : {}),
           ...(fd.Bloqueos || fd.Logros ? { Comentario_Estado: fd.Bloqueos ? `Bloqueo: ${fd.Bloqueos}` : fd.Logros } : {}), ...sello(),
         });
-        for (const c of comps) Object.assign(c, await resolverResponsable(c.Responsable, ""));
+        for (const c of comps) { const nv = c._nuevos; delete c._nuevos; Object.assign(c, await resolverResponsables(separarNombres(c.Responsable).map((n) => ({ Nombre: n })), nv)); }
         if (comps.length) await S.api.agregarFilas("Compromisos", comps);
         if (extra.cerrados.length) {
           await S.api.actualizarVarios("Compromisos", "ID_Compromiso", extra.cerrados.map((id) => ({ id, cambios: { Estado: "Cerrado", Fecha_Cierre: fd.Fecha_Corte } })));
@@ -4281,7 +4332,7 @@
     const antes = responsablesDe(c).map((x) => x.Nombre).join(", ") || "sin responsable";
     modal(`Responsable · ${c.Compromiso}`, [{ html: `<div id="fc-resp" class="fc-resp"></div>` }], {}, (fd, resp) => {
       guardar(async () => {
-        const cambios = await resolverResponsables(resp);
+        const cambios = await resolverResponsables(resp, true);
         await S.api.actualizarPorId("Compromisos", "ID_Compromiso", c.ID_Compromiso, cambios);
         const ahora = partesLista(cambios.Responsable).filter(Boolean).join(", ") || "sin responsable";
         if (ahora !== antes) await S.api.agregarFila("Comentarios", nuevoComentario(c, `Responsable cambiado: ${antes} → ${ahora}.`));
@@ -4335,7 +4386,7 @@
         const fila = { ID_Compromiso: R.siguienteIdHijo("CMP", S.datos.Compromisos, "ID_Compromiso", pNuevo.ID_Proyecto), ID_Proyecto: pNuevo.ID_Proyecto, ID_Seguimiento: fd.ID_Seguimiento || "",
           Compromiso: fd.Compromiso || "(sin descripción)", Dias_Alerta: fd.Dias_Alerta === "" ? "" : fd.Dias_Alerta, Fecha_Compromiso: fd.Fecha_Compromiso, Estado: "Pendiente", Fecha_Cierre: "", Registrado_Por: S.usuario.Correo };
         guardar(async () => {
-          Object.assign(fila, await resolverResponsables(resp));
+          Object.assign(fila, await resolverResponsables(resp, true));
           await S.api.agregarFila("Compromisos", fila);
           if (fd.Comentario) await S.api.agregarFila("Comentarios", nuevoComentario(fila, fd.Comentario));
         }, "Compromiso agregado");
@@ -4348,7 +4399,7 @@
       if (fd.Estado !== "Cerrado") fd.Fecha_Cierre = "";
       const cambioEstado = fd.Estado !== R.estadoBase(c);
       guardar(async () => {
-        Object.assign(fd, await resolverResponsables(resp));
+        Object.assign(fd, await resolverResponsables(resp, true));
         await S.api.actualizarPorId("Compromisos", "ID_Compromiso", c.ID_Compromiso, fd);
         if (cambioEstado) await S.api.agregarFila("Comentarios", nuevoComentario(c, TEXTO_ESTADO[fd.Estado] || `Estado: ${fd.Estado}.`));
       }, "Compromiso actualizado");
