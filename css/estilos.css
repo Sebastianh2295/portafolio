@@ -814,3 +814,12 @@ input[data-chips][hidden] { display: none !important; }
 .doc-ico { display: inline-flex; align-items: center; justify-content: center; min-width: 26px; height: 22px; border-radius: 4px; font-size: 11px; font-weight: 700; color: #fff; background: #6b7a8c; margin-right: 6px; vertical-align: middle; padding: 0 4px; }
 .doc-ico.t-PDF { background: #c0392b; } .doc-ico.t-W { background: #2b579a; } .doc-ico.t-X { background: #217346; } .doc-ico.t-P { background: #d24726; } .doc-ico.t-l, .doc-ico.t- { background: var(--suave); color: var(--azul); }
 tr[data-doc][hidden] { display: none; }
+/* Indicador de conexión con Excel (también es el botón para reconectar) */
+.appbar button.modo { border: 0; cursor: pointer; font-family: inherit; display: inline-flex; align-items: center; gap: 5px; }
+.appbar button.modo:hover { background: rgba(255,255,255,.3); }
+.punto-con { width: 7px; height: 7px; border-radius: 50%; background: #5ee08a; display: inline-block; }
+.modo.demo .punto-con { background: #fff; }
+.modo.desconectado { background: #e5484d !important; }
+.modo.desconectado .punto-con { background: #fff; animation: parpadeo 1.2s infinite; }
+@keyframes parpadeo { 50% { opacity: .3; } }
+#cargando .cargando-lento .btn + .btn { margin-left: 6px; }

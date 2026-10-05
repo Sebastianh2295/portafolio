@@ -97,6 +97,14 @@
 
   let estructuraRevisada = false;   // tablas y columnas faltantes: se revisan solo en la primera lectura
   const OpsExcel = {
+    // Prueba rápida de conexión con el libro.
+    async ping() {
+      return Excel.run(async (ctx) => {
+        const wb = ctx.workbook;
+        try { wb.load("name"); await ctx.sync(); return { libro: wb.name || "" }; }
+        catch (e) { const h = wb.worksheets.load("items/name"); await ctx.sync(); return { libro: "", hojas: h.items.length }; }
+      });
+    },
     async leerTodo() {
       return Excel.run(async (ctx) => {
         const lista = ctx.workbook.tables.load("items/name");
@@ -292,6 +300,7 @@
     };
     const archivos = {};
     const api = {
+      async ping() { return { libro: "Demostración" }; },
       async leerTodo() { const r = copia(db); SOLO_BAJO_DEMANDA.forEach((n) => delete r[n]); return r; },
       async leerTabla(nombre) { return copia(db[nombre] || []); },
       async guardarParte(f) { (archivos[f.ID_Archivo] = archivos[f.ID_Archivo] || [])[f.Parte] = copia(f); return true; },
@@ -330,7 +339,7 @@
     cola = p.catch(() => {});
     return p;
   }
-  const OPERACIONES = ["leerTodo", "leerTabla", "agregarFila", "agregarFilas", "actualizarPorId", "actualizarVarios", "eliminarFila", "eliminarFilas", "guardarParte", "borrarArchivo", "borrarArchivos", "partesArchivo", "leerParte"];
+  const OPERACIONES = ["ping", "leerTodo", "leerTabla", "agregarFila", "agregarFilas", "actualizarPorId", "actualizarVarios", "eliminarFila", "eliminarFilas", "guardarParte", "borrarArchivo", "borrarArchivos", "partesArchivo", "leerParte"];
 
   async function puente() {
     let seq = 0;
@@ -346,19 +355,34 @@
         if (m.ok) p.res(m.result); else p.rej(new Error(m.error));
       }, () => listo());
     });
-    const llamar = (op, args = []) => new Promise((res, rej) => {
+    const llamar = (op, args = [], ms) => new Promise((res, rej) => {
       const id = ++seq;
       const t = setTimeout(() => {
         pendientes.delete(id);
-        rej(new Error("Excel no respondió. Verifique que el panel lateral siga abierto, o cierre esta ventana y ábrala de nuevo desde el panel."));
-      }, op === "leerTodo" || op === "leerTabla" ? 150000 : 90000);
+        rej(new Error("Excel no respondió. Usa «Reconectar con Excel»; si sigue igual, abre de nuevo el portafolio desde el panel lateral."));
+      }, ms || (op === "leerTodo" || op === "leerTabla" ? 150000 : 90000));
       pendientes.set(id, { res, rej, t });
-      Office.context.ui.messageParent(JSON.stringify({ id, op, args }));
+      try { Office.context.ui.messageParent(JSON.stringify({ id, op, args })); }
+      catch (e) { clearTimeout(t); pendientes.delete(id); rej(new Error("Se perdió la conexión con el panel lateral de Excel.")); }
     });
-    return Object.fromEntries(OPERACIONES.map((op) => [op, (...a) => llamar(op, a)]));
+    const api = Object.fromEntries(OPERACIONES.map((op) => [op, (...a) => llamar(op, a)]));
+    api.ping = () => llamar("ping", [], 15000);
+    // Reconectar: se cancelan los pedidos que quedaron esperando y se vuelve a escuchar al panel.
+    api.reiniciar = () => {
+      pendientes.forEach((p) => { clearTimeout(p.t); p.rej(new Error("Se canceló por reconexión con Excel.")); });
+      pendientes.clear();
+      try { Office.context.ui.addHandlerAsync(Office.EventType.DialogParentMessageReceived, (arg) => { let m; try { m = JSON.parse(arg.message); } catch (e) { return; } const p = pendientes.get(m.id); if (!p) return; pendientes.delete(m.id); clearTimeout(p.t); if (m.ok) p.res(m.result); else p.rej(new Error(m.error)); }); } catch (e) { /* ya estaba escuchando */ }
+    };
+    return api;
   }
 
-  const OpsSerie = () => Object.fromEntries(OPERACIONES.map((op) => [op, (...a) => enCola(op, () => OpsExcel[op](...a))]));
+  const OpsSerie = () => {
+    const api = Object.fromEntries(OPERACIONES.map((op) => [op, (...a) => enCola(op, () => OpsExcel[op](...a))]));
+    // Reconectar en el panel: se suelta la fila de operaciones (si una quedó pegada) y se revisa de nuevo la estructura.
+    api.reiniciar = () => { cola = Promise.resolve(); estructuraRevisada = false; };
+    api.ping = () => OpsExcel.ping();
+    return api;
+  };
 
   async function crear(modo) {
     if (modo === "panel") return OpsSerie();

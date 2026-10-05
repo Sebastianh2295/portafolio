@@ -109,12 +109,12 @@
     clearTimeout(relojCarga);
     if (on) {
       if (!o) { o = document.createElement("div"); o.id = "cargando"; document.body.appendChild(o); }
-      o.innerHTML = `<div class="spinner"></div><div>${esc(msg)}</div><div class="cargando-lento" hidden>Excel está tardando más de lo normal. Puedes seguir esperando o cerrar este aviso; si el cambio no aparece, usa «Actualizar datos del Excel».<div class="cargando-op"></div><button class="btn chico" id="cg-cerrar">Cerrar aviso</button></div>`;
+      o.innerHTML = `<div class="spinner"></div><div>${esc(msg)}</div><div class="cargando-lento" hidden>Excel está tardando más de lo normal. Puedes seguir esperando o cerrar este aviso; si el cambio no aparece, usa «Actualizar datos del Excel».<div class="cargando-op"></div><button class="btn chico" id="cg-cerrar">Cerrar aviso</button> <button class="btn chico primario" id="cg-reconectar">Reconectar con Excel</button></div>`;
       const t0 = Date.now();
       relojCarga = setTimeout(function mostrarLento() {
         const l = o.querySelector(".cargando-lento");
         if (!l || !o.isConnected) return;
-        if (l.hidden) { l.hidden = false; o.querySelector("#cg-cerrar").addEventListener("click", () => o.remove()); }
+        if (l.hidden) { l.hidden = false; o.querySelector("#cg-cerrar").addEventListener("click", () => o.remove()); o.querySelector("#cg-reconectar").addEventListener("click", () => { o.remove(); reconectar(); }); }
         const det = o.querySelector(".cargando-op");
         if (det) det.textContent = `${opsEnCurso()} · ${Math.round((Date.now() - t0) / 1000)} s`;
         relojCarga = setTimeout(mostrarLento, 1000);
@@ -163,6 +163,43 @@
     await sembrarCatalogos();
     refrescarUsuario();
   }
+  // ---------- Reconectar con Excel (sin recargar el complemento) ----------
+  async function reconectar() {
+    cerrarModal();
+    cargando(true, "Reconectando con Excel…");
+    try {
+      if (S.api.reiniciar) S.api.reiniciar();   // suelta lo que haya quedado esperando
+      EN_CURSO.clear();
+      const r = S.api.ping ? await S.api.ping() : null;
+      await recargar();
+      S.conexion = "ok";
+      render();
+      toast(`Conectado con Excel${r && r.libro ? ` · ${r.libro}` : ""}. Datos actualizados.`);
+    } catch (e) {
+      S.conexion = "error";
+      render();
+      ayudaReconexion(e.message);
+    } finally { cargando(false); }
+  }
+  function ayudaReconexion(motivo) {
+    const viejo = /versi[oó]n anterior/i.test(motivo || "");
+    const pasos = S.modo === "ventana"
+      ? `<ol><li>En Excel, busca el panel lateral <b>Portafolio PMO</b> (si no lo ves: <b>Inicio → Complementos → Portafolio PMO</b>).</li>
+          <li>${viejo ? "Ciérralo con la ✕ y ábrelo de nuevo para que cargue la versión nueva." : "Si el panel muestra «Conectando…» o se ve en blanco, ciérralo con la ✕ y ábrelo de nuevo."}</li>
+          <li>En el panel, haz clic en <b>Abrir Portafolio</b>: se abre una ventana nueva ya conectada. Esta ventana la puedes cerrar.</li></ol>`
+      : `<ol><li>Cierra este panel con la ✕ y ábrelo de nuevo desde <b>Inicio → Complementos → Portafolio PMO</b>.</li></ol>`;
+    cerrarModal();
+    const m = document.createElement("div");
+    m.id = "modal";
+    m.innerHTML = `<div class="modal-caja" role="dialog" aria-modal="true" aria-label="Reconectar con Excel">
+      <div class="titulo-fila"><h2>No pude conectarme con Excel</h2><button class="btn enlace" id="rx-cerrar">✕</button></div>
+      <p>${viejo ? "El panel lateral de Excel tiene una versión anterior de la app." : "El panel lateral de Excel no respondió. Puede que se haya cerrado, recargado o que Excel esté ocupado."}</p>
+      ${pasos}<p class="sub">Tus datos están guardados en el Excel; no se pierde nada. Detalle: ${esc(motivo || "")}</p>
+      <div class="acciones derecha"><button class="btn" id="rx-no">Cerrar</button><button class="btn primario" id="rx-otra">Intentar de nuevo</button></div></div>`;
+    document.body.appendChild(m);
+    $("#rx-cerrar").addEventListener("click", cerrarModal); $("#rx-no").addEventListener("click", cerrarModal);
+    $("#rx-otra").addEventListener("click", reconectar);
+  }
   // Nota: no se relee el Excel en segundo plano (en la ventana grande competía con los guardados). Para ver cambios de otros: menú «Actualizar datos del Excel».
   const visibles = () => R.visibles(S.usuario, S.datos.Proyectos);
   function filtrados() {
@@ -187,6 +224,7 @@
       toast(exito);
     } catch (e) {
       toast("No se pudo guardar: " + e.message, true);
+      if (/no respondi|conexi|panel lateral|tard/i.test(e.message)) { S.conexion = "error"; const b = $("#b-conexion"); if (b) b.classList.add("desconectado"); }
     } finally {
       cargando(false);
     }
@@ -252,13 +290,14 @@
           <div class="ab-marca"><span class="logo">P</span><span class="ab-nombre">Portafolio PMO</span><span class="ab-org">FSFB</span></div>
           <button class="ab-buscar" id="b-buscar" title="Búsqueda global (Ctrl+K)">${ico("buscar")}<span>Buscar proyectos, personas, riesgos…</span><kbd>Ctrl K</kbd></button>
           <div class="ab-der">
-            <span class="modo ${S.modo}" title="${esc(etiquetaModo)}">${S.modo === "demo" ? "Demo" : "Excel"}</span>
+            <button class="modo ${S.modo} ${S.conexion === "error" ? "desconectado" : ""}" id="b-conexion" title="${S.modo === "demo" ? esc(etiquetaModo) : S.conexion === "error" ? "Sin conexión con Excel · clic para reconectar" : "Conectado con Excel · clic para reconectar si algo se queda pegado"}"><span class="punto-con"></span>${S.modo === "demo" ? "Demo" : "Excel"}</button>
             <button class="ab-btn campana ${al.vencidos.length ? "roja" : nAl ? "ambar" : ""}" id="b-alertas" title="Compromisos vencidos o por vencer">${ico("campana")}${nAl ? `<span class="ab-badge">${nAl}</span>` : ""}</button>
             <button class="ab-btn" id="b-ayuda" title="Mostrar la ayuda de esta pantalla">${ico("ayuda")}</button>
             <div class="ab-usuario"><button class="ab-avatar" id="b-usuario" aria-haspopup="true" aria-expanded="false" title="${esc(u.Nombre || u.Correo)}">${avatar(u.Nombre || u.Correo)}</button>
               <div class="menu-usuario" id="menu-usuario" hidden>
                 <div class="mu-cab">${avatar(u.Nombre || u.Correo, "grande")}<div><b>${esc(u.Nombre || u.Correo)}</b><div class="sub">${esc(u.Correo)}</div><div class="sub">${esc(R.roles(u).join(", "))}</div></div></div>
                 <button class="mu-item" id="b-recargar">${ico("actualizar")} Actualizar datos del Excel</button>
+                <button class="mu-item" id="b-reconectar">${ico("actualizar")} Reconectar con Excel</button>
                 <button class="mu-item" id="b-tema">${ico(oscuro ? "sol" : "luna")} ${oscuro ? "Modo claro" : "Modo oscuro"}</button>
                 <div class="mu-sep"></div>
                 <div class="mu-info sub">${esc(etiquetaModo)} · versión ${esc(window.APP_VERSION || "")}</div>
@@ -299,6 +338,8 @@
       guardarLocal("pmo_ayuda_ocultas", leerLocal("pmo_ayuda_ocultas", []).filter((v) => v !== S.vista));
       render();
     });
+    $("#b-conexion").addEventListener("click", reconectar);
+    $("#b-reconectar").addEventListener("click", reconectar);
     $("#b-recargar").addEventListener("click", async () => {
       cargando(true, "Leyendo Excel…");
       try { await recargar(); render(); toast("Datos actualizados"); } catch (e) { toast(e.message, true); } finally { cargando(false); }
