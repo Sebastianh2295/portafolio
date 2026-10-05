@@ -2766,7 +2766,7 @@
     };
     const pintar = () => {
       const q = normTxt(actualTxt());
-      const ya = multi ? new Set(segmentos().slice(0, -1).map((x) => normTxt(x.trim()))) : new Set();
+      const ya = multi ? new Set(segmentos().slice(0, -1).map((x) => normTxt(x.trim()))) : input._excluir ? input._excluir() : new Set();
       const rs = recursos().filter((r) => r.Activo !== "No" && !ya.has(normTxt(r.Nombre)) && (!q || normTxt(`${r.Nombre} ${r.Correo} ${r.Cargo} ${empresaDe(r)}`).includes(q))).slice(0, 8);
       const exacto = rs.some((r) => normTxt(r.Nombre) === q);
       items = [...rs.map((r) => ({ r })), ...(q && !exacto && !/[;\/]/.test(actualTxt()) ? [{ nuevo: actualTxt() }] : [])];
@@ -3001,7 +3001,42 @@
   const LIM_LISTA = 6, LIM_TABLA = 12;
   const plegadas = () => leerLocal("pmo_plegadas", []);
   const clavePliegue = (titulo) => `${S.vista}|${titulo}`;
+  // Campo de varios responsables como fichas: se ve cada persona y se agregan desde una lista del directorio.
+  // El campo original queda oculto y guarda «A; B», así el resto del código sigue igual.
+  function selectorMultiple(input) {
+    input.dataset.chips = "1";
+    input.removeAttribute("data-recurso");
+    input.hidden = true;
+    const caja = document.createElement("div");
+    caja.className = "multi-resp";
+    caja.innerHTML = `<div class="mr-chips"></div><input class="mr-buscar" data-recurso autocomplete="off" placeholder="+ Agregar" aria-label="Agregar responsable">`;
+    input.after(caja);
+    const chips = caja.querySelector(".mr-chips"), buscar = caja.querySelector(".mr-buscar");
+    const nombres = () => separarNombres(input.value);
+    const fijar = (l) => { input.value = l.join("; "); input.dispatchEvent(new Event("change", { bubbles: true })); pintar(); };
+    function pintar() {
+      chips.innerHTML = nombres().map((n, i) => { const r = recursoPor({ nombre: n });
+        return `<span class="mr-chip ${r ? "" : "libre"}" title="${esc(r ? [r.Cargo, r.Correo].filter(Boolean).join(" · ") || n : "No está en el directorio de Recursos")}">${esc(n)}<button type="button" data-mr-quitar="${i}" aria-label="Quitar a ${esc(n)}">✕</button></span>`; }).join("");
+      chips.querySelectorAll("[data-mr-quitar]").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); const l = nombres(); l.splice(Number(b.dataset.mrQuitar), 1); fijar(l); }));
+    }
+    buscar.addEventListener("elegido", (e) => {
+      const { r, nuevo } = e.detail;
+      const n = r ? r.Nombre : nuevo;
+      if (!n) return;
+      if (!r) (input._nuevos = input._nuevos || new Set()).add(normTxt(n));
+      const l = nombres();
+      if (!l.some((x) => normTxt(x) === normTxt(n))) l.push(n);
+      buscar.value = "";
+      fijar(l);
+      setTimeout(() => { buscar.focus(); buscar.dispatchEvent(new Event("input")); }, 0);   // la lista se vuelve a abrir para elegir otra persona
+    });
+    buscar._excluir = () => new Set(nombres().map(normTxt));   // en la lista no salen los ya elegidos
+    buscar.addEventListener("keydown", (e) => { if (e.key === "Backspace" && !buscar.value) { const l = nombres(); if (l.length) { l.pop(); fijar(l); } } });
+    caja.addEventListener("click", (e) => { if (e.target === caja || e.target === chips) buscar.focus(); });
+    pintar();
+  }
   function compactar(raiz) {
+    raiz.querySelectorAll("input[data-multi]:not([data-chips])").forEach(selectorMultiple);
     raiz.querySelectorAll("textarea.c-texto:not([data-alto])").forEach((t) => { if (t.offsetParent) { t.dataset.alto = "1"; autoAlto(t); } });
     // 1) Listas con muchos elementos: se ven los primeros y un botón «Ver todos».
     raiz.querySelectorAll("ul.lista, ul.mini, ul.eq-lista, ul.alertas, ul.cat-lista, ul.deps").forEach((ul) => {
@@ -4552,7 +4587,7 @@
       { k: "Fecha_Acta", label: "Fecha del acta", tipo: "date" },
       { k: "URL_Acta", label: "Enlace al acta (opcional)", tipo: "url", placeholder: "https://…" },
       { seccion: `4. Compromisos de esta sesión (${comps.length})`, ayuda: "edita aquí el texto, responsables, fecha y estado; ábrelos para comentar" },
-      { html: `${comps.length ? `<div class="tabla-scroll"><table class="no-orden ses-comps"><thead><tr><th>Compromiso</th><th>Responsable(s)</th><th>Fecha límite</th><th>Estado</th><th></th></tr></thead><tbody>
+      { html: `${comps.length ? `<div><table class="no-orden ses-comps"><thead><tr><th>Compromiso</th><th>Responsable(s)</th><th>Fecha límite</th><th>Estado</th><th></th></tr></thead><tbody>
         ${comps.map((c) => `<tr data-sc="${esc(c.ID_Compromiso)}"><td><textarea class="c-texto sc-texto" rows="1" aria-label="Compromiso">${esc(c.Compromiso || "")}</textarea>${comentariosDe(c.ID_Compromiso).length ? `<div class="sub">💬 ${comentariosDe(c.ID_Compromiso).length} comentario(s)</div>` : ""}</td>
           <td><input class="sc-resp" data-recurso data-multi autocomplete="off" aria-label="Responsables" placeholder="Responsable(s) de Recursos" value="${esc(responsablesDe(c).map((x) => x.Nombre).join("; "))}"></td>
           <td><input type="date" class="sc-fecha" value="${esc(c.Fecha_Compromiso || "")}" aria-label="Fecha límite"></td>
