@@ -147,6 +147,7 @@
     }
     await migrarRecursos();
     await vincularCompromisosRecursos();
+    await completarFechaCreacion();
     const faltan = Object.keys(CATALOGOS_BASE).filter((k) => !S.datos.Catalogos.some((f) => f.Lista === k));
     if (sembrado || !faltan.length) return;
     sembrado = true;
@@ -1017,7 +1018,7 @@
 
   // Sección «Compromisos» de la ficha: filtrar, ordenar y agrupar por sesión.
   function seccionCompromisos(p, comps, segs, puede) {
-    const V = S.compVista = S.compVista || { ver: "abiertos", orden: "fecha", agrupar: false };
+    const V = S.compVista = S.compVista || { ver: "abiertos", orden: leerLocal("pmo_orden_comp", "fecha"), agrupar: false };
     const FILTROS = {
       abiertos: (x) => x.e !== "Cerrado", pendientes: (x) => R.estadoBase(x.c) === "Pendiente", encurso: (x) => R.estadoBase(x.c) === "En curso",
       vencidos: (x) => x.e === "Vencido", cerrados: (x) => x.e === "Cerrado", todos: () => true };
@@ -1031,7 +1032,8 @@
       fecha: porFecha,
       estado: (a, b) => ordenE[a.e] - ordenE[b.e] || porFecha(a, b),
       responsable: (a, b) => String(a.c.Responsable || "~").localeCompare(String(b.c.Responsable || "~"), "es") || porFecha(a, b),
-      recientes: (a, b) => String(b.c.ID_Compromiso).localeCompare(String(a.c.ID_Compromiso), "es", { numeric: true }),
+      recientes: (a, b) => String(fechaCreacion(b.c)).localeCompare(String(fechaCreacion(a.c))) || String(b.c.ID_Compromiso).localeCompare(String(a.c.ID_Compromiso), "es", { numeric: true }),
+      antiguos: (a, b) => String(fechaCreacion(a.c) || "9999").localeCompare(String(fechaCreacion(b.c) || "9999")) || String(a.c.ID_Compromiso).localeCompare(String(b.c.ID_Compromiso), "es", { numeric: true }),
     };
     lista = lista.slice().sort(ORDEN[V.orden] || porFecha);
     const seg = (id, t) => `<button class="btn chico ${V.ver === id ? "primario" : ""}" data-cver="${id}">${t} (${cuenta[id]})</button>`;
@@ -1039,6 +1041,7 @@
       const coms = comentariosDe(c.ID_Compromiso);
       const ult = coms[coms.length - 1];
       return `<tr><td>${esc(c.Compromiso)}${ult ? `<div class="sub ult-com">💬 ${esc(resumenCom(ult))}</div>` : ""}</td>
+        <td class="nowrap">${fechaCreacion(c) ? fecha(fechaCreacion(c)) : `<span class="sub">—</span>`}</td>
         <td>${c.ID_Seguimiento ? `Sesión ${fecha(fSes(c))}` : `<span class="sub">Sin sesión</span>`}</td>
         <td>${celdaResp(c, puede)}</td><td class="nowrap">${fecha(c.Fecha_Compromiso)}</td>
         <td>${pillComp(c)}${e === "Cerrado" && c.Fecha_Cierre ? `<div class="sub">${fecha(c.Fecha_Cierre)}</div>` : ""}</td>
@@ -1051,7 +1054,7 @@
         .sort((a, b) => (a === "" ? 1 : b === "" ? -1 : String(fSes({ ID_Seguimiento: b })).localeCompare(String(fSes({ ID_Seguimiento: a })))));
       filas = grupos.map((g) => {
         const del = lista.filter((x) => (x.c.ID_Seguimiento || "") === g);
-        return `<tr class="grupo"><td colspan="6">${g ? `Sesión del ${fecha(fSes({ ID_Seguimiento: g }))}` : "Registrados en el proyecto (sin sesión)"} <span class="contador">${del.length}</span></td></tr>${del.map(fila).join("")}`;
+        return `<tr class="grupo"><td colspan="7">${g ? `Sesión del ${fecha(fSes({ ID_Seguimiento: g }))}` : "Registrados en el proyecto (sin sesión)"} <span class="contador">${del.length}</span></td></tr>${del.map(fila).join("")}`;
       }).join("");
     } else filas = lista.map(fila).join("");
     return `<div class="card"><div class="titulo-fila"><h2>Compromisos del proyecto</h2>${puede ? `<button class="btn primario" id="b-comp">+ Compromiso</button>` : ""}</div>
@@ -1059,16 +1062,16 @@
       <div class="barra-comp">
         <div class="seg" role="group" aria-label="Qué compromisos ver">${seg("abiertos", "Abiertos")}${seg("pendientes", "Pendientes")}${seg("encurso", "En curso")}${seg("vencidos", "Vencidos")}${seg("cerrados", "Cerrados")}${seg("todos", "Todos")}</div>
         <label class="filtro"><span>Ordenar por</span><select id="c-orden">
-          ${[["fecha", "Fecha límite"], ["estado", "Estado (vencidos primero)"], ["responsable", "Responsable"], ["recientes", "Más recientes"]].map(([v, t]) => `<option value="${v}" ${V.orden === v ? "selected" : ""}>${t}</option>`).join("")}</select></label>
+          ${[["fecha", "Fecha límite"], ["recientes", "Creación (más recientes primero)"], ["antiguos", "Creación (más antiguos primero)"], ["estado", "Estado (vencidos primero)"], ["responsable", "Responsable"]].map(([v, t]) => `<option value="${v}" ${V.orden === v ? "selected" : ""}>${t}</option>`).join("")}</select></label>
         <label class="check"><input type="checkbox" id="c-agrupar" ${V.agrupar ? "checked" : ""}> Agrupar por sesión</label>
       </div>
-      ${lista.length ? `<div class="tabla-scroll"><table class="tabla-comp"><thead><tr><th>Compromiso</th><th>Sesión</th><th>Responsable</th><th>Fecha límite</th><th>Estado</th><th></th></tr></thead>
+      ${lista.length ? `<div class="tabla-scroll"><table class="tabla-comp"><thead><tr><th>Compromiso</th><th>Creado</th><th>Sesión</th><th>Responsable</th><th>Fecha límite</th><th>Estado</th><th></th></tr></thead>
         <tbody>${filas}</tbody></table></div>`
         : vacio(comps.length ? "No hay compromisos en esta vista. Prueba «Todos»." : `Aún no hay compromisos.${puede ? " Crea el primero con «+ Compromiso»." : ""}`)}</div>`;
   }
   function enlazarSeccionCompromisos(el) {
     el.querySelectorAll("[data-cver]").forEach((b) => b.addEventListener("click", () => { S.compVista.ver = b.dataset.cver; render(); }));
-    const o = el.querySelector("#c-orden"); if (o) o.addEventListener("change", () => { S.compVista.orden = o.value; render(); });
+    const o = el.querySelector("#c-orden"); if (o) o.addEventListener("change", () => { S.compVista.orden = o.value; guardarLocal("pmo_orden_comp", o.value); render(); });
     const g = el.querySelector("#c-agrupar"); if (g) g.addEventListener("change", () => { S.compVista.agrupar = g.checked; render(); });
   }
   function enlazarCompromisos(el) {
@@ -1111,6 +1114,7 @@
       <div class="contexto">
         <div><span class="sub">Estado</span><b>${pillComp(c)}</b></div>
         <div><span class="sub">${responsablesDe(c).length > 1 ? "Responsables" : "Responsable"}${puede ? ` <button class="btn enlace chico" data-cambiar-resp="${esc(c.ID_Compromiso)}">✎ Cambiar</button>` : ""}</span>${responsablesDe(c).map((x) => `<b>${esc(x.Nombre)}</b>${(() => { const rol = rolEnProyecto(c.ID_Proyecto, x); const d = [rol, x.r && x.r.Cargo, x.r && empresaDe(x.r), x.Correo].filter(Boolean); return d.length ? `<div class="sub">${esc(d.join(" · "))}</div>` : ""; })()}`).join("") || "<b>—</b>"}</div>
+        <div><span class="sub">Creado</span><b>${fechaCreacion(c) ? fecha(fechaCreacion(c)) : "—"}</b></div>
         <div><span class="sub">Fecha límite</span><b>${fecha(c.Fecha_Compromiso)}</b></div>
         ${c.Fecha_Cierre ? `<div><span class="sub">Cerrado el</span><b>${fecha(c.Fecha_Cierre)}</b></div>` : ""}
       </div>
@@ -1296,7 +1300,7 @@
         <p class="sub">Cada fila es una sesión: su avance, lo que pasó, los compromisos que se acordaron y el acta.</p><div class="tabla-scroll"><table class="historial">
         <thead><tr><th>Sesión</th><th>Avance</th><th>Logros y próximos pasos</th><th>Bloqueos</th><th>Compromisos acordados</th><th>Acta</th></tr></thead>
         <tbody>${segs.slice().reverse().map((s) => {
-          const acordados = S.datos.Compromisos.filter((c) => c.ID_Seguimiento === s.ID_Seguimiento);
+          const acordados = S.datos.Compromisos.filter((c) => c.ID_Seguimiento === s.ID_Seguimiento).sort(porCreacion);
           return `<tr><td><b>${fecha(s.Fecha_Corte)}</b><div class="sub">${esc(s.Semana)} · ${esc(nombreUsuario(s.Reportado_Por))}</div></td>
           <td>${pct(s.Avance_Real)}<div>${chipSemaforo(s.Semaforo)}</div></td>
           <td>${esc(s.Logros)}<div class="sub">Sigue: ${esc(s.Proximos_Pasos || "—")}</div></td><td>${esc(s.Bloqueos || "—")}</td>
@@ -2263,6 +2267,7 @@
     };
     const w = { ...api, vaciar };
     w.agregarFilas = async (tabla, objs) => {
+      if (tabla === "Compromisos") objs.forEach((o) => { if (!o.Fecha_Creacion) o.Fecha_Creacion = R.hoyISO(); });   // fecha en que se creó, para ordenar
       const r = await api.agregarFilas(tabla, objs);
       local.agregar(tabla, objs);
       objs.forEach((o) => reg(tabla, o[ID_COLS[tabla]] || o.Valor || "", tabla === "Proyectos" ? o.ID_Proyecto : o.ID_Proyecto, "Creó", desc(o) || (tabla === "Catalogos" ? `${o.Lista}: ${o.Valor}` : "")));
@@ -2466,6 +2471,24 @@
     }).filter(Boolean);
     if (!enlaces.length) return;
     try { await S.api.actualizarVarios("Compromisos", "ID_Compromiso", enlaces); } catch (e) { /* sin permiso de edición: se resuelve por nombre/correo */ }
+  }
+  const porCreacion = (a, b) => String(fechaCreacion(a) || "9999").localeCompare(String(fechaCreacion(b) || "9999")) || String(a.ID_Compromiso).localeCompare(String(b.ID_Compromiso), "es", { numeric: true });
+  // Fecha de creación de un compromiso: la guardada; si es antiguo, la de su sesión o la de su primer comentario.
+  function fechaCreacion(c) {
+    if (c.Fecha_Creacion) return String(c.Fecha_Creacion).slice(0, 10);
+    const s = c.ID_Seguimiento && S.datos.Seguimientos.find((x) => x.ID_Seguimiento === c.ID_Seguimiento);
+    if (s && s.Fecha_Corte) return s.Fecha_Corte;
+    const primero = (S.datos.Comentarios || []).filter((x) => x.ID_Compromiso === c.ID_Compromiso).map((x) => String(x.Fecha_Hora).slice(0, 10)).sort()[0];
+    return primero || "";
+  }
+  // Una vez: los compromisos que ya existían quedan con su fecha de creación en el Excel.
+  let fechasCompletadas = false;
+  async function completarFechaCreacion() {
+    if (fechasCompletadas) return;
+    fechasCompletadas = true;
+    const cambios = S.datos.Compromisos.filter((c) => !c.Fecha_Creacion && fechaCreacion(c)).map((c) => ({ id: c.ID_Compromiso, cambios: { Fecha_Creacion: fechaCreacion(c) } }));
+    if (!cambios.length) return;
+    try { await S.api.actualizarVarios("Compromisos", "ID_Compromiso", cambios); } catch (e) { /* sin permiso de edición: se calcula al vuelo */ }
   }
   // Responsables de un compromiso → personas del directorio (crea las nuevas).
   // Solo se crea en Recursos a quien se eligió con «+ Agregar como recurso nuevo» (crearNuevos); el texto libre queda como nombre, sin crear basura en el directorio.
@@ -3395,6 +3418,7 @@
   ];
   const colsCompromiso = (conProy) => [
     ...(conProy ? [C.proy] : []), { t: "Compromiso", v: (c) => c.Compromiso, ancho: 46 },
+    { t: "Creado", v: (c) => fechaCreacion(c), tipo: "fecha" },
     { t: "Sesión", v: (c) => { const s = sesionDe(c); return s ? `Sesión del ${fecha(s.Fecha_Corte)}` : "Sin sesión"; }, ancho: 18 },
     { t: "Responsable", v: (c) => c.Responsable }, { t: "Correo responsable", v: (c) => correoDe(c), ancho: 26 },
     { t: "Fecha límite", v: (c) => c.Fecha_Compromiso, tipo: "fecha" }, { t: "Estado", v: (c) => R.estadoBase(c), ancho: 12, color: true },
@@ -4674,6 +4698,7 @@
       { k: "Dias_Alerta", label: "Avisar con (días de anticipación)", tipo: "number", min: 0, max: 60, def: R.DIAS_COMPROMISO_POR_VENCER, ayuda: "Desde ese día aparece en «Por vencer» y en la campana 🔔." },
       ...(nuevo ? [{ k: "Comentario", label: "Comentario inicial (opcional)", tipo: "textarea", placeholder: "Contexto o primer avance" }] : [
         { k: "Estado", label: "Estado", tipo: "select", opciones: S.cat.Estado_Compromiso, def: "Pendiente" },
+        { k: "Fecha_Creacion", label: "Fecha de creación", tipo: "date", ayuda: "Se pone sola al crearlo; corrígela si lo registraste después." },
         { k: "Fecha_Cierre", label: "Fecha de cierre", tipo: "date", ayuda: "Se llena sola al marcarlo cumplido; se borra si lo reabres." }]),
     ];
     if (nuevo) {
@@ -4689,7 +4714,7 @@
       return;
     }
     const coms = comentariosDe(c.ID_Compromiso);
-    modal("Editar compromiso", campos, { ...c, Estado: R.estadoBase(c) }, (fd, resp) => {
+    modal("Editar compromiso", campos, { ...c, Estado: R.estadoBase(c), Fecha_Creacion: fechaCreacion(c) }, (fd, resp) => {
       if (fd.Estado === "Cerrado" && !fd.Fecha_Cierre) fd.Fecha_Cierre = R.hoyISO();
       if (fd.Estado !== "Cerrado") fd.Fecha_Cierre = "";
       const cambioEstado = fd.Estado !== R.estadoBase(c);
@@ -4716,7 +4741,7 @@
     const p = proyecto(s.ID_Proyecto);
     const segs = R.seguimientosDe(s.ID_Proyecto, S.datos.Seguimientos);
     const esUltimo = segs.length && segs[segs.length - 1].ID_Seguimiento === s.ID_Seguimiento;
-    const comps = S.datos.Compromisos.filter((c) => c.ID_Seguimiento === s.ID_Seguimiento);
+    const comps = S.datos.Compromisos.filter((c) => c.ID_Seguimiento === s.ID_Seguimiento).sort(porCreacion);
     const campos = [
       { seccion: "1. Avance" },
       { k: "Fecha_Corte", label: "Fecha de corte", tipo: "date" },
