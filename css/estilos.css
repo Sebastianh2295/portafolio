@@ -823,3 +823,13 @@ tr[data-doc][hidden] { display: none; }
 .modo.desconectado .punto-con { background: #fff; animation: parpadeo 1.2s infinite; }
 @keyframes parpadeo { 50% { opacity: .3; } }
 #cargando .cargando-lento .btn + .btn { margin-left: 6px; }
+/* Estado en los compromisos del seguimiento */
+.comp-cab, .comp-fila { grid-template-columns: 2fr 1.2fr 140px 120px 34px; }
+.comp-fila .c-estado { width: 100%; min-width: 0; }
+.cp-fila { display: flex; gap: 10px; align-items: flex-start; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--borde); }
+.cp-fila > span { flex: 1; }
+.cp-fila .cp-estado { width: 130px; flex: none; }
+@media (max-width: 760px) { .comp-cab { display: none; } .comp-fila { grid-template-columns: 1fr 1fr; } .comp-fila .c-texto { grid-column: 1 / -1; } }
+/* Grupo de proyecto como responsable */
+.mr-chip.grupo, .rs-chip.grupo { background: #e8f1ff; border: 1px dashed var(--azul); }
+.combo-lista li.grupo-opt { border-bottom: 1px solid var(--borde); background: var(--superficie-2); }
