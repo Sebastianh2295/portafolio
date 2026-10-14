@@ -4,7 +4,7 @@
   <script>
     /* Actualización automática: si GitHub tiene una versión más nueva que la guardada en caché
        por Excel, se recarga la página con esa versión. */
-    window.APP_VERSION = "48";
+    window.APP_VERSION = "49";
     (function () {
       try {
         fetch("version.json?t=" + Date.now(), { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (j) {
@@ -20,7 +20,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Portafolio PMO</title>
-  <link rel="stylesheet" href="css/estilos.css?v=48">
+  <link rel="stylesheet" href="css/estilos.css?v=49">
   <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
   <style>
     .pane { padding: 18px; }
@@ -35,9 +35,13 @@
     <button class="btn primario" id="b-abrir" disabled>Abrir Portafolio</button>
     <button class="btn" id="b-panel" disabled>Usar en este panel</button>
     <div id="estado" class="sub">Conectando con Excel…</div>
+    <div class="opciones-inicio" style="margin-top:16px;border-top:1px solid var(--borde);padding-top:12px">
+      <label class="check" style="display:flex;gap:8px;align-items:flex-start;margin:6px 0"><input type="checkbox" id="o-auto"> <span>Abrir este panel automáticamente cada vez que se abra este libro <span class="sub">(Excel de escritorio)</span></span></label>
+      <label class="check" style="display:flex;gap:8px;align-items:flex-start;margin:6px 0"><input type="checkbox" id="o-ventana"> <span>Abrir el Portafolio en ventana grande al iniciar <span class="sub">(en este equipo)</span></span></label>
+    </div>
     <div class="sub" style="margin-top:14px">Versión <span id="ver"></span></div>
   </div>
-  <script src="js/datos.js?v=48"></script>
+  <script src="js/datos.js?v=49"></script>
   <script>
     /* Este panel es el "puente": la ventana grande no puede leer Excel directamente,
        así que le envía sus pedidos a este panel, que los ejecuta con Office.js y responde. */
@@ -81,6 +85,19 @@
       document.getElementById("b-abrir").addEventListener("click", abrir);
       document.getElementById("b-panel").addEventListener("click", () => { location.href = "index.html?modo=panel&v=" + encodeURIComponent(window.APP_VERSION); });
       estado("Listo.");
+      // Inicio automático: el libro recuerda que debe abrir el panel (Office.AutoShowTaskpaneWithDocument)
+      // y este equipo recuerda si se abre de una vez la ventana grande. Así el .bat abre todo con un doble clic.
+      const auto = document.getElementById("o-auto"), vent = document.getElementById("o-ventana");
+      try { auto.checked = !!Office.context.document.settings.get("Office.AutoShowTaskpaneWithDocument"); } catch (e) { auto.disabled = true; }
+      try { vent.checked = localStorage.getItem("pmo_abrir_ventana") === "1"; } catch (e) { /* sin almacenamiento */ }
+      auto.addEventListener("change", () => {
+        try {
+          Office.context.document.settings.set("Office.AutoShowTaskpaneWithDocument", auto.checked);
+          Office.context.document.settings.saveAsync((r) => estado(r.status === Office.AsyncResultStatus.Succeeded ? (auto.checked ? "Listo: el panel se abrirá solo con este libro." : "El panel ya no se abrirá solo.") : "No se pudo guardar la opción en el libro."));
+        } catch (e) { estado("Esta versión de Excel no permite abrir el panel automáticamente."); }
+      });
+      vent.addEventListener("change", () => { try { localStorage.setItem("pmo_abrir_ventana", vent.checked ? "1" : "0"); } catch (e) { /* sin almacenamiento */ } });
+      if (vent.checked) setTimeout(abrir, 400);
     });
   </script>
 </body>
