@@ -4401,7 +4401,7 @@
           const sinFecha = res.compromisos.filter((c) => !c.Fecha_Compromiso).length;
           est.className = "acta-estado ok";
           est.innerHTML = `<b>${esc(archivo.name)}</b> se guardará con la sesión. ${res.fecha ? `Fecha del acta: ${fecha(res.fecha)}. ` : "No encontré la fecha del acta. "}` +
-            (res.encontrada ? `Cargué ${res.compromisos.length} compromiso(s) abajo${sinFecha ? ` (${sinFecha} sin fecha en el acta)` : ""}; revísalos antes de guardar.` : "No encontré la tabla «Compromisos de la reunión»; escríbelos abajo si hay.");
+            (res.encontrada ? `Cargué ${res.compromisos.length} compromiso(s) abajo${sinFecha ? ` (${sinFecha} sin fecha en el acta)` : ""}; revísalos antes de guardar.` : res.titulo ? "Encontré «Compromisos de la reunión» pero no pude leer las columnas de la tabla (No. · Descripción actividad · Responsable · Fecha de entrega); escríbelos abajo." : "No encontré la tabla «Compromisos de la reunión»; escríbelos abajo si hay.");
         } catch (e) {
           acta = null;
           est.className = "acta-estado error"; est.textContent = "No se pudo leer el PDF: " + e.message;

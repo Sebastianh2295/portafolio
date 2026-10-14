@@ -62,33 +62,63 @@
   /* Tabla «Compromisos de la reunión»: No. | Descripción actividad | Responsable | Fecha de entrega.
      Los encabezados están centrados en sus columnas y el contenido alineado a la izquierda, así que
      los límites de columna se deducen de los centros de los encabezados. */
+  // Renglones de una página: fragmentos a la misma altura, unidos de izquierda a derecha.
+  function lineasDe(items) {
+    const l = [];
+    items.slice().sort((a, b) => a.y - b.y || a.x - b.x).forEach((i) => { const u = l[l.length - 1]; if (u && Math.abs(u.y - i.y) < 3) u.items.push(i); else l.push({ y: i.y, items: [i] }); });
+    return l.map((x) => ({ y: x.y, t: unir(x.items) }));
+  }
+  // Agrupa los fragmentos del encabezado por columna (los que se tocan o están uno encima de otro).
+  function columnasEncabezado(banda) {
+    const g = [];
+    banda.slice().sort((a, b) => a.x - b.x).forEach((i) => {
+      const k = g.find((c) => i.x <= c.max + 6 && i.x + i.w >= c.min - 6);
+      if (k) { k.min = Math.min(k.min, i.x); k.max = Math.max(k.max, i.x + i.w); k.items.push(i); } else g.push({ min: i.x, max: i.x + i.w, items: [i] });
+    });
+    return g;
+  }
+  const vigenteDe = (items) => items.filter((i) => /^\d{2}\/\d{2}\/\d{4}$/.test(i.t) && i.x > 380).sort((a, b) => a.y - b.y)[0];
   function leerCompromisos(paginas) {
-    let enTabla = false, cols = null, filas = [], terminado = false;
+    let enTabla = false, cols = null, filas = [], terminado = false, tituloVisto = false;
     for (const items of paginas) {
       if (terminado) break;
       let desde = -Infinity;
       if (!enTabla) {
-        const titulo = items.find((i) => /compromisos de la reuni/i.test(i.t));
-        if (!titulo) continue;
-        const desc = items.find((i) => /descripci/i.test(i.t) && i.y > titulo.y);
+        let base;
+        if (!tituloVisto) {
+          // El título puede venir partido en varios fragmentos: se busca en el renglón completo.
+          const titulo = lineasDe(items).find((l) => /compromisos\s+de\s+la\s+reuni/i.test(l.t));
+          if (!titulo) continue;
+          tituloVisto = true;
+          base = titulo.y;
+        } else { const vig = vigenteDe(items); base = vig ? vig.y : -Infinity; }   // el encabezado de la tabla quedó en la página siguiente
+        const desc = items.filter((i) => /descripci|^actividad/i.test(i.t) && i.y > base).sort((a, b) => a.y - b.y)[0];
         if (!desc) continue;
-        const linea = items.filter((i) => mismaLinea(i, desc)).sort((a, b) => a.x - b.x);
-        const idx = (re) => linea.findIndex((i) => re.test(i.t));
-        const iNo = idx(/^no\.?$/i), iDesc = idx(/descripci/i), iResp = idx(/responsable/i), iFecha = idx(/^fecha/i);
-        if (iDesc < 0 || iResp < 0 || iFecha < 0) continue;
-        const centro = (desdeI, hastaI) => { const g = linea.slice(desdeI, hastaI); return (g[0].x + g[g.length - 1].x + g[g.length - 1].w) / 2; };
-        const c = [iNo >= 0 ? centro(iNo, iDesc) : null, centro(iDesc, iResp), centro(iResp, iFecha), centro(iFecha, linea.length)];
-        desde = desc.y + 2;
+        const banda = items.filter((i) => i.y >= desc.y - 8 && i.y <= desc.y + 16);
+        const resp = banda.find((i) => /responsable/i.test(i.t)), fec = banda.find((i) => /^fecha|entrega|plazo/i.test(i.t)), no = banda.find((i) => /^(no\.?|n[°º.]|#|ítem|item)$/i.test(i.t));
+        if (!resp || !fec) continue;
+        const grupos = columnasEncabezado(banda);
+        const centro = (it) => { const k = grupos.find((c) => c.items.includes(it)); return (k.min + k.max) / 2; };
+        const c = [no ? centro(no) : null, centro(desc), centro(resp), centro(fec)];
+        desde = Math.max(...banda.filter((i) => grupos.some((k) => k.items.includes(i))).map((i) => i.y)) + 2;
         const corte = items.filter((i) => i.y > desde && /^(hora de finalizaci|lista de participantes|fecha\s*[–-]\s*hora|fecha emisi|propiedad intelectual)/i.test(i.t)).reduce((m, i) => Math.min(m, i.y), Infinity);
         const debajo = items.filter((i) => i.y > desde && i.y < corte - 2);   // solo lo que está dentro de la tabla
         const primerTexto = debajo.filter((i) => i.x > (c[0] ?? 0) + 8).reduce((m, i) => Math.min(m, i.x), Infinity);
-        const L1 = primerTexto - 6;
-        const L2 = 2 * c[1] - L1, L3 = 2 * c[2] - L2;
+        const L1 = Number.isFinite(primerTexto) ? primerTexto - 6 : (c[0] ?? c[1] - 60) + 10;
+        /* Inicio de cada columna: el contenido va alineado a la izquierda, así que los x que se repiten
+           marcan dónde empieza cada columna. Se toma el último inicio antes del centro de su encabezado
+           (sirve con encabezados centrados o alineados a la izquierda). Si no hay datos, se estima por simetría. */
+        const conteo = {};
+        debajo.filter((i) => i.x > L1).forEach((i) => { const k = Math.round(i.x); conteo[k] = (conteo[k] || 0) + 1; });
+        const inicios = Object.keys(conteo).map(Number).filter((x) => conteo[x] >= 2).sort((a, b) => a - b);
+        const inicioAntes = (centroCol, minimo) => inicios.filter((x) => x < centroCol && x > minimo).pop();
+        const r2 = inicioAntes(c[2], L1 + 20), L2 = r2 !== undefined ? r2 - 2 : 2 * c[1] - L1;
+        const r3 = inicioAntes(c[3], L2 + 20), L3 = r3 !== undefined ? r3 - 2 : 2 * c[2] - L2;
         cols = { L1, L2, L3, cNo: c[0] };
         enTabla = true;
       } else {
         // Página siguiente: se salta el encabezado repetido del formato (termina en la fecha vigente).
-        const vig = items.filter((i) => /^\d{2}\/\d{2}\/\d{4}$/.test(i.t) && i.x > 380).sort((a, b) => a.y - b.y)[0];
+        const vig = vigenteDe(items);
         desde = vig ? vig.y + 4 : 0;
       }
       const fin = items.filter((i) => i.y > desde && /^(hora de finalizaci|lista de participantes|fecha\s*[–-]\s*hora)/i.test(i.t)).sort((a, b) => a.y - b.y)[0];
@@ -127,7 +157,7 @@
         if (desc || resp) filas.push({ Compromiso: desc, Responsable: resp, Fecha_Texto: fechaTxt, Fecha_Compromiso: fechaISO(fechaTxt) });
       });
     }
-    return { encontrada: !!cols, compromisos: filas };
+    return { encontrada: !!cols, titulo: tituloVisto, compromisos: filas };
   }
 
   async function leerActa(archivo) {
