@@ -11,7 +11,7 @@ set "CFG=%~dp0Portafolio_ruta.txt"
 if not exist "%CFG%" call :configurar
 if not exist "%CFG%" exit /b
 
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$r=(Get-Content -LiteralPath $env:CFG -Raw -Encoding UTF8).Trim(); try { Start-Process -FilePath 'excel.exe' -ArgumentList ('\"' + $r + '\"') -ErrorAction Stop } catch { Write-Host ''; Write-Host '  No se pudo abrir Excel de escritorio:' $_.Exception.Message; Write-Host '  Ruta guardada:' $r; Write-Host '  Borra Portafolio_ruta.txt y vuelve a ejecutar para cambiarla.'; Read-Host '  Enter para cerrar' }"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$r=(Get-Content -LiteralPath $env:CFG -Raw -Encoding UTF8).Trim(); try { Start-Process -FilePath 'excel.exe' -ArgumentList ([char]34 + $r + [char]34) -ErrorAction Stop } catch { Write-Host ''; Write-Host '  No se pudo abrir Excel de escritorio:' $_.Exception.Message; Write-Host '  Ruta guardada:' $r; Write-Host '  Borra Portafolio_ruta.txt y vuelve a ejecutar para cambiarla.'; Read-Host '  Enter para cerrar' }"
 exit /b
 
 :configurar
