@@ -356,6 +356,26 @@
     });
     enlazarClics(el);
     enlazarActas(el);
+    animarVista(el);
+  }
+  // Entrada suave de la pantalla y contadores que suben en los indicadores (se respeta «reducir movimiento»).
+  const sinMovimiento = () => window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let ultimaVista = "";
+  function animarVista(el) {
+    const clave = `${S.vista}|${S.pid || ""}|${S.fichaTab || ""}`;
+    const cambio = clave !== ultimaVista;
+    ultimaVista = clave;
+    if (sinMovimiento() || !cambio) return;   // al guardar en la misma pantalla no se repite la animación
+    el.classList.remove("entrando"); void el.offsetWidth; el.classList.add("entrando");
+    el.querySelectorAll(".kpi-v, [data-contar]").forEach((n) => {
+      const txt = n.textContent.trim(), m = txt.match(/^(-?\d+(?:[.,]\d+)?)(.*)$/);
+      if (!m || n.children.length > 1) return;
+      const fin = parseFloat(m[1].replace(",", ".")), suf = m[2], dec = /[.,]/.test(m[1]) ? 1 : 0;
+      if (!Number.isFinite(fin) || fin === 0) return;
+      const t0 = performance.now(), dur = 700;
+      const paso = (t) => { const k = Math.min(1, (t - t0) / dur), v = fin * (1 - Math.pow(1 - k, 3)); n.textContent = (dec ? v.toFixed(dec) : Math.round(v)) + suf; if (k < 1) requestAnimationFrame(paso); else n.textContent = txt; };
+      requestAnimationFrame(paso);
+    });
   }
   function ir(vista, pid) { S.vista = vista; if (pid) S.pid = pid; render(); window.scrollTo(0, 0); }
   // Cualquier elemento con data-pid abre la ficha del proyecto.
@@ -586,8 +606,17 @@
     const tarjeta = (titulo, valor, detalle, alerta, destino) => `<button class="kpi ${alerta ? "alerta" : ""}" data-kpi="${destino}" title="Ver detalle">
       <span class="kpi-t">${titulo}</span><span class="kpi-v">${valor}</span><span class="kpi-d">${detalle}</span></button>`;
 
+    const hora = new Date().getHours();
+    const saludo = hora < 12 ? "Buenos días" : hora < 19 ? "Buenas tardes" : "Buenas noches";
+    const nombreCorto = String(S.usuario.Nombre || S.usuario.Correo || "").split(/[\s@]/)[0];
+    const al = alertas();
     el.innerHTML = `
-      <h1>Dashboard del portafolio</h1>
+      <section class="hero">
+        <div class="hero-txt"><div class="hero-fecha">${esc((() => { const f = new Date().toLocaleDateString("es-CO", { weekday: "long", day: "numeric", month: "long", year: "numeric" }); return f.charAt(0).toUpperCase() + f.slice(1); })())}</div>
+          <h1>${saludo}${nombreCorto ? `, ${esc(nombreCorto.charAt(0).toUpperCase() + nombreCorto.slice(1))}` : ""}</h1>
+          <p>Este es el estado del portafolio: ${k.activos} proyecto(s) activos${k.rojos ? `, <b>${k.rojos} en rojo</b>` : ""}${al.vencidos.length ? ` y <b>${al.vencidos.length} compromiso(s) vencido(s)</b>` : ""}.</p></div>
+        <div class="hero-anillo" style="--p:${Math.max(0, Math.min(100, Math.round(k.avanceReal)))}"><div><span class="hero-num"><b data-contar="${Math.round(k.avanceReal)}">${Math.round(k.avanceReal)}</b>%</span><small>avance promedio</small></div></div>
+      </section>
       ${barraFiltros()}
       <div class="kpis">
         ${tarjeta("Proyectos activos", k.activos, `de ${k.total} en la selección`, false, "activos")}
