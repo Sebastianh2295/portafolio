@@ -46,7 +46,7 @@
   const TABLAS = Object.keys(ESTRUCTURA);
   // Columnas agregadas en versiones posteriores: si faltan en el Excel, se crean al final de la tabla.
   const COLUMNAS_NUEVAS = {
-    Proyectos: ["URL_Repositorio", "URL_Documentos", "Proveedores", "Codigo_Almera", "Dedicacion_PM", "Fecha_Fin_Base", "Presupuesto_Base", "Valor", "Urgencia", "Riesgo_Prio", "Esfuerzo"],
+    Proyectos: ["URL_Repositorio", "URL_Documentos", "Proveedores", "Codigo_Almera", "Dedicacion_PM", "Fecha_Fin_Base", "Presupuesto_Base", "Fecha_Inicio_Base", "Valor", "Urgencia", "Riesgo_Prio", "Esfuerzo"],
     Stakeholders: ["Dedicacion", "ID_Recurso"],
     Riesgos: ["ID_Seguimiento", "Origen", "Fecha_Identificacion"],
     Seguimientos: ["Fecha_Acta", "URL_Acta", "Acta_Archivo", "Ejecutado"],
@@ -54,7 +54,7 @@
     Comentarios: ["Adjuntos", "Editado_El"],
     Cambios: ["Numero_CC", "URL_Documento"],
   };
-  const COLS_FECHA = ["Fecha_Creacion", "Editado_El", "Fecha_Recepcion", "Fecha_Deseada", "Fecha_Estado", "Fecha_Identificacion", "Fecha_Fin_Base", "Nueva_Fecha_Fin", "Fecha_Decision", "Fecha", "Fecha_Registro", "Fecha_Inicio", "Fecha_Fin_Plan", "Actualizado_El", "Fecha_Plan", "Fecha_Real", "Fecha_Corte", "Fecha_Compromiso", "Fecha_Cierre", "Fecha_Acta"];
+  const COLS_FECHA = ["Fecha_Inicio_Base", "Fecha_Creacion", "Editado_El", "Fecha_Recepcion", "Fecha_Deseada", "Fecha_Estado", "Fecha_Identificacion", "Fecha_Fin_Base", "Nueva_Fecha_Fin", "Fecha_Decision", "Fecha", "Fecha_Registro", "Fecha_Inicio", "Fecha_Fin_Plan", "Actualizado_El", "Fecha_Plan", "Fecha_Real", "Fecha_Corte", "Fecha_Compromiso", "Fecha_Cierre", "Fecha_Acta"];
 
   // Excel puede convertir "2026-09-28" en número de serie; aquí se devuelve a texto ISO.
   const serialAISO = (v) => new Date(Math.round((v - 25569) * 86400000)).toISOString().slice(0, 10);

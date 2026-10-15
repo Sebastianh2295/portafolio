@@ -1898,7 +1898,7 @@
         <td class="hv-nw">${califTxt(r.Probabilidad_Inherente, r.Impacto_Inherente)}</td><td>${r.Plan_Mitigacion ? `<b>Mitigación:</b> ${t(r.Plan_Mitigacion)}` : ""}${r.Plan_Contingencia ? `<br><b>Contingencia:</b> ${t(r.Plan_Contingencia)}` : ""}</td>
         <td class="hv-nw">${califTxt(r.Probabilidad_Residual, r.Impacto_Residual)}</td><td>${esc(origenRiesgo(r))}</td></tr>`), "Sin riesgos.")}
       <h2>8. Control de cambios</h2>
-      ${(() => { const lb = lineaBase(p); return lb.tiene ? `<p class="hv-p"><b>Línea base:</b> fin ${fecha(lb.fb)} → actual ${fecha(p.Fecha_Fin_Plan)}${lb.dias !== null ? ` (${lb.dias > 0 ? "+" : ""}${lb.dias} días)` : ""} · presupuesto ${lb.pb !== null ? cop(lb.pb) : "—"} → actual ${cop(p.Presupuesto)}${lb.pctCosto !== null ? ` (${lb.pctCosto > 0 ? "+" : ""}${lb.pctCosto}%)` : ""}</p>` : ""; })()}
+      ${(() => { const lb = lineaBase(p); return lb.tiene ? `<p class="hv-p"><b>Línea base:</b> ${lb.ib ? `inicio ${fecha(lb.ib)} → actual ${fecha(p.Fecha_Inicio)}${lb.diasInicio ? ` (${lb.diasInicio > 0 ? "+" : ""}${lb.diasInicio} días)` : ""} · ` : ""}fin ${fecha(lb.fb)} → actual ${fecha(p.Fecha_Fin_Plan)}${lb.dias !== null ? ` (${lb.dias > 0 ? "+" : ""}${lb.dias} días)` : ""} · presupuesto ${lb.pb !== null ? cop(lb.pb) : "—"} → actual ${cop(p.Presupuesto)}${lb.pctCosto !== null ? ` (${lb.pctCosto > 0 ? "+" : ""}${lb.pctCosto}%)` : ""}</p>` : ""; })()}
       ${(() => { const ap = cambiosDe(pid).filter((c) => c.Estado === "Aprobado"); return ap.length ? `<p class="hv-p"><b>Cambios aprobados:</b> ${ap.length} · ${IMPACTOS_CC.map((i) => { const n = ap.filter((c) => impactosDe(c).includes(i)).length; return n ? `${i}: ${n}` : ""; }).filter(Boolean).join(" · ")}</p>` : ""; })()}
       ${tabla(["N.º / Fecha", "Impacta en", "Cambio", "Efecto", "Estado", "Documento"], cambiosDe(pid).map((c) => `<tr><td class="hv-nw">${c.Numero_CC ? `<b>${t(c.Numero_CC)}</b><br>` : ""}${fecha(c.Fecha)}</td><td>${t(impactosDe(c).join(", "))}</td><td>${t(c.Descripcion)}${c.Justificacion ? `<br><small>Por qué: ${t(c.Justificacion)}</small>` : ""}</td><td>${t(c.Impacto)}${c.Nueva_Fecha_Fin ? `<br><small>Nueva fecha fin ${fecha(c.Nueva_Fecha_Fin)}</small>` : ""}${num0(c.Nuevo_Presupuesto) !== null ? `<br><small>Nuevo presupuesto ${cop(c.Nuevo_Presupuesto)}</small>` : ""}</td><td>${t(c.Estado)}${c.Fecha_Decision ? `<br><small>${fecha(c.Fecha_Decision)}</small>` : ""}</td><td>${c.URL_Documento && esURL(c.URL_Documento) ? `<a href="${esc(c.URL_Documento)}" target="_blank" rel="noopener">Ver documento</a>` : "—"}</td></tr>`), "Sin cambios registrados.")}
       <h2>9. Dependencias</h2>
@@ -1939,9 +1939,10 @@
   // ---------- Control de cambios y línea base ----------
   const cambiosDe = (pid) => (S.datos.Cambios || []).filter((c) => c.ID_Proyecto === pid).sort((a, b) => String(b.Fecha).localeCompare(String(a.Fecha)) || String(b.ID_Cambio).localeCompare(String(a.ID_Cambio), "es", { numeric: true }));
   function lineaBase(p) {
-    const fb = p.Fecha_Fin_Base || "", pb = num0(p.Presupuesto_Base);
+    const fb = p.Fecha_Fin_Base || "", pb = num0(p.Presupuesto_Base), ib = p.Fecha_Inicio_Base || "";
     return {
-      tiene: !!(fb || pb !== null), fb, pb,
+      tiene: !!(fb || ib || pb !== null), fb, pb, ib,
+      diasInicio: ib && p.Fecha_Inicio ? R.difDias(p.Fecha_Inicio, ib) : null,
       dias: fb && p.Fecha_Fin_Plan ? R.difDias(p.Fecha_Fin_Plan, fb) : null,
       pctCosto: pb ? Math.round(((Number(p.Presupuesto) || 0) - pb) / pb * 100) : null,
     };
@@ -1951,13 +1952,15 @@
     const lista = cambiosDe(p.ID_Proyecto);
     const pend = lista.filter((c) => c.Estado === "Solicitado").length;
     const desvio = (v, u) => (v === null ? "—" : `<span class="${v > 0 ? "baja" : v < 0 ? "sube" : ""}">${v > 0 ? "+" : ""}${v}${u}</span>`);
-    return `<div class="card"><div class="titulo-fila"><h2>Línea base</h2>${puedeDecidir ? `<button class="btn chico" id="b-lb">${lb.tiene ? "Volver a fijar línea base" : "Fijar línea base"}</button>` : ""}</div>
+    return `<div class="card"><div class="titulo-fila"><h2>Línea base</h2>${puedeDecidir ? `<button class="btn chico" id="b-lb">${lb.tiene ? "Editar línea base" : "Fijar línea base"}</button>` : ""}</div>
         ${lb.tiene ? `<div class="datos">
+          <div class="dato"><div class="dato-k">Inicio original</div><div class="dato-v">${lb.ib ? fecha(lb.ib) : "—"}</div></div>
+          <div class="dato"><div class="dato-k">Inicio actual</div><div class="dato-v">${fecha(p.Fecha_Inicio)}${lb.ib ? ` · ${desvio(lb.diasInicio, " días")}` : ""}</div></div>
           <div class="dato"><div class="dato-k">Fin planeado original</div><div class="dato-v">${fecha(lb.fb)}</div></div>
           <div class="dato"><div class="dato-k">Fin planeado actual</div><div class="dato-v">${fecha(p.Fecha_Fin_Plan)} · ${desvio(lb.dias, " días")}</div></div>
           <div class="dato"><div class="dato-k">Presupuesto original</div><div class="dato-v">${lb.pb !== null ? cop(lb.pb) : "—"}</div></div>
           <div class="dato"><div class="dato-k">Presupuesto actual</div><div class="dato-v">${cop(p.Presupuesto)} · ${desvio(lb.pctCosto, "%")}</div></div></div>`
-        : `<p class="sub">Aún no hay línea base. Se fija sola con el primer cambio aprobado (toma la fecha fin y el presupuesto de ese momento)${puedeDecidir ? ", o puedes fijarla ahora" : ""}.</p>`}
+        : `<p class="sub">Aún no hay línea base. Se fija sola con el primer cambio aprobado (toma el inicio, el fin y el presupuesto de ese momento)${puedeDecidir ? ", o puedes fijarla y editarla ahora con «Fijar línea base»" : ""}.</p>`}
       </div>
       <div class="card"><div class="titulo-fila"><h2>Control de cambios ${pend ? `<span class="contador rojo">${pend} por decidir</span>` : ""}</h2>${puedeSolicitar ? `<button class="btn primario" id="b-cambio">+ Control de cambios</button>` : ""}</div>
         <p class="sub">Cambios que impactan tiempo, costo, alcance, recursos o calidad. El PM los registra y la PMO o el Admin los aprueban; al aprobar, la fecha fin y el presupuesto nuevos se aplican al proyecto. Adjunta el enlace del documento de control de cambios firmado.</p>
@@ -2011,7 +2014,7 @@
     if (estado === "Aprobado") {
       const lb = lineaBase(p);
       const cambiosP = {};
-      if (!lb.tiene) { cambiosP.Fecha_Fin_Base = p.Fecha_Fin_Plan; cambiosP.Presupuesto_Base = p.Presupuesto; }
+      if (!lb.tiene) { cambiosP.Fecha_Inicio_Base = p.Fecha_Inicio; cambiosP.Fecha_Fin_Base = p.Fecha_Fin_Plan; cambiosP.Presupuesto_Base = p.Presupuesto; }
       if (c.Nueva_Fecha_Fin) cambiosP.Fecha_Fin_Plan = c.Nueva_Fecha_Fin;
       if (num0(c.Nuevo_Presupuesto) !== null) cambiosP.Presupuesto = Number(c.Nuevo_Presupuesto);
       if (Object.keys(cambiosP).length) await S.api.actualizarPorId("Proyectos", "ID_Proyecto", p.ID_Proyecto, { ...cambiosP, ...sello() });
@@ -2028,9 +2031,23 @@
       fd.Decision === "Rechazado" ? "Cambio rechazado" : "Cambio aprobado y aplicado"), null,
     { antes: `<div class="resumen-filtro"><b>${esc(c.Descripcion)}</b>${efectos.length ? `<br>Si se aprueba: ${esc(efectos.join(" · "))}` : "<br>No cambia fechas ni presupuesto."}</div>` });
   }
+  // Línea base editable: inicio, fin y presupuesto con los que se aprobó el proyecto (contra estos se miden los cambios).
   function fijarLineaBase(p) {
-    confirmar("Fijar línea base", `La línea base quedará con fin ${fecha(p.Fecha_Fin_Plan)} y presupuesto ${cop(p.Presupuesto)}. Los cambios futuros se medirán contra estos valores.`, "Fijar",
-      () => guardar(() => S.api.actualizarPorId("Proyectos", "ID_Proyecto", p.ID_Proyecto, { Fecha_Fin_Base: p.Fecha_Fin_Plan, Presupuesto_Base: p.Presupuesto }), "Línea base fijada"), "primario");
+    const lb = lineaBase(p);
+    const campos = [
+      { html: `<div class="resumen-filtro">Valores actuales del proyecto: inicio <b>${fecha(p.Fecha_Inicio)}</b> · fin <b>${fecha(p.Fecha_Fin_Plan)}</b> · presupuesto <b>${cop(p.Presupuesto)}</b>
+        <div style="margin-top:6px"><button type="button" class="btn chico" id="lb-actuales">Usar los valores actuales</button></div></div>` },
+      { k: "Fecha_Inicio_Base", label: "Inicio de la línea base", tipo: "date" },
+      { k: "Fecha_Fin_Base", label: "Fin de la línea base", tipo: "date" },
+      { k: "Presupuesto_Base", label: "Presupuesto de la línea base (COP)", tipo: "number", min: 0 },
+    ];
+    const valores = { Fecha_Inicio_Base: lb.ib || p.Fecha_Inicio, Fecha_Fin_Base: lb.fb || p.Fecha_Fin_Plan, Presupuesto_Base: lb.pb !== null ? lb.pb : p.Presupuesto };
+    modal(lb.tiene ? "Editar línea base" : "Fijar línea base", campos, valores, (fd) => {
+      guardar(() => S.api.actualizarPorId("Proyectos", "ID_Proyecto", p.ID_Proyecto, { Fecha_Inicio_Base: fd.Fecha_Inicio_Base, Fecha_Fin_Base: fd.Fecha_Fin_Base, Presupuesto_Base: fd.Presupuesto_Base, ...sello() }), "Línea base guardada");
+    }, (fd) => (fd.Fecha_Inicio_Base && fd.Fecha_Fin_Base && fd.Fecha_Fin_Base < fd.Fecha_Inicio_Base ? "El fin de la línea base no puede ser anterior al inicio." : ""), {
+      init: (m) => m.querySelector("#lb-actuales").addEventListener("click", () => {
+        m.querySelector("[name=Fecha_Inicio_Base]").value = p.Fecha_Inicio || ""; m.querySelector("[name=Fecha_Fin_Base]").value = p.Fecha_Fin_Plan || ""; m.querySelector("[name=Presupuesto_Base]").value = p.Presupuesto || "";
+      }) });
   }
 
   // ---------- Lecciones aprendidas ----------
@@ -2221,11 +2238,11 @@
   // Plan: presupuesto de la línea base (o actual) repartido parejo entre inicio y fin; real: ejecutado reportado en los seguimientos.
   function planAcumulado(p, hasta) {
     const pres = num0(p.Presupuesto_Base) ?? (Number(p.Presupuesto) || 0);
-    const fin = p.Fecha_Fin_Base || p.Fecha_Fin_Plan;
-    if (!p.Fecha_Inicio || !fin || !pres) return 0;
-    if (hasta < p.Fecha_Inicio) return 0;
+    const fin = p.Fecha_Fin_Base || p.Fecha_Fin_Plan, ini = p.Fecha_Inicio_Base || p.Fecha_Inicio;
+    if (!ini || !fin || !pres) return 0;
+    if (hasta < ini) return 0;
     if (hasta >= fin) return pres;
-    return pres * (R.difDias(hasta, p.Fecha_Inicio) + 1) / (R.difDias(fin, p.Fecha_Inicio) + 1);
+    return pres * (R.difDias(hasta, ini) + 1) / (R.difDias(fin, ini) + 1);
   }
   function realAcumulado(p, hasta) {
     const hoy = R.hoyISO();
