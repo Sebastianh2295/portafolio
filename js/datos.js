@@ -124,15 +124,19 @@
           try { await crearTablasFaltantes(ctx, existentes); existentes = TABLAS; await crearColumnasFaltantes(ctx); estructuraRevisada = true; }
           catch (e) { /* usuario sin permiso de edición: se lee lo que exista */ }
         }
-        const cargas = TABLAS.filter((n) => existentes.includes(n) && !SOLO_BAJO_DEMANDA.includes(n)).map((n) => {
-          const t = ctx.workbook.tables.getItem(n);
-          return { n, h: t.getHeaderRowRange().load("values"), b: t.getDataBodyRange().load("values") };
-        });
-        await ctx.sync();
+        // Se lee por grupos de tablas (peticiones más pequeñas: Excel en línea falla con respuestas muy grandes).
+        const nombres = TABLAS.filter((n) => existentes.includes(n) && !SOLO_BAJO_DEMANDA.includes(n));
         const res = Object.fromEntries(TABLAS.filter((n) => !SOLO_BAJO_DEMANDA.includes(n)).map((n) => [n, []]));
-        for (const { n, h, b } of cargas) {
-          const cols = h.values[0];
-          res[n] = b.values.filter((r) => !vacia(r)).map((r) => Object.fromEntries(cols.map((k, i) => [k, normalizar(k, r[i])])));
+        for (let g = 0; g < nombres.length; g += 5) {
+          const cargas = nombres.slice(g, g + 5).map((n) => {
+            const t = ctx.workbook.tables.getItem(n);
+            return { n, h: t.getHeaderRowRange().load("values"), b: t.getDataBodyRange().load("values") };
+          });
+          await ctx.sync();
+          for (const { n, h, b } of cargas) {
+            const cols = h.values[0];
+            res[n] = b.values.filter((r) => !vacia(r)).map((r) => Object.fromEntries(cols.map((k, i) => [k, normalizar(k, r[i])])));
+          }
         }
         return res;
       });
@@ -308,6 +312,28 @@
       });
     },
   };
+
+  // Reintentos ante fallas pasajeras de Excel en línea (servidor ocupado, libro bloqueado por otra persona que edita, límites de uso).
+  // Las lecturas se reintentan siempre; las escrituras solo cuando Excel avisa que no aplicó el cambio (bloqueo o límite).
+  const espera = (ms) => new Promise((r) => setTimeout(r, ms));
+  const txtErr = (e) => `${(e && e.code) || ""} ${(e && e.message) || ""}`;
+  const pasajera = (e) => /GeneralException|InternalError|ServiceNotAvailable|RequestAborted|ActivityLimitReached|EditModeCannotAcquireLock|Conflict|timeout|try again|vuelva a intentar|inténtelo de nuevo/i.test(txtErr(e));
+  const noAplicada = (e) => /EditModeCannotAcquireLock|ActivityLimitReached|ServiceNotAvailable/i.test(txtErr(e));
+  const LECTURAS = ["ping", "leerTodo", "leerTabla", "partesArchivo", "leerParte"];
+  Object.keys(OpsExcel).forEach((op) => {
+    const f = OpsExcel[op];
+    if (typeof f !== "function") return;
+    OpsExcel[op] = async (...a) => {
+      for (let i = 0; ; i += 1) {
+        try { return await f(...a); }
+        catch (e) {
+          const reintentar = i < 2 && (LECTURAS.includes(op) ? pasajera(e) : noAplicada(e));
+          if (!reintentar) { if (e && e.code && !String(e.message || "").includes(e.code)) e.message = `${e.message || "Error de Excel"} [${e.code}]`; throw e; }
+          await espera(800 * (i + 1) * (i + 1));
+        }
+      }
+    };
+  });
 
   function demo() {
     const db = JSON.parse(JSON.stringify(window.DEMO_DATA || {}));

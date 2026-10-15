@@ -307,6 +307,7 @@
                 <div class="mu-cab">${avatar(u.Nombre || u.Correo, "grande")}<div><b>${esc(u.Nombre || u.Correo)}</b><div class="sub">${esc(u.Correo)}</div><div class="sub">${esc(R.roles(u).join(", "))}</div></div></div>
                 <button class="mu-item" id="b-recargar">${ico("actualizar")} Actualizar datos del Excel</button>
                 <button class="mu-item" id="b-reconectar">${ico("actualizar")} Reconectar con Excel</button>
+                <button class="mu-item" id="b-diag">${ico("ayuda")} Diagnóstico de conexión</button>
                 <button class="mu-item" id="b-tema">${ico(oscuro ? "sol" : "luna")} ${oscuro ? "Modo claro" : "Modo oscuro"}</button>
                 <div class="mu-sep"></div>
                 <div class="mu-info sub">${esc(etiquetaModo)} · versión ${esc(window.APP_VERSION || "")}</div>
@@ -349,6 +350,7 @@
     });
     $("#b-conexion").addEventListener("click", reconectar);
     $("#b-reconectar").addEventListener("click", reconectar);
+    $("#b-diag").addEventListener("click", () => { $("#menu-usuario").hidden = true; verDiagnostico(); });
     $("#b-recargar").addEventListener("click", async () => {
       cargando(true, "Leyendo Excel…");
       try { await recargar(); render(); toast("Datos actualizados"); } catch (e) { toast(e.message, true); } finally { cargando(false); }
@@ -3118,6 +3120,28 @@ ${x.h}</section>`).join("")}
     if (!l.length) return "Esperando respuesta de Excel";
     return "Ahora: " + l.map((x) => `${x.etq} (${Math.round((Date.now() - x.t0) / 1000)} s)`).join(", ");
   }
+  // Registro de errores de Excel (últimos 40) para diagnosticar fallas intermitentes.
+  function registrarDiag(operacion, e, ms) {
+    const d = { t: new Date().toLocaleString("es-CO"), op: operacion, cod: (e && e.code) || "", msg: String((e && e.message) || e || "").slice(0, 300), ms: Math.round(ms || 0), modo: S.modo || "" };
+    try { const l = JSON.parse(localStorage.getItem("pmo_diag") || "[]"); l.unshift(d); localStorage.setItem("pmo_diag", JSON.stringify(l.slice(0, 40))); } catch (x) { /* sin almacenamiento */ }
+    (S.diag = S.diag || []).unshift(d);
+  }
+  function verDiagnostico() {
+    let l = [];
+    try { l = JSON.parse(localStorage.getItem("pmo_diag") || "[]"); } catch (x) { l = S.diag || []; }
+    const texto = l.map((d) => `${d.t} · ${d.op} · ${d.cod} · ${d.msg} · ${d.ms} ms · ${d.modo}`).join("\n");
+    const m = document.createElement("div");
+    m.id = "modal"; m.className = "modal";
+    m.innerHTML = `<div class="modal-caja" role="dialog" aria-modal="true"><div class="titulo-fila"><h2>Diagnóstico de conexión con Excel</h2><button class="btn enlace" id="m-cerrar">✕</button></div>
+      <p class="sub">Errores recientes al leer o guardar en Excel en este equipo (versión ${esc(window.APP_VERSION || "")}). Si Excel muestra «Sorry, something went wrong», copia esta lista y envíala.</p>
+      ${l.length ? `<div class="tabla-scroll"><table class="no-orden no-recortar"><thead><tr><th>Cuándo</th><th>Operación</th><th>Código</th><th>Mensaje</th><th>Duró</th></tr></thead><tbody>${l.map((d) => `<tr><td class="nowrap">${esc(d.t)}</td><td>${esc(d.op)}</td><td>${esc(d.cod)}</td><td>${esc(d.msg)}</td><td class="nowrap">${d.ms} ms</td></tr>`).join("")}</tbody></table></div>` : vacio("No se han registrado errores en este equipo.")}
+      <div class="acciones derecha">${l.length ? `<button class="btn" id="dg-limpiar">Limpiar</button><button class="btn primario" id="dg-copiar">Copiar</button>` : ""}<button class="btn" id="dg-cerrar">Cerrar</button></div></div>`;
+    cerrarModal(); document.body.appendChild(m);
+    const cerrar = () => m.remove();
+    m.querySelector("#m-cerrar").addEventListener("click", cerrar); m.querySelector("#dg-cerrar").addEventListener("click", cerrar);
+    const cp = m.querySelector("#dg-copiar"); if (cp) cp.addEventListener("click", async () => { try { await navigator.clipboard.writeText(texto); toast("Copiado"); } catch (x) { toast("No se pudo copiar; selecciona el texto de la tabla.", true); } });
+    const lp = m.querySelector("#dg-limpiar"); if (lp) lp.addEventListener("click", () => { try { localStorage.removeItem("pmo_diag"); } catch (x) { /* nada */ } S.diag = []; cerrar(); toast("Diagnóstico limpio"); });
+  }
   function conMedicion(api) {
     const w = {};
     Object.keys(api).forEach((op) => {
@@ -3125,7 +3149,9 @@ ${x.h}</section>`).join("")}
       w[op] = async (...a) => {
         const id = ++seqOp;
         EN_CURSO.set(id, { etq: `${ETQ_OP[op] || op}${typeof a[0] === "string" && /^(agregar|actualizar|eliminar|leerTabla)/.test(op) ? " " + a[0] : ""}`, t0: Date.now() });
-        try { return await api[op](...a); } finally { EN_CURSO.delete(id); }
+        try { return await api[op](...a); }
+        catch (e) { registrarDiag(EN_CURSO.get(id) ? EN_CURSO.get(id).etq : op, e, Date.now() - (EN_CURSO.get(id) || { t0: Date.now() }).t0); throw e; }
+        finally { EN_CURSO.delete(id); }
       };
     });
     return w;
