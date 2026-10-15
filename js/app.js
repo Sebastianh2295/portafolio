@@ -80,7 +80,13 @@
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const cop = (n) => "$" + (Number(n) || 0).toLocaleString("es-CO", { maximumFractionDigits: 0 });
   const pct = (n) => `${Math.round(Number(n) || 0)}%`;
-  const fecha = (iso) => { const s = String(iso || ""); return /^\d{4}-\d{2}-\d{2}$/.test(s) ? `${s.slice(8, 10)}/${s.slice(5, 7)}/${s.slice(0, 4)}` : s || "—"; };
+  // Fecha legible: acepta ISO, ISO con hora y el número de serie de Excel (por si una columna llegó sin convertir).
+  const fecha = (iso) => {
+    let s = typeof iso === "number" && iso > 20000 && iso < 90000 ? new Date(Math.round((iso - 25569) * 86400000)).toISOString().slice(0, 10) : String(iso ?? "");
+    if (/^\d{5}$/.test(s) && Number(s) > 20000) s = new Date(Math.round((Number(s) - 25569) * 86400000)).toISOString().slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}[T ]/.test(s)) s = s.slice(0, 10);
+    return /^\d{4}-\d{2}-\d{2}$/.test(s) ? `${s.slice(8, 10)}/${s.slice(5, 7)}/${s.slice(0, 4)}` : s || "—";
+  };
   const lc = (s) => String(s || "").trim().toLowerCase();
   const app = () => $("#app");
   const esURL = (u) => /^https?:\/\/\S+$/i.test(String(u || "").trim());
