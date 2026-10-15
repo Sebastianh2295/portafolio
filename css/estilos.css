@@ -1176,3 +1176,11 @@ table.gt-izq thead th { position: sticky; top: 0; z-index: 3; height: 48px; back
 .pill.crono-sim-pill { background: #fff4d6; color: #7a5b00; font-weight: 600; }
 .ed-panel-cab { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 .ed-panel .btn.chico { margin-top: 8px; }
+.ed-items { margin: 0; padding-left: 18px; }
+.ed-items li { margin: 3px 0; }
+.ed-quitar { border: 0; background: none; color: #9aa5b1; cursor: pointer; font-size: 11px; padding: 0 3px; visibility: hidden; }
+.ed-items li:hover .ed-quitar { visibility: visible; }
+.ed-quitar:hover { color: #b3261e; }
+.ed-agregar { display: flex; gap: 6px; margin: 8px 0 4px; }
+.ed-agregar input { flex: 1; min-width: 0; height: 30px; padding: 0 8px; border: 1px solid var(--linea); border-radius: 6px; font: inherit; font-size: 12.5px; }
+.ed-agregar .btn { margin-top: 0 !important; }

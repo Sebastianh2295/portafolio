@@ -2193,6 +2193,7 @@
     const d = real - plan;
     return d >= -5 ? "ed-ok" : d >= -15 ? "ed-warn" : "ed-bad";
   }
+  const partirItems = (txt) => String(txt || "").split(/\n|•|·|;|(?:^|\s)-\s/).map((x) => x.trim()).filter(Boolean);
   function vistaEDT(p, ts, corte, conLado = true) {
     if (!ts.length) return vacio("Sin tareas.");
     // Avance de un nodo: sus tareas hoja (o él mismo si es hoja), ponderadas por duración.
@@ -2226,6 +2227,18 @@
       return `<div class="ed-col">${caja(ts[i], avance(i), "ed-fase")}${subs.length ? `<div class="ed-subs">${subs.map((j) => caja(ts[j], avance(j))).join("")}</div>` : ""}</div>`;
     }).join("");
     const ult = R.seguimientosDe(p.ID_Proyecto, S.datos.Seguimientos).slice(-1)[0];
+    // Paneles de la última sesión: se puede agregar o quitar ítems aquí mismo (quedan en esa sesión de seguimiento).
+    const puedeSeg = R.puedeEditar(S.usuario, p, "seguimiento");
+    const itemsDe = (txt) => partirItems(txt);
+    const TIT_SEG = { Logros: "Logros del periodo", Proximos_Pasos: "Próximos pasos", Bloqueos: "Bloqueos" };
+    const panelSeg = (k) => {
+      if (k === "Bloqueos" && (!ult || (!ult.Bloqueos && !puedeSeg))) return "";
+      const items = ult ? itemsDe(ult[k]) : [];
+      return `<div class="ed-panel ${k === "Bloqueos" ? "ed-bloq" : ""}"><div class="ed-panel-cab"><h3>${TIT_SEG[k]}</h3>${ult && puedeSeg ? `<button type="button" class="btn enlace" data-ed-editseg="${esc(ult.ID_Seguimiento)}">Editar sesión</button>` : ""}</div>
+        ${items.length ? `<ul class="ed-items">${items.map((x, i) => `<li>${esc(x)}${ult && puedeSeg ? ` <button type="button" class="ed-quitar" data-ed-quitar="${k}" data-i="${i}" title="Quitar">✕</button>` : ""}</li>`).join("")}</ul>` : `<p class="sub">${ult ? "Sin registrar." : "Aún no hay sesiones de seguimiento."}</p>`}
+        ${ult && puedeSeg ? `<form class="ed-agregar" data-ed-add="${k}"><input placeholder="${k === "Logros" ? "Agregar un logro…" : k === "Proximos_Pasos" ? "Agregar un próximo paso…" : "Agregar un bloqueo…"}" aria-label="Agregar"><button class="btn chico">+</button></form>` : ""}
+        ${k === "Logros" ? `<div class="sub">${ult ? `Se guardan en la sesión del ${fecha(ult.Fecha_Corte)}.` : "Registra la primera sesión para empezar."}</div>${!ult && p.Estado === "Activo" && puedeSeg ? `<button type="button" class="btn chico primario" data-ed-seg>Registrar seguimiento</button>` : ""}` : ""}</div>`;
+    };
     const lista = (txt) => { const l = String(txt || "").split(/\n|•|·|;|(?:^|\s)-\s/).map((x) => x.trim()).filter(Boolean); return l.length ? `<ul>${l.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : `<p class="sub">Sin registrar.</p>`; };
     const equipo = [["Gerente de proyecto", nombreUsuario(p.PM)], ...stakeholdersDe(p.ID_Proyecto).map((x) => [x.Rol, x.Nombre])].filter(([, n]) => n);
     return `<div class="ed-wrap ${conLado ? "" : "sin-lado"} ${fases.length > 5 ? "muchas" : ""}">
@@ -2235,11 +2248,7 @@
         <div class="ed-leyenda"><span><i class="ed-comp"></i>Completado</span><span><i class="ed-ok"></i>En plazo (≤ 5 pp)</span><span><i class="ed-warn"></i>Atraso 6-15 pp</span><span><i class="ed-bad"></i>Atraso ≥ 16 pp</span><span><i class="ed-noini"></i>No iniciado</span><span class="sub">Real / plan al corte ${fecha(corte)}</span></div>
       </div>
       ${conLado ? `<aside class="ed-lado">
-        <div class="ed-panel"><div class="ed-panel-cab"><h3>Logros del periodo</h3>${ult ? `<button type="button" class="btn enlace" data-ed-editseg="${esc(ult.ID_Seguimiento)}">Editar</button>` : ""}</div>${ult ? lista(ult.Logros) : `<p class="sub">Aún no hay seguimientos.</p>`}
-          <div class="sub">${ult ? `Sesión del ${fecha(ult.Fecha_Corte)} · ` : ""}Se diligencian en <b>«Registrar seguimiento»</b> (logros, próximos pasos y bloqueos).</div>
-          ${p.Estado === "Activo" ? `<button type="button" class="btn chico primario" data-ed-seg>Registrar seguimiento</button>` : ""}</div>
-        <div class="ed-panel"><div class="ed-panel-cab"><h3>Próximos pasos</h3>${ult ? `<button type="button" class="btn enlace" data-ed-editseg="${esc(ult.ID_Seguimiento)}">Editar</button>` : ""}</div>${ult ? lista(ult.Proximos_Pasos) : `<p class="sub">—</p>`}</div>
-        ${ult && ult.Bloqueos ? `<div class="ed-panel ed-bloq"><h3>Bloqueos</h3>${lista(ult.Bloqueos)}</div>` : ""}
+        ${["Logros", "Proximos_Pasos", "Bloqueos"].map((k) => panelSeg(k)).join("")}
         <div class="ed-panel"><h3>Equipo</h3>${equipo.map(([r, n]) => `<div><b>${esc(r)}:</b> ${esc(n)}</div>`).join("")}</div>
       </aside>` : ""}</div>`;
   }
@@ -2500,6 +2509,20 @@
       const marcar = (i, on) => { if (izq[i]) izq[i].classList.toggle("gt-sobre", on); if (dr[i]) dr[i].classList.toggle("gt-sobre", on); };
       [izq, dr].forEach((arrF) => arrF.forEach((r, i) => { r.addEventListener("mouseenter", () => marcar(i, true)); r.addEventListener("mouseleave", () => marcar(i, false)); }));
     }
+    const ultSeg = () => R.seguimientosDe(pid, S.datos.Seguimientos).slice(-1)[0];
+    el.querySelectorAll("[data-ed-add]").forEach((f) => f.addEventListener("submit", (ev) => {
+      ev.preventDefault();
+      const k = f.dataset.edAdd, txt = f.querySelector("input").value.trim(), sg = ultSeg();
+      if (!txt || !sg) return;
+      const nuevo = [...partirItems(sg[k]), txt].join("\n");
+      guardar(() => S.api.actualizarPorId("Seguimientos", "ID_Seguimiento", sg.ID_Seguimiento, { [k]: nuevo }), "Agregado a la sesión del " + fecha(sg.Fecha_Corte));
+    }));
+    el.querySelectorAll("[data-ed-quitar]").forEach((x) => x.addEventListener("click", () => {
+      const k = x.dataset.edQuitar, i = Number(x.dataset.i), sg = ultSeg();
+      if (!sg) return;
+      const l = partirItems(sg[k]); l.splice(i, 1);
+      guardar(() => S.api.actualizarPorId("Seguimientos", "ID_Seguimiento", sg.ID_Seguimiento, { [k]: l.join("\n") }), "Quitado");
+    }));
     el.querySelectorAll("[data-ed-seg]").forEach((x) => x.addEventListener("click", () => formSeguimiento(p)));
     el.querySelectorAll("[data-ed-editseg]").forEach((x) => x.addEventListener("click", () => { const sg = S.datos.Seguimientos.find((y) => y.ID_Seguimiento === x.dataset.edEditseg); if (sg) formEditarSeguimiento(sg); }));
     el.querySelectorAll("[data-gt-modo]").forEach((x) => x.addEventListener("click", () => { F.modo = x.dataset.gtModo; delete F.scroll; render(); }));
