@@ -935,3 +935,8 @@ th { letter-spacing: .03em; }
 
 /* Respeta a quien prefiere menos movimiento */
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
+/* Control de cambios: impactos y documento */
+.pill.cc-imp { background: #eef3fb; color: var(--azul); border: 1px solid #d5e2f5; }
+.cc-resumen { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+a.cc-doc { font-size: 13px; font-weight: 600; color: var(--azul); text-decoration: none; }
+a.cc-doc:hover { text-decoration: underline; }

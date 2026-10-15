@@ -1892,7 +1892,8 @@
         <td class="hv-nw">${califTxt(r.Probabilidad_Residual, r.Impacto_Residual)}</td><td>${esc(origenRiesgo(r))}</td></tr>`), "Sin riesgos.")}
       <h2>8. Control de cambios</h2>
       ${(() => { const lb = lineaBase(p); return lb.tiene ? `<p class="hv-p"><b>Línea base:</b> fin ${fecha(lb.fb)} → actual ${fecha(p.Fecha_Fin_Plan)}${lb.dias !== null ? ` (${lb.dias > 0 ? "+" : ""}${lb.dias} días)` : ""} · presupuesto ${lb.pb !== null ? cop(lb.pb) : "—"} → actual ${cop(p.Presupuesto)}${lb.pctCosto !== null ? ` (${lb.pctCosto > 0 ? "+" : ""}${lb.pctCosto}%)` : ""}</p>` : ""; })()}
-      ${tabla(["Fecha", "Tipo", "Cambio", "Impacto", "Estado"], cambiosDe(pid).map((c) => `<tr><td class="hv-nw">${fecha(c.Fecha)}</td><td>${t(c.Tipo)}</td><td>${t(c.Descripcion)}</td><td>${t(c.Impacto)}${c.Nueva_Fecha_Fin ? `<br><small>Nueva fecha fin ${fecha(c.Nueva_Fecha_Fin)}</small>` : ""}${num0(c.Nuevo_Presupuesto) !== null ? `<br><small>Nuevo presupuesto ${cop(c.Nuevo_Presupuesto)}</small>` : ""}</td><td>${t(c.Estado)}${c.Fecha_Decision ? `<br><small>${fecha(c.Fecha_Decision)}</small>` : ""}</td></tr>`), "Sin cambios registrados.")}
+      ${(() => { const ap = cambiosDe(pid).filter((c) => c.Estado === "Aprobado"); return ap.length ? `<p class="hv-p"><b>Cambios aprobados:</b> ${ap.length} · ${IMPACTOS_CC.map((i) => { const n = ap.filter((c) => impactosDe(c).includes(i)).length; return n ? `${i}: ${n}` : ""; }).filter(Boolean).join(" · ")}</p>` : ""; })()}
+      ${tabla(["N.º / Fecha", "Impacta en", "Cambio", "Efecto", "Estado", "Documento"], cambiosDe(pid).map((c) => `<tr><td class="hv-nw">${c.Numero_CC ? `<b>${t(c.Numero_CC)}</b><br>` : ""}${fecha(c.Fecha)}</td><td>${t(impactosDe(c).join(", "))}</td><td>${t(c.Descripcion)}${c.Justificacion ? `<br><small>Por qué: ${t(c.Justificacion)}</small>` : ""}</td><td>${t(c.Impacto)}${c.Nueva_Fecha_Fin ? `<br><small>Nueva fecha fin ${fecha(c.Nueva_Fecha_Fin)}</small>` : ""}${num0(c.Nuevo_Presupuesto) !== null ? `<br><small>Nuevo presupuesto ${cop(c.Nuevo_Presupuesto)}</small>` : ""}</td><td>${t(c.Estado)}${c.Fecha_Decision ? `<br><small>${fecha(c.Fecha_Decision)}</small>` : ""}</td><td>${c.URL_Documento && esURL(c.URL_Documento) ? `<a href="${esc(c.URL_Documento)}" target="_blank" rel="noopener">Ver documento</a>` : "—"}</td></tr>`), "Sin cambios registrados.")}
       <h2>9. Dependencias</h2>
       ${tabla(["Relación", "Proyecto", "Tipo", "Alerta"], [...depsDe(pid).map((d) => `<tr><td>Depende de</td><td>${esc((proyecto(d.Depende_De) || {}).Nombre || d.Depende_De)}</td><td>${t(d.Tipo)}</td><td>${esc(conflictoDep(d) || "—")}</td></tr>`),
         ...bloqueaA(pid).map((d) => `<tr><td>Bloquea a</td><td>${esc((proyecto(d.ID_Proyecto) || {}).Nombre || d.ID_Proyecto)}</td><td>${t(d.Tipo)}</td><td>${esc(conflictoDep(d) || "—")}</td></tr>`)], "Sin dependencias.")}
@@ -1951,35 +1952,64 @@
           <div class="dato"><div class="dato-k">Presupuesto actual</div><div class="dato-v">${cop(p.Presupuesto)} · ${desvio(lb.pctCosto, "%")}</div></div></div>`
         : `<p class="sub">Aún no hay línea base. Se fija sola con el primer cambio aprobado (toma la fecha fin y el presupuesto de ese momento)${puedeDecidir ? ", o puedes fijarla ahora" : ""}.</p>`}
       </div>
-      <div class="card"><div class="titulo-fila"><h2>Control de cambios ${pend ? `<span class="contador rojo">${pend} por decidir</span>` : ""}</h2>${puedeSolicitar ? `<button class="btn primario" id="b-cambio">+ Solicitar cambio</button>` : ""}</div>
-        <p class="sub">Cambios de alcance, tiempo, costo o recursos. El PM los solicita y la PMO o el Admin los aprueban; al aprobar, la fecha fin y el presupuesto nuevos se aplican al proyecto.</p>
-        ${lista.length ? `<div class="tabla-scroll"><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Cambio</th><th>Impacto</th><th>Estado</th><th></th></tr></thead><tbody>
-          ${lista.map((c) => `<tr><td class="nowrap">${fecha(c.Fecha)}<div class="sub">${esc(nombreUsuario(c.Solicitado_Por))}</div></td><td>${esc(c.Tipo)}</td>
-            <td><b>${esc(c.Descripcion)}</b>${c.Justificacion ? `<div class="sub">Por qué: ${esc(c.Justificacion)}</div>` : ""}</td>
+      <div class="card"><div class="titulo-fila"><h2>Control de cambios ${pend ? `<span class="contador rojo">${pend} por decidir</span>` : ""}</h2>${puedeSolicitar ? `<button class="btn primario" id="b-cambio">+ Control de cambios</button>` : ""}</div>
+        <p class="sub">Cambios que impactan tiempo, costo, alcance, recursos o calidad. El PM los registra y la PMO o el Admin los aprueban; al aprobar, la fecha fin y el presupuesto nuevos se aplican al proyecto. Adjunta el enlace del documento de control de cambios firmado.</p>
+        ${lista.length ? `<div class="cc-resumen">${IMPACTOS_CC.map((i) => { const n = lista.filter((c) => c.Estado === "Aprobado" && impactosDe(c).includes(i)).length; return n ? `<span class="pill cc-imp">${esc(i)}: ${n} aprobado${n > 1 ? "s" : ""}</span>` : ""; }).join(" ")}</div>
+          <div class="tabla-scroll"><table><thead><tr><th>Fecha</th><th>Impacta en</th><th>Cambio</th><th>Efecto</th><th>Estado</th><th></th></tr></thead><tbody>
+          ${lista.map((c) => `<tr><td class="nowrap">${c.Numero_CC ? `<b>${esc(c.Numero_CC)}</b><br>` : ""}${fecha(c.Fecha)}<div class="sub">${esc(nombreUsuario(c.Solicitado_Por))}</div></td><td>${impactosDe(c).map((i) => `<span class="pill cc-imp">${esc(i)}</span>`).join(" ") || "—"}</td>
+            <td><b>${esc(c.Descripcion)}</b>${c.Justificacion ? `<div class="sub">Por qué: ${esc(c.Justificacion)}</div>` : ""}${c.URL_Documento && esURL(c.URL_Documento) ? `<div><a class="cc-doc" href="${esc(c.URL_Documento)}" target="_blank" rel="noopener">📄 Documento del control de cambios ↗</a></div>` : ""}</td>
             <td>${esc(c.Impacto || "")}${c.Nueva_Fecha_Fin ? `<div class="sub">Nueva fecha fin: ${fecha(c.Nueva_Fecha_Fin)}</div>` : ""}${num0(c.Nuevo_Presupuesto) !== null ? `<div class="sub">Nuevo presupuesto: ${cop(c.Nuevo_Presupuesto)}</div>` : ""}</td>
             <td>${pill(c.Estado || "Solicitado")}${c.Fecha_Decision ? `<div class="sub">${fecha(c.Fecha_Decision)} · ${esc(nombreUsuario(c.Decidido_Por))}</div>` : ""}${c.Comentario_Decision ? `<div class="sub">${esc(c.Comentario_Decision)}</div>` : ""}</td>
-            <td class="derecha nowrap">${c.Estado === "Solicitado" && puedeDecidir ? `<button class="btn chico primario" data-decidir="${esc(c.ID_Cambio)}">Decidir</button> ` : ""}${c.Estado === "Solicitado" && puedeSolicitar ? `<button class="btn chico" data-cambio="${esc(c.ID_Cambio)}">Editar</button>` : ""}</td></tr>`).join("")}
+            <td class="derecha nowrap">${c.Estado === "Solicitado" && puedeDecidir ? `<button class="btn chico primario" data-decidir="${esc(c.ID_Cambio)}">Decidir</button> ` : ""}${puedeSolicitar || puedeDecidir ? `<button class="btn chico" data-cambio="${esc(c.ID_Cambio)}">${c.Estado === "Solicitado" ? "Editar" : "Editar / documento"}</button>` : ""}</td></tr>`).join("")}
         </tbody></table></div>` : vacio("Sin cambios registrados.")}</div>`;
   }
+  // Un control de cambios puede impactar varias cosas a la vez (se guardan en la columna Tipo, separadas por coma).
+  const IMPACTOS_CC = ["Tiempo", "Costo", "Alcance", "Recursos", "Calidad"];
+  const impactosDe = (c) => String(c.Tipo || "").split(/[,;]/).map((x) => x.trim()).filter(Boolean);
   function formCambio(p, c) {
     const nuevo = !c;
+    const decidido = !nuevo && c.Estado !== "Solicitado";
+    const puedeDecidir = R.puede(S.usuario, "verTodo");
+    const opcionesImp = [...new Set([...IMPACTOS_CC, ...(S.cat.Tipo_Cambio || []), ...(nuevo ? [] : impactosDe(c))])];
     const campos = [
-      { k: "Tipo", label: "Tipo de cambio", tipo: "select", opciones: S.cat.Tipo_Cambio, def: "Alcance" },
-      { k: "Fecha", label: "Fecha de la solicitud", tipo: "date", def: R.hoyISO() },
+      { k: "Tipo", label: "¿En qué impacta?", tipo: "checks", opciones: opcionesImp, vacio: "Sin opciones" },
+      { k: "Numero_CC", label: "N.º o código del control de cambios (opcional)", placeholder: "Ej.: CC-003 o FM-GPRO-19 #3" },
+      { k: "Fecha", label: "Fecha del cambio", tipo: "date", def: R.hoyISO() },
+      { k: "URL_Documento", label: "Enlace del documento (opcional)", tipo: "url", placeholder: "https://…sharepoint.com/… (formato firmado, acta del comité)", ancho: true },
       { k: "Descripcion", label: "¿Qué cambia?", tipo: "textarea", placeholder: "Describe el cambio" },
       { k: "Justificacion", label: "¿Por qué?", tipo: "textarea", placeholder: "Motivo o necesidad" },
       { k: "Impacto", label: "Impacto", tipo: "textarea", placeholder: "Efecto en alcance, calidad, equipo, riesgos…" },
       { seccion: "Si cambia la fecha o el costo", ayuda: "se aplican al proyecto cuando se aprueba" },
-      { k: "Nueva_Fecha_Fin", label: "Nueva fecha fin", tipo: "date", ayuda: `Hoy: ${fecha(p.Fecha_Fin_Plan)}` },
-      { k: "Nuevo_Presupuesto", label: "Nuevo presupuesto (COP)", tipo: "number", min: 0, ayuda: `Hoy: ${cop(p.Presupuesto)}` },
+      { k: "Nueva_Fecha_Fin", label: "Nueva fecha fin", tipo: "date", ayuda: decidido ? "Ya aplicado al proyecto" : `Hoy: ${fecha(p.Fecha_Fin_Plan)}`, bloqueado: decidido },
+      { k: "Nuevo_Presupuesto", label: "Nuevo presupuesto (COP)", tipo: "number", min: 0, ayuda: decidido ? "Ya aplicado al proyecto" : `Hoy: ${cop(p.Presupuesto)}`, bloqueado: decidido },
+      ...(nuevo && puedeDecidir ? [{ k: "Estado_Inicial", label: "Estado", tipo: "select", opciones: [["Solicitado", "Solicitado (queda por decidir)"], ["Aprobado", "Ya aprobado (p. ej. en comité): se aplica de una vez"]], def: "Solicitado" }] : []),
     ];
-    modal(nuevo ? `Solicitar cambio · ${p.Nombre}` : "Editar solicitud de cambio", campos, nuevo ? {} : c, (fd) => {
+    const validar = (fd) => (!fd.Tipo ? "Marca en qué impacta el cambio (tiempo, costo, alcance…)." : !fd.Descripcion ? "Describe qué cambia." : "");
+    modal(nuevo ? `Control de cambios · ${p.Nombre}` : `Control de cambios${c.Numero_CC ? ` ${c.Numero_CC}` : ""}`, campos, nuevo ? {} : c, (fd) => {
+      if (decidido) { delete fd.Nueva_Fecha_Fin; delete fd.Nuevo_Presupuesto; }
       if (nuevo) {
         const id = R.siguienteIdHijo("CAM", S.datos.Cambios || [], "ID_Cambio", p.ID_Proyecto);
-        guardar(() => S.api.agregarFila("Cambios", { ID_Cambio: id, ID_Proyecto: p.ID_Proyecto, ...fd, Estado: "Solicitado", Solicitado_Por: S.usuario.Correo }), "Cambio solicitado");
-      } else guardar(() => S.api.actualizarPorId("Cambios", "ID_Cambio", c.ID_Cambio, fd), "Solicitud actualizada");
-    }, null, nuevo ? {} : { eliminar: { texto: "Eliminar solicitud", mensaje: "Se borrará esta solicitud de cambio.",
-      accion: () => guardar(() => S.api.eliminarFilas("Cambios", "ID_Cambio", [c.ID_Cambio]), "Solicitud eliminada") } });
+        const aprobar = fd.Estado_Inicial === "Aprobado"; delete fd.Estado_Inicial;
+        const fila = { ID_Cambio: id, ID_Proyecto: p.ID_Proyecto, ...fd, Estado: "Solicitado", Solicitado_Por: S.usuario.Correo };
+        guardar(async () => {
+          await S.api.agregarFila("Cambios", fila);
+          if (aprobar) await aplicarCambio(p, fila, "Aprobado", "Registrado como ya aprobado.");
+        }, aprobar ? "Control de cambios registrado y aplicado" : "Cambio solicitado");
+      } else guardar(() => S.api.actualizarPorId("Cambios", "ID_Cambio", c.ID_Cambio, fd), "Control de cambios actualizado");
+    }, validar, nuevo ? {} : { eliminar: { texto: "Eliminar", mensaje: decidido ? "Se borrará este registro de cambio (lo que ya se aplicó al proyecto no se revierte)." : "Se borrará esta solicitud de cambio.",
+      accion: () => guardar(() => S.api.eliminarFilas("Cambios", "ID_Cambio", [c.ID_Cambio]), "Registro eliminado") } });
+  }
+  // Aprobar o rechazar: si se aprueba, la fecha fin y el presupuesto nuevos pasan al proyecto (y se fija la línea base si no existía).
+  async function aplicarCambio(p, c, estado, comentario) {
+    if (estado === "Aprobado") {
+      const lb = lineaBase(p);
+      const cambiosP = {};
+      if (!lb.tiene) { cambiosP.Fecha_Fin_Base = p.Fecha_Fin_Plan; cambiosP.Presupuesto_Base = p.Presupuesto; }
+      if (c.Nueva_Fecha_Fin) cambiosP.Fecha_Fin_Plan = c.Nueva_Fecha_Fin;
+      if (num0(c.Nuevo_Presupuesto) !== null) cambiosP.Presupuesto = Number(c.Nuevo_Presupuesto);
+      if (Object.keys(cambiosP).length) await S.api.actualizarPorId("Proyectos", "ID_Proyecto", p.ID_Proyecto, { ...cambiosP, ...sello() });
+    }
+    await S.api.actualizarPorId("Cambios", "ID_Cambio", c.ID_Cambio, { Estado: estado, Decidido_Por: S.usuario.Correo, Fecha_Decision: R.hoyISO(), Comentario_Decision: comentario || "" });
   }
   function decidirCambio(p, c) {
     const campos = [
@@ -1987,18 +2017,8 @@
       { k: "Comentario_Decision", label: "Comentario (opcional)", tipo: "textarea", placeholder: "Condiciones, instancia que aprobó…" },
     ];
     const efectos = [c.Nueva_Fecha_Fin ? `fecha fin ${fecha(p.Fecha_Fin_Plan)} → ${fecha(c.Nueva_Fecha_Fin)}` : "", num0(c.Nuevo_Presupuesto) !== null ? `presupuesto ${cop(p.Presupuesto)} → ${cop(c.Nuevo_Presupuesto)}` : ""].filter(Boolean);
-    modal(`Decidir cambio · ${c.Tipo}`, campos, {}, (fd) => guardar(async () => {
-      const aprobado = fd.Decision !== "Rechazado";
-      if (aprobado) {
-        const lb = lineaBase(p);
-        const cambiosP = {};
-        if (!lb.tiene) { cambiosP.Fecha_Fin_Base = p.Fecha_Fin_Plan; cambiosP.Presupuesto_Base = p.Presupuesto; }
-        if (c.Nueva_Fecha_Fin) cambiosP.Fecha_Fin_Plan = c.Nueva_Fecha_Fin;
-        if (num0(c.Nuevo_Presupuesto) !== null) cambiosP.Presupuesto = Number(c.Nuevo_Presupuesto);
-        if (Object.keys(cambiosP).length) await S.api.actualizarPorId("Proyectos", "ID_Proyecto", p.ID_Proyecto, { ...cambiosP, ...sello() });
-      }
-      await S.api.actualizarPorId("Cambios", "ID_Cambio", c.ID_Cambio, { Estado: aprobado ? "Aprobado" : "Rechazado", Decidido_Por: S.usuario.Correo, Fecha_Decision: R.hoyISO(), Comentario_Decision: fd.Comentario_Decision });
-    }, fd.Decision === "Rechazado" ? "Cambio rechazado" : "Cambio aprobado y aplicado"), null,
+    modal(`Decidir cambio · ${impactosDe(c).join(", ") || c.Tipo}`, campos, {}, (fd) => guardar(() => aplicarCambio(p, c, fd.Decision === "Rechazado" ? "Rechazado" : "Aprobado", fd.Comentario_Decision),
+      fd.Decision === "Rechazado" ? "Cambio rechazado" : "Cambio aprobado y aplicado"), null,
     { antes: `<div class="resumen-filtro"><b>${esc(c.Descripcion)}</b>${efectos.length ? `<br>Si se aprueba: ${esc(efectos.join(" · "))}` : "<br>No cambia fechas ni presupuesto."}</div>` });
   }
   function fijarLineaBase(p) {
@@ -3626,9 +3646,9 @@
           { t: "Prioridad", v: (t) => t.Prioridad, ancho: 11 }, { t: "Registrado", v: (t) => t.Fecha_Registro, tipo: "fecha" }], filas: ticketsDe(pid) },
         { nombre: "Documentos", columnas: [{ t: "Documento", v: (d) => d.Nombre, ancho: 40 }, { t: "Tipo", v: (d) => d.Tipo, ancho: 18 }, { t: "Descripción", v: (d) => d.Descripcion, ancho: 36 },
           { t: "Enlace", v: (d) => d.URL, ancho: 60 }, { t: "Registrado", v: (d) => d.Fecha_Registro, tipo: "fecha" }], filas: documentosDe(pid) },
-        { nombre: "Cambios", columnas: [{ t: "Fecha", v: (c) => c.Fecha, tipo: "fecha" }, { t: "Tipo", v: (c) => c.Tipo, ancho: 12 }, { t: "Cambio", v: (c) => c.Descripcion, ancho: 44 },
+        { nombre: "Cambios", columnas: [{ t: "N.º", v: (c) => c.Numero_CC, ancho: 12 }, { t: "Fecha", v: (c) => c.Fecha, tipo: "fecha" }, { t: "Impacta en", v: (c) => impactosDe(c).join(", "), ancho: 20 }, { t: "Cambio", v: (c) => c.Descripcion, ancho: 44 },
           { t: "Justificación", v: (c) => c.Justificacion, ancho: 36 }, { t: "Impacto", v: (c) => c.Impacto, ancho: 36 }, { t: "Nueva fecha fin", v: (c) => c.Nueva_Fecha_Fin, tipo: "fecha" },
-          { t: "Nuevo presupuesto", v: (c) => c.Nuevo_Presupuesto, tipo: "cop" }, { t: "Estado", v: (c) => c.Estado, ancho: 12, color: true }, { t: "Decisión", v: (c) => c.Fecha_Decision, tipo: "fecha" }], filas: cambiosDe(pid) },
+          { t: "Nuevo presupuesto", v: (c) => c.Nuevo_Presupuesto, tipo: "cop" }, { t: "Estado", v: (c) => c.Estado, ancho: 12, color: true }, { t: "Decisión", v: (c) => c.Fecha_Decision, tipo: "fecha" }, { t: "Documento", v: (c) => c.URL_Documento, ancho: 50 }], filas: cambiosDe(pid) },
         { nombre: "Lecciones", columnas: [{ t: "Fecha", v: (l) => l.Fecha, tipo: "fecha" }, { t: "Tipo", v: (l) => l.Tipo, ancho: 12 }, { t: "Categoría", v: (l) => l.Categoria, ancho: 16 },
           { t: "Qué pasó", v: (l) => l.Situacion, ancho: 40 }, { t: "Lección", v: (l) => l.Leccion, ancho: 40 }, { t: "Recomendación", v: (l) => l.Recomendacion, ancho: 40 }], filas: leccionesDe(pid) },
         { nombre: "RACI", columnas: [{ t: "Entregable", v: (r) => r.Entregable, ancho: 36 }, ...[{ k: "PM", t: `PM (${nombreUsuario(p.PM)})` }, ...stakeholdersDe(pid).map((x) => ({ k: x.ID_Stakeholder, t: `${x.Rol} (${x.Nombre})` }))]
