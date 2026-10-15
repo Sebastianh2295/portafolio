@@ -1900,6 +1900,7 @@
     EDT: ["edt", "wbs", "numerodeesquema", "outlinenumber"],
     Nivel: ["niveldeesquema", "outlinelevel", "nivel"],
     Hito: ["hito", "milestone"],
+    Id: ["iddetarea", "iddelatarea", "taskid", "id", "uid", "identificadorunico", "uniqueid"],
   };
   async function leerPlannerExcel(file) {
     const X = await libXlsx();
@@ -1927,7 +1928,7 @@
       const nombre = String(val(r, "Nombre")).trim();
       const etiquetas = String(val(r, "Etiquetas"));
       const inicio = aFechaISO(val(r, "Inicio"), X), fin = aFechaISO(val(r, "Fin"), X);
-      return { EDT: String(val(r, "EDT") || ""), Nivel: Number(val(r, "Nivel")) || 0, Nombre: nombre, Grupo: String(val(r, "Grupo") || "").trim(),
+      return { ID_Externo: String(val(r, "Id") || "").trim(), EDT: String(val(r, "EDT") || ""), Nivel: Number(val(r, "Nivel")) || 0, Nombre: nombre, Grupo: String(val(r, "Grupo") || "").trim(),
         Inicio: inicio || fin, Fin: fin || inicio, Pct_Completado: Math.round(pct),
         Hito: esSi(val(r, "Hito")) || /\bhito\b|milestone/i.test(etiquetas) || /^hito\b/i.test(nombre) ? "Sí" : "No",
         Resumen: "No", Responsable: String(val(r, "Responsable") || "").replace(/\s*;\s*/g, "; ").trim(), Inicio_Base: "", Fin_Base: "", Predecesoras: "" };
@@ -1979,7 +1980,7 @@
     const idPorUid = Object.fromEntries(tareasXml.map((t) => [v(t, "UID"), v(t, "ID")]));
     const tareas = tareasXml.map((t) => {
       const base = hijos(t, "Baseline").find((b) => v(b, "Number") === "0");
-      return { EDT: v(t, "WBS") || v(t, "OutlineNumber"), Nivel: Number(v(t, "OutlineLevel")) || 1, Nombre: v(t, "Name"), Grupo: "",
+      return { ID_Externo: v(t, "UID"), EDT: v(t, "WBS") || v(t, "OutlineNumber"), Nivel: Number(v(t, "OutlineLevel")) || 1, Nombre: v(t, "Name"), Grupo: "",
         Inicio: v(t, "Start").slice(0, 10), Fin: v(t, "Finish").slice(0, 10), Pct_Completado: Number(v(t, "PercentComplete")) || 0,
         Hito: v(t, "Milestone") === "1" ? "Sí" : "No", Resumen: v(t, "Summary") === "1" ? "Sí" : "No",
         Responsable: (asign[v(t, "UID")] || []).join("; "),
@@ -2077,6 +2078,22 @@
   }
   const importarCronograma = (p) => elegirCronograma((res, archivo) => previsualizarCronograma(p, res, archivo));
 
+  // Línea base del cronograma cuando el archivo no la trae (Planner / Excel): cada tarea conserva las fechas con las que
+  // apareció por primera vez (se arrastran de versión en versión). modo: "archivo" | "mantener" | "nueva".
+  function conLineaBase(pid, tareas, modo) {
+    if (modo === "archivo") return tareas;
+    if (modo === "nueva") return tareas.map((t) => ({ ...t, Inicio_Base: t.Inicio, Fin_Base: t.Fin }));
+    const prev = tareasDe(pid);
+    const porId = new Map(), porEdtNom = new Map(), porNom = new Map();
+    prev.forEach((t) => { if (t.ID_Externo) porId.set(String(t.ID_Externo), t); porEdtNom.set(`${t.EDT}|${normTxt(t.Nombre)}`, t); if (!porNom.has(normTxt(t.Nombre))) porNom.set(normTxt(t.Nombre), t); });
+    return tareas.map((t) => {
+      const a = (t.ID_Externo && porId.get(String(t.ID_Externo))) || porEdtNom.get(`${t.EDT}|${normTxt(t.Nombre)}`) || porNom.get(normTxt(t.Nombre));
+      const ib = a ? a.Inicio_Base || a.Inicio : t.Inicio, fb = a ? a.Fin_Base || a.Fin : t.Fin;
+      return { ...t, Inicio_Base: ib || t.Inicio, Fin_Base: fb || t.Fin };
+    });
+  }
+  const traeBase = (tareas) => tareas.some((t) => t.Inicio_Base && t.Fin_Base);
+
   // Guarda una versión nueva: compacta la anterior, agrega tareas y la fila de versión. Devuelve el cálculo.
   async function guardarVersionCronograma(p, res, archivo, op) {
     const pid = p.ID_Proyecto, hoy = R.hoyISO(), corte = op.corte || hoy;
@@ -2089,7 +2106,7 @@
     const prev = versionVigente(pid);
     const sobran = prev ? tareasDe(pid, prev.ID_Version).filter((t) => t.Resumen !== "Sí" && t.Hito !== "Sí").map((t) => t.ID_Tarea) : [];
     if (sobran.length) await S.api.eliminarFilas("Tareas", "ID_Tarea", sobran);
-    const filas = lista.map((t, k) => ({ ID_Tarea: `${vid}-${k + 1}`, ID_Proyecto: pid, ID_Version: vid, Orden: k + 1, EDT: t.EDT, Nivel: Number(t.Nivel) || 1, Nombre: t.Nombre, Grupo: t.Grupo,
+    const filas = lista.map((t, k) => ({ ID_Tarea: `${vid}-${k + 1}`, ID_Proyecto: pid, ID_Version: vid, ID_Externo: t.ID_Externo || "", Orden: k + 1, EDT: t.EDT, Nivel: Number(t.Nivel) || 1, Nombre: t.Nombre, Grupo: t.Grupo,
       Inicio: t.Inicio, Fin: t.Fin, Duracion_Dias: t.Inicio && t.Fin ? R.difDias(t.Fin, t.Inicio) + 1 : "", Pct_Completado: Number(t.Pct_Completado) || 0, Hito: t.Hito, Resumen: t.Resumen,
       Responsable: t.Responsable, Inicio_Base: t.Inicio_Base, Fin_Base: t.Fin_Base, Predecesoras: t.Predecesoras, Origen: res.origen, Fecha_Importacion: hoy }));
     for (let k = 0; k < filas.length; k += 100) await S.api.agregarFilas("Tareas", filas.slice(k, k + 100));
@@ -2111,7 +2128,11 @@
     const segs = R.seguimientosDe(pid, S.datos.Seguimientos).slice().reverse();
     const usadas = new Set(versionesDe(pid).map((v) => v.ID_Seguimiento).filter(Boolean));
     const cercana = segs.find((s) => Math.abs(R.difDias(hoy, s.Fecha_Corte)) <= 7 && !usadas.has(s.ID_Seguimiento));
-    const c = calcCronograma(res.tareas, hoy);
+    // Contra qué se calcula el planeado: la línea base del archivo (Project) o las fechas originales de cada tarea (Planner / Excel).
+    const prevTs = tareasDe(pid), tieneArchivo = traeBase(res.tareas);
+    const modoDef = tieneArchivo ? "archivo" : prevTs.length ? "mantener" : "nueva";
+    const calcCon = (modo) => calcCronograma(conLineaBase(pid, res.tareas, modo), hoy);
+    const c = calcCon(modoDef);
     const h = planHitos(p, res.tareas);
     const prev = versionVigente(pid);
     const num = prev ? Math.max(...versionesDe(pid).map((v) => Number(v.Numero) || 0)) + 1 : 1;
@@ -2125,14 +2146,18 @@
     const antes = `<div class="crono-prev">
       <div class="crono-prev-cab"><span class="pill vnum">V${num}</span><span class="pill ${res.origen === "Planner" ? "planner" : "msproject"}">${esc(res.origen)}</span> <b>${esc(res.nombre || archivo)}</b> <span class="sub">${esc(archivo)}</span></div>
       <div class="crono-kpis"><div><span>Tareas</span><b>${c.hojas}</b></div><div><span>Desde · hasta</span><b>${fecha(c.inicio)} → ${fecha(c.fin)}</b></div>
-        <div><span>Avance real</span><b>${c.real}%</b></div><div><span>Planeado a hoy</span><b>${c.plan}%</b></div><div><span>Atrasadas</span><b class="${c.atrasadas.length ? "texto-rojo" : ""}">${c.atrasadas.length}</b></div>
+        <div><span>Avance real</span><b>${c.real}%</b></div><div><span>Planeado a hoy</span><b id="cp-plan">${c.plan}%</b></div><div><span>Desviación</span><b id="cp-desv" class="${c.real - c.plan < -5 ? "texto-rojo" : ""}">${c.real - c.plan > 0 ? "+" : ""}${c.real - c.plan} pts</b></div><div><span>Atrasadas</span><b class="${c.atrasadas.length ? "texto-rojo" : ""}">${c.atrasadas.length}</b></div>
         ${prev ? `<div><span>Fin vs V${esc(prev.Numero)}</span><b class="${corrimiento > 0 ? "texto-rojo" : ""}">${corrimiento === null ? "—" : corrimiento === 0 ? "igual" : `${corrimiento > 0 ? "+" : ""}${corrimiento} días`}</b></div>` : ""}</div>
-      <p class="sub">${c.conBase ? "El planeado se calcula contra la línea base guardada en Project." : "El planeado se calcula con las fechas del plan (el archivo no trae línea base)."} Proyecto hoy: real ${pct(p.Avance_Real)} · planeado ${pct(p.Avance_Planeado)}.${prev ? ` La V${esc(prev.Numero)} queda en el historial (con sus fases e hitos) para comparar.` : ""}</p>
+      <p class="sub" id="cp-base">${tieneArchivo ? "El planeado se calcula contra la línea base guardada en el archivo." : prevTs.length ? "El archivo no trae línea base: el planeado se calcula contra las fechas originales de cada tarea (las de la primera versión en que apareció), así los corrimientos se notan." : "Primera versión: sus fechas quedan como línea base; desde la próxima carga el planeado se mide contra ellas."} Proyecto hoy: real ${pct(p.Avance_Real)} · planeado ${pct(p.Avance_Planeado)}.${prev ? ` La V${esc(prev.Numero)} queda en el historial (con sus fases e hitos) para comparar.` : ""}</p>
       ${finTarde ? `<div class="aviso-seg">⚠ El cronograma termina el ${fecha(c.fin)}, después del fin planeado del proyecto (${fecha(p.Fecha_Fin_Plan)}). Si es un cambio aprobado, registra un control de cambios.</div>` : ""}
       <details class="crono-det"><summary>Ver las primeras tareas</summary><div class="tabla-scroll"><table class="no-orden no-recortar crono-muestra"><thead><tr><th>EDT</th><th>Tarea</th><th>Inicio</th><th>Fin</th><th>%</th></tr></thead><tbody>${muestra}</tbody></table></div></details></div>`;
     const campos = [
       { k: "Fecha_Corte", label: "Fecha de corte de esta versión", tipo: "date", def: cercana ? cercana.Fecha_Corte : hoy, ayuda: "El % planeado se calcula a esta fecha." },
       { k: "ID_Seguimiento", label: "Sesión de seguimiento", tipo: "select", opciones: segs.map((s) => [s.ID_Seguimiento, `Sesión del ${fecha(s.Fecha_Corte)} · ${pct(s.Avance_Real)}${usadas.has(s.ID_Seguimiento) ? " (ya tiene versión)" : ""}`]), textoVacio: "No asociar a una sesión", def: cercana ? cercana.ID_Seguimiento : "" },
+      { k: "Base", label: "Calcular el planeado contra", tipo: "select", ancho: true, def: modoDef, opciones: [
+        ...(tieneArchivo ? [["archivo", "La línea base guardada en el archivo"]] : []),
+        ...(prevTs.length ? [["mantener", "Las fechas originales de cada tarea (versiones anteriores)"]] : []),
+        ["nueva", prevTs.length ? "Re-planear: las fechas de esta versión son la nueva línea base" : "Las fechas de esta versión (primera línea base)"]] },
       { k: "Avance", label: "Avance del proyecto", tipo: "select", opciones: [["Sí", "Actualizar con el cronograma"], ["No", "No cambiar"]], def: "Sí" },
       { k: "Hitos", label: "Hitos", tipo: "select", opciones: [["Sí", c.hitos ? `Sincronizar (${h.nuevos.length} nuevo(s) · ${h.cambios.length} actualizado(s))` : "Sincronizar"], ["No", "No tocar los hitos"]], def: c.hitos ? "Sí" : "No" },
       ...(niveles.length > 1 ? [{ k: "Nivel", label: "Niveles a guardar", tipo: "select", textoVacio: `Todos (${res.tareas.length} tareas)`, opciones: niveles.slice(0, -1).map((n) => [String(n), `Hasta el nivel ${n} (${porNivel(n)} tareas)`]), def: grande ? "3" : "" }] : []),
@@ -2141,11 +2166,14 @@
     modal(`Nueva versión del cronograma · ${p.Nombre}`, campos, {}, (fd) => {
       let r;
       guardar(async () => {
-        r = await guardarVersionCronograma(p, res, archivo, { corte: fd.Fecha_Corte, idSeg: fd.ID_Seguimiento, avance: fd.Avance === "Sí", avanceSesion: !!fd.ID_Seguimiento, hitos: fd.Hitos === "Sí", nivel: fd.Nivel, nota: fd.Nota });
+        r = await guardarVersionCronograma(p, { ...res, tareas: conLineaBase(pid, res.tareas, fd.Base || modoDef) }, archivo, { corte: fd.Fecha_Corte, idSeg: fd.ID_Seguimiento, avance: fd.Avance === "Sí", avanceSesion: !!fd.ID_Seguimiento, hitos: fd.Hitos === "Sí", nivel: fd.Nivel, nota: fd.Nota });
         S.fichaTab = "gantt";
         const F = (S.ganttF || {})[pid]; if (F) { F.ver = ""; F.comp = ""; delete F.scroll; }
       }, `Cronograma V${num} guardado`);
-    }, (fd) => (fd.Fecha_Corte && fd.Fecha_Corte > hoy ? "La fecha de corte no puede ser futura." : ""), { antes });
+    }, (fd) => (fd.Fecha_Corte && fd.Fecha_Corte > hoy ? "La fecha de corte no puede ser futura." : ""), { antes, init: (m) => {
+      const sel = m.querySelector("[name=Base]");
+      if (sel) sel.addEventListener("change", () => { const k = calcCon(sel.value), d = k.real - k.plan; m.querySelector("#cp-plan").textContent = k.plan + "%"; const e = m.querySelector("#cp-desv"); e.textContent = `${d > 0 ? "+" : ""}${d} pts`; e.className = d < -5 ? "texto-rojo" : ""; });
+    } });
   }
 
   // ---------- Vista «Avance por EDT»: árbol de fases con avance real vs planeado al corte ----------
@@ -2324,7 +2352,7 @@
     const resumenes = ts.filter((t) => t.Resumen === "Sí").length;
     const nVista = (k) => (k === "todo" ? ts.length : ts.filter((t) => { const e = estadoTarea(t, corte); return k === "atr" ? e === "atr" : k === "hitos" ? t.Hito === "Sí" : t.Resumen !== "Sí" && e !== "ok" && t.Inicio && t.Inicio <= en28; }).length);
     const optVer = vs.slice().reverse().map((v) => `<option value="${esc(v.ID_Version)}" ${verV && v.ID_Version === verV.ID_Version ? "selected" : ""}>V${esc(v.Numero)} · ${fecha(v.Fecha_Corte)}${v === vig ? " (vigente)" : ""}</option>`).join("");
-    const optComp = `<option value="">Sin comparar</option>${ts.some((t) => t.Inicio_Base) ? `<option value="lb" ${F.comp === "lb" ? "selected" : ""}>Línea base del archivo</option>` : ""}${vs.filter((v) => !verV || v.ID_Version !== verV.ID_Version).slice().reverse().map((v) => `<option value="${esc(v.ID_Version)}" ${F.comp === v.ID_Version ? "selected" : ""}>V${esc(v.Numero)} · ${fecha(v.Fecha_Corte)}</option>`).join("")}`;
+    const optComp = `<option value="">Sin comparar</option>${ts.some((t) => t.Inicio_Base) ? `<option value="lb" ${F.comp === "lb" ? "selected" : ""}>Línea base del cronograma</option>` : ""}${vs.filter((v) => !verV || v.ID_Version !== verV.ID_Version).slice().reverse().map((v) => `<option value="${esc(v.ID_Version)}" ${F.comp === v.ID_Version ? "selected" : ""}>V${esc(v.Numero)} · ${fecha(v.Fecha_Corte)}</option>`).join("")}`;
     return `<div class="card"><div class="titulo-fila"><h2>Cronograma ${verV ? `<span class="pill vnum">V${esc(verV.Numero)}${esVig ? " vigente" : ""}</span>` : ""} <span class="pill ${(verV ? verV.Origen : p.Cronograma_Origen) === "Planner" ? "planner" : "msproject"}">${esc((verV && verV.Origen) || p.Cronograma_Origen || "Importado")}</span></h2>
         <div class="acciones">${puede ? `<button class="btn primario" id="b-crono-imp">⇪ Cargar nueva versión</button>` : ""}</div></div>
       <p class="sub">${verV ? `Corte ${fecha(verV.Fecha_Corte)}${verV.ID_Seguimiento ? ` · sesión del ${fecha((S.datos.Seguimientos.find((s) => s.ID_Seguimiento === verV.ID_Seguimiento) || {}).Fecha_Corte)}` : ""} · cargado el ${fecha(verV.Fecha_Importacion)}${verV.Registrado_Por ? ` por ${esc(nombreUsuario(verV.Registrado_Por))}` : ""}${verV.Archivo ? ` · ${esc(verV.Archivo)}` : ""}${verV.Nota ? ` · <i>${esc(verV.Nota)}</i>` : ""}` : ""}${!esVig ? ` · <b>Versión anterior: solo conserva fases e hitos.</b>` : ""}</p>
@@ -5272,7 +5300,7 @@ ${x.h}</section>`).join("")}
       };
       caja2.addEventListener("click", (ev) => {
         const a = ev.target.closest("[data-cs]"); if (!a) return;
-        if (a.dataset.cs === "cargar") elegirCronograma((res, archivo) => { cronoNuevo = { res, archivo }; usar(calcCronograma(res.tareas, fCorte())); pintarCrono(); });
+        if (a.dataset.cs === "cargar") elegirCronograma((res0, archivo) => { const res = { ...res0, tareas: conLineaBase(p.ID_Proyecto, res0.tareas, traeBase(res0.tareas) ? "archivo" : "mantener") }; cronoNuevo = { res, archivo }; usar(calcCronograma(res.tareas, fCorte())); pintarCrono(); });
         if (a.dataset.cs === "usar") usar(calcCronograma(cronoNuevo ? cronoNuevo.res.tareas : tareasDe(p.ID_Proyecto), fCorte()));
         if (a.dataset.cs === "quitar") { cronoNuevo = null; pintarCrono(); }
       });

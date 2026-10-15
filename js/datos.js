@@ -59,7 +59,7 @@
     Compromisos: ["Correo_Responsable", "Dias_Alerta", "ID_Recurso", "Fecha_Creacion"],
     Comentarios: ["Adjuntos", "Editado_El"],
     Cambios: ["Numero_CC", "URL_Documento"],
-    Tareas: ["ID_Version"],
+    Tareas: ["ID_Version", "ID_Externo"],
   };
   const COLS_FECHA = ["Inicio", "Fin", "Inicio_Base", "Fin_Base", "Fecha_Importacion", "Cronograma_Fecha", "Fecha_Inicio_Base", "Fecha_Creacion", "Editado_El", "Fecha_Recepcion", "Fecha_Deseada", "Fecha_Estado", "Fecha_Identificacion", "Fecha_Fin_Base", "Nueva_Fecha_Fin", "Fecha_Decision", "Fecha", "Fecha_Registro", "Fecha_Inicio", "Fecha_Fin_Plan", "Actualizado_El", "Fecha_Plan", "Fecha_Real", "Fecha_Corte", "Fecha_Compromiso", "Fecha_Cierre", "Fecha_Acta"];
 
