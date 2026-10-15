@@ -2235,8 +2235,10 @@
         <div class="ed-leyenda"><span><i class="ed-comp"></i>Completado</span><span><i class="ed-ok"></i>En plazo (≤ 5 pp)</span><span><i class="ed-warn"></i>Atraso 6-15 pp</span><span><i class="ed-bad"></i>Atraso ≥ 16 pp</span><span><i class="ed-noini"></i>No iniciado</span><span class="sub">Real / plan al corte ${fecha(corte)}</span></div>
       </div>
       ${conLado ? `<aside class="ed-lado">
-        <div class="ed-panel"><h3>Logros del periodo</h3>${ult ? lista(ult.Logros) : `<p class="sub">Aún no hay seguimientos.</p>`}${ult ? `<div class="sub">Sesión del ${fecha(ult.Fecha_Corte)}</div>` : ""}</div>
-        <div class="ed-panel"><h3>Próximos pasos</h3>${ult ? lista(ult.Proximos_Pasos) : `<p class="sub">—</p>`}</div>
+        <div class="ed-panel"><div class="ed-panel-cab"><h3>Logros del periodo</h3>${ult ? `<button type="button" class="btn enlace" data-ed-editseg="${esc(ult.ID_Seguimiento)}">Editar</button>` : ""}</div>${ult ? lista(ult.Logros) : `<p class="sub">Aún no hay seguimientos.</p>`}
+          <div class="sub">${ult ? `Sesión del ${fecha(ult.Fecha_Corte)} · ` : ""}Se diligencian en <b>«Registrar seguimiento»</b> (logros, próximos pasos y bloqueos).</div>
+          ${p.Estado === "Activo" ? `<button type="button" class="btn chico primario" data-ed-seg>Registrar seguimiento</button>` : ""}</div>
+        <div class="ed-panel"><div class="ed-panel-cab"><h3>Próximos pasos</h3>${ult ? `<button type="button" class="btn enlace" data-ed-editseg="${esc(ult.ID_Seguimiento)}">Editar</button>` : ""}</div>${ult ? lista(ult.Proximos_Pasos) : `<p class="sub">—</p>`}</div>
         ${ult && ult.Bloqueos ? `<div class="ed-panel ed-bloq"><h3>Bloqueos</h3>${lista(ult.Bloqueos)}</div>` : ""}
         <div class="ed-panel"><h3>Equipo</h3>${equipo.map(([r, n]) => `<div><b>${esc(r)}:</b> ${esc(n)}</div>`).join("")}</div>
       </aside>` : ""}</div>`;
@@ -2498,6 +2500,8 @@
       const marcar = (i, on) => { if (izq[i]) izq[i].classList.toggle("gt-sobre", on); if (dr[i]) dr[i].classList.toggle("gt-sobre", on); };
       [izq, dr].forEach((arrF) => arrF.forEach((r, i) => { r.addEventListener("mouseenter", () => marcar(i, true)); r.addEventListener("mouseleave", () => marcar(i, false)); }));
     }
+    el.querySelectorAll("[data-ed-seg]").forEach((x) => x.addEventListener("click", () => formSeguimiento(p)));
+    el.querySelectorAll("[data-ed-editseg]").forEach((x) => x.addEventListener("click", () => { const sg = S.datos.Seguimientos.find((y) => y.ID_Seguimiento === x.dataset.edEditseg); if (sg) formEditarSeguimiento(sg); }));
     el.querySelectorAll("[data-gt-modo]").forEach((x) => x.addEventListener("click", () => { F.modo = x.dataset.gtModo; delete F.scroll; render(); }));
     el.querySelectorAll("[data-gt-esc]").forEach((x) => x.addEventListener("click", () => { F.escala = x.dataset.gtEsc; delete F.scroll; render(); }));
     el.querySelectorAll("[data-gt-vista]").forEach((x) => x.addEventListener("click", () => { F.vista = x.dataset.gtVista; delete F.scroll; render(); }));
