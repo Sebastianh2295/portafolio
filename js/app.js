@@ -2262,14 +2262,17 @@
     const verV = (F.ver && vs.find((v) => v.ID_Version === F.ver)) || vig;
     const esVig = !verV || !vig || verV.ID_Version === vig.ID_Version;
     const ts = tareasDe(pid, verV && verV.ID_Version);
-    const corte = esVig ? hoy : verV.Fecha_Corte || hoy;
+    // Fecha de estado: por defecto hoy (versión vigente) o el corte de la versión; se puede mover para ver cómo cambia el planeado.
+    const corteBase = esVig ? hoy : verV.Fecha_Corte || hoy;
+    const corte = F.estado || corteBase, simulado = !!F.estado && F.estado !== corteBase;
+    const etqCorte = simulado ? "Estado" : esVig ? "Hoy" : "Corte";
     const c = calcCronograma(ts, corte);
     const compV = F.comp && F.comp !== "lb" ? vs.find((v) => v.ID_Version === F.comp) : null;
     const buscarComp = compV ? indiceVersion(tareasDe(pid, compV.ID_Version)) : null;
     const niveles = [...new Set(ts.map((t) => Number(t.Nivel) || 1))].sort((a, b) => a - b);
     const finTarde = esVig && c.fin && p.Fecha_Fin_Plan && c.fin > p.Fecha_Fin_Plan;
     const viejo = esVig && p.Cronograma_Fecha && R.difDias(hoy, p.Cronograma_Fecha) > 15 && p.Estado === "Activo";
-    const difAv = esVig && (Math.abs((Number(p.Avance_Real) || 0) - c.real) >= 3 || Math.abs((Number(p.Avance_Planeado) || 0) - c.plan) >= 3);
+    const difAv = esVig && !simulado && (Math.abs((Number(p.Avance_Real) || 0) - c.real) >= 3 || Math.abs((Number(p.Avance_Planeado) || 0) - c.plan) >= 3);
     const conResp = ts.some((t) => t.Responsable);
     const filtrando = F.vista !== "todo" || F.q;
     const en28 = R.sumarDias(corte, 28);
@@ -2365,7 +2368,7 @@
     return `<div class="card"><div class="titulo-fila"><h2>Cronograma ${verV ? `<span class="pill vnum">V${esc(verV.Numero)}${esVig ? " vigente" : ""}</span>` : ""} <span class="pill ${(verV ? verV.Origen : p.Cronograma_Origen) === "Planner" ? "planner" : "msproject"}">${esc((verV && verV.Origen) || p.Cronograma_Origen || "Importado")}</span></h2>
         <div class="acciones">${puede ? `<button class="btn primario" id="b-crono-imp">⇪ Cargar nueva versión</button>` : ""}</div></div>
       <p class="sub">${verV ? `Corte ${fecha(verV.Fecha_Corte)}${verV.ID_Seguimiento ? ` · sesión del ${fecha((S.datos.Seguimientos.find((s) => s.ID_Seguimiento === verV.ID_Seguimiento) || {}).Fecha_Corte)}` : ""} · cargado el ${fecha(verV.Fecha_Importacion)}${verV.Registrado_Por ? ` por ${esc(nombreUsuario(verV.Registrado_Por))}` : ""}${verV.Archivo ? ` · ${esc(verV.Archivo)}` : ""}${verV.Nota ? ` · <i>${esc(verV.Nota)}</i>` : ""}` : ""}${!esVig ? ` · <b>Versión anterior: solo conserva fases e hitos.</b>` : ""}</p>
-      <div class="crono-kpis"><div><span>Avance real</span><b>${c.real}%</b></div><div><span>Planeado ${esVig ? "a hoy" : "al corte"}</span><b>${c.plan}%</b></div>
+      <div class="crono-kpis"><div><span>Avance real</span><b>${c.real}%</b></div><div class="${simulado ? "crono-sim" : ""}"><span>Planeado al ${fecha(corte)}</span><b>${c.plan}%</b></div>
         <div><span>Desviación</span><b class="${c.real - c.plan < -5 ? "texto-rojo" : ""}">${c.real - c.plan > 0 ? "+" : ""}${c.real - c.plan} pts</b></div>
         <div><span>Fin del cronograma</span><b class="${finTarde ? "texto-rojo" : ""}">${fecha(c.fin)}</b></div>
         <div><span>Atrasadas</span><b class="${c.atrasadas.length ? "texto-rojo" : ""}">${c.atrasadas.length}</b></div><div><span>Versiones</span><b>${vs.length || 1}</b></div></div>
@@ -2373,7 +2376,9 @@
       ${finTarde ? `<div class="aviso-seg">⚠ El cronograma termina el ${fecha(c.fin)}, después del fin planeado (${fecha(p.Fecha_Fin_Plan)}).${puede ? ` <button class="btn enlace" id="b-crono-cc">Registrar control de cambios</button>` : ""}</div>` : ""}
       ${difAv && puede ? `<div class="aviso-seg info">El avance del proyecto (${pct(p.Avance_Real)} / ${pct(p.Avance_Planeado)}) no coincide con el cronograma (${c.real}% / ${c.plan}%). <button class="btn enlace" id="b-crono-av">Actualizar avance</button></div>` : ""}
       <div class="gt-modos"><div class="gt-seg gt-seg-grande" role="tablist">${[["edt", "📊 Avance por EDT"], ["gantt", "▤ Gantt"]].map(([k, t]) => `<button type="button" class="${(F.modo || "edt") === k ? "activo" : ""}" data-gt-modo="${k}">${t}</button>`).join("")}</div>
-        ${vs.length > 1 ? `<label>Versión <select id="gt-ver">${optVer}</select></label>` : ""}</div>
+        ${vs.length > 1 ? `<label>Versión <select id="gt-ver">${optVer}</select></label>` : ""}
+        <label title="Cambia la fecha para ver cuánto debería llevar el proyecto en ese momento. No se guarda.">Fecha de estado <input type="date" id="gt-estado" value="${esc(corte)}"></label>
+        ${simulado ? `<button type="button" class="btn chico" id="gt-estado-x">↺ Volver a ${esVig ? "hoy" : "el corte"}</button><span class="pill crono-sim-pill">Simulación: el planeado y los atrasos se calculan al ${fecha(corte)}</span>` : ""}</div>
       ${(F.modo || "edt") === "edt" ? vistaEDT(p, ts, corte) : `
       <div class="gt-barra-h">
         <div class="gt-chips" role="group" aria-label="Qué mostrar">${Object.entries(VISTAS_GT).map(([k, v]) => `<button type="button" class="${F.vista === k ? "activo" : ""}" data-gt-vista="${k}">${v} <span>${nVista(k)}</span></button>`).join("")}</div>
@@ -2389,12 +2394,12 @@
         <div class="gt-grid">
           <table class="no-orden no-recortar gt-izq" style="width:${270 + (conResp ? 110 : 0) + 82 + 82 + 48 + (F.comp ? 58 : 0)}px"><thead><tr><th class="gt-c1">Tarea</th>${conResp ? `<th class="gt-c2">Responsable</th>` : ""}<th class="gt-c3">Inicio</th><th class="gt-c4">Fin</th>${F.comp ? `<th class="gt-c6" title="Diferencia de la fecha fin frente a la referencia">Δ fin</th>` : ""}<th class="gt-c5">%</th></tr></thead><tbody>${filas}</tbody></table>
           <div class="gt-der" id="gt-der">
-            <div class="gt-cabw" id="gt-cabw"><div class="gt-tl" style="width:${W}px"><div class="gt-cab gt-cab1"><div class="gt-escala">${arriba}</div></div><div class="gt-cab gt-cab2"><div class="gt-escala">${abajo}${verHoy ? `<span class="gt-hoy-cab" style="left:${xh}px">${esVig ? "Hoy" : "Corte"}</span>` : ""}</div></div></div></div>
+            <div class="gt-cabw" id="gt-cabw"><div class="gt-tl" style="width:${W}px"><div class="gt-cab gt-cab1"><div class="gt-escala">${arriba}</div></div><div class="gt-cab gt-cab2"><div class="gt-escala">${abajo}${verHoy ? `<span class="gt-hoy-cab" style="left:${xh}px">${etqCorte}</span>` : ""}</div></div></div></div>
             <div class="gt-cuerpo" id="gt-cuerpo" data-hoy="${verHoy ? xh : -1}"><div class="gt-tl" style="width:${W}px;--gt-w:${W}px;--gt-fondo:${fondo}">${der.join("")}</div></div>
           </div>
         </div>
         <div class="gt-hbar" id="gt-hbar" ${W <= anchoDisp + 2 ? "hidden" : ""}><div style="width:${W}px;height:1px"></div></div></div>
-        <div class="gt-leyenda"><span><i class="gt-l-ok"></i>Completada</span><span><i class="gt-l-curso"></i>En curso</span><span><i class="gt-l-atr"></i>Atrasada</span><span><i class="gt-l-pend"></i>Por iniciar</span><span><i class="gt-l-res"></i>Fase / resumen</span><span><i class="gt-l-hito"></i>Hito</span>${F.comp ? `<span><i class="gt-l-base"></i>${F.comp === "lb" ? "Línea base" : `V${esc(compV ? compV.Numero : "")}`}</span>` : ""}<span><i class="gt-l-hoy"></i>${esVig ? "Hoy" : "Corte"}</span><span class="sub">Arrastra la línea de tiempo para moverte.</span></div>`
+        <div class="gt-leyenda"><span><i class="gt-l-ok"></i>Completada</span><span><i class="gt-l-curso"></i>En curso</span><span><i class="gt-l-atr"></i>Atrasada</span><span><i class="gt-l-pend"></i>Por iniciar</span><span><i class="gt-l-res"></i>Fase / resumen</span><span><i class="gt-l-hito"></i>Hito</span>${F.comp ? `<span><i class="gt-l-base"></i>${F.comp === "lb" ? "Línea base" : `V${esc(compV ? compV.Numero : "")}`}</span>` : ""}<span><i class="gt-l-hoy"></i>${etqCorte}</span><span class="sub">Arrastra la línea de tiempo para moverte.</span></div>`
       : vacio("Ninguna tarea coincide con el filtro.")}
       `}
     </div>
@@ -2500,7 +2505,9 @@
     const ex = el.querySelector("#gt-exp"); if (ex) ex.addEventListener("click", () => { F.cerr = []; render(); });
     const co = el.querySelector("#gt-con"); if (co) co.addEventListener("click", () => { const ts = tareasDe(pid, F.ver || undefined); const min = Math.min(...ts.map((t) => Number(t.Nivel) || 1)); F.cerr = ts.filter((t) => t.Resumen === "Sí" && (Number(t.Nivel) || 1) > min).map((t) => String(t.Orden)); render(); });
     const n = el.querySelector("#gt-nivel"); if (n) n.addEventListener("change", () => { F.nivel = n.value; render(); });
-    const vv = el.querySelector("#gt-ver"); if (vv) vv.addEventListener("change", () => { F.ver = vv.value; if (F.comp === F.ver) F.comp = ""; F.cerr = []; delete F.scroll; render(); });
+    const fe = el.querySelector("#gt-estado"); if (fe) fe.addEventListener("change", () => { F.estado = fe.value || ""; delete F.scroll; render(); });
+    const fx = el.querySelector("#gt-estado-x"); if (fx) fx.addEventListener("click", () => { F.estado = ""; delete F.scroll; render(); });
+    const vv = el.querySelector("#gt-ver"); if (vv) vv.addEventListener("change", () => { F.estado = ""; F.ver = vv.value; if (F.comp === F.ver) F.comp = ""; F.cerr = []; delete F.scroll; render(); });
     const cp = el.querySelector("#gt-comp"); if (cp) cp.addEventListener("change", () => { F.comp = cp.value; render(); });
     const t = el.querySelector("#gt-q"); if (t) t.addEventListener("change", () => { F.q = t.value; render(); });
   }

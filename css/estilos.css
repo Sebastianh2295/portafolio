@@ -1171,3 +1171,6 @@ table.gt-izq thead th { position: sticky; top: 0; z-index: 3; height: 48px; back
 .hv-edt .ed-caja:hover { transform: none; }
 .ed-wrap.muchas { grid-template-columns: 1fr; }
 .ed-wrap.muchas .ed-lado { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.gt-modos input[type=date] { height: 32px; padding: 0 8px; border: 1px solid var(--linea); border-radius: 8px; font: inherit; font-size: 12.5px; }
+.crono-sim { outline: 2px dashed #e08a00; outline-offset: -2px; }
+.pill.crono-sim-pill { background: #fff4d6; color: #7a5b00; font-weight: 600; }
