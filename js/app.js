@@ -514,7 +514,18 @@
     if (ed) ed.addEventListener("click", () => formFiltro(filtroEnUso()));
   }
 
-  const chipSemaforo = (s) => (s ? `<span class="dot" style="background:${COLORES[s] || "#999"}" aria-hidden="true"></span>${esc(s)}` : "—");
+  // Etiquetas de color para semáforo, estado del proyecto y fase.
+  const SEM_CLASE = { Verde: "verde", Amarillo: "amarillo", Rojo: "rojo" };
+  const chipSemaforo = (s) => (s ? `<span class="sem sem-${SEM_CLASE[s] || "otro"}"><span class="dot" style="background:${COLORES[s] || "#999"}" aria-hidden="true"></span>${esc(s)}</span>` : `<span class="sub">—</span>`);
+  const ESTADO_P = { Activo: ["ep-activo", "●"], "En pausa": ["ep-pausa", "❚❚"], Cerrado: ["ep-cerrado", "✓"], Cancelado: ["ep-cancelado", "✕"] };
+  const chipEstadoP = (e) => { if (!e) return `<span class="sub">—</span>`; const [c, i] = ESTADO_P[e] || ["ep-otro", "•"]; return `<span class="ep ${c}">${e === "Activo" ? `<span class="ep-dot" aria-hidden="true"></span>` : `<i aria-hidden="true">${i}</i>`}${esc(e)}</span>`; };
+  const FASE_CLASE = { Inicio: "fa-inicio", "Planeación": "fa-plan", "Ejecución": "fa-ejec", Cierre: "fa-cierre" };
+  const chipFase = (f) => {
+    if (!f) return `<span class="sub">—</span>`;
+    const fs = S.cat.Fase || [], i = fs.indexOf(f);
+    const pasos = i >= 0 ? `<span class="fase-pasos" aria-hidden="true">${fs.map((_, k) => `<i class="${k <= i ? "on" : ""}"></i>`).join("")}</span>` : "";
+    return `<span class="fase ${FASE_CLASE[f] || "fa-otra"}" title="${i >= 0 ? `Fase ${i + 1} de ${fs.length}` : ""}">${pasos}${esc(f)}</span>`;
+  };
   const pill = (e) => `<span class="pill ${String(e).replace(/\s/g, "").toLowerCase()}">${esc(e)}</span>`;
   // Compromiso: su estado (Pendiente / En curso / Cerrado) y, si aplica, la alerta de tiempo.
   const pillComp = (c) => { const e = R.estadoCompromiso(c); return pill(R.estadoBase(c)) + (e === "Vencido" || e === "Por vencer" ? ` ${pill(e)}` : ""); };
@@ -1278,9 +1289,9 @@
       </div>
       <div class="card"><div class="tabla-scroll"><table>
         <thead><tr><th>Proyecto</th><th class="opc">Área</th><th>PM</th><th class="opc">Metodología</th><th class="opc">Fase</th><th>Estado</th><th>Semáforo</th><th>Avance real / plan</th><th class="opc">Fin plan</th><th>Seguimiento</th></tr></thead>
-        <tbody>${lista.map((p) => `<tr class="clic" data-pid="${esc(p.ID_Proyecto)}" tabindex="0">
+        <tbody>${lista.map((p) => `<tr class="clic ${["Cerrado", "Cancelado"].includes(p.Estado) ? "fila-inactiva" : ""}" data-pid="${esc(p.ID_Proyecto)}" tabindex="0">
           <td><b>${esc(p.Nombre)}</b><div class="sub">${esc(p.ID_Proyecto)} · prioridad ${esc(String(p.Prioridad).toLowerCase())}</div></td><td class="opc">${esc(p.Cliente_Area)}</td>
-          <td>${persona(nombreUsuario(p.PM))}</td><td class="opc">${esc(p.Metodologia)}</td><td class="opc">${esc(p.Fase)}</td><td>${esc(p.Estado)}</td><td>${chipSemaforo(p.Semaforo)}</td>
+          <td>${persona(nombreUsuario(p.PM))}</td><td class="opc">${esc(p.Metodologia)}</td><td class="opc">${chipFase(p.Fase)}</td><td>${chipEstadoP(p.Estado)}</td><td>${p.Estado === "Activo" || p.Semaforo ? chipSemaforo(p.Semaforo) : `<span class="sub">—</span>`}</td>
           <td class="celda-avance">${barraAvance(p.Avance_Real, p.Avance_Planeado)}</td><td class="opc">${fecha(p.Fecha_Fin_Plan)}</td>
           <td>${pill(R.estadoSeguimiento(p, S.datos.Seguimientos).estado)}</td></tr>`).join("") || `<tr><td colspan="10">${vacio(visibles().length ? "No hay proyectos con estos filtros. Prueba «Limpiar filtros»." : "Aún no tienes proyectos. Registra el primero con «+ Nueva iniciativa».")}</td></tr>`}</tbody>
       </table></div></div>`;
@@ -1320,7 +1331,7 @@
     const pestanas = `<div class="pestanas" role="tablist">${TABS.map(([id, t]) => `<button class="pestana ${id === tab ? "activa" : ""}" role="tab" aria-selected="${id === tab}" data-tab="${id}">${t}</button>`).join("")}</div>`;
     const cuerpo = {
       resumen: () => `      <div class="card datos">
-        ${dato("Código Almera", p.Codigo_Almera ? esc(p.Codigo_Almera) : `<span class="sub">Sin registrar</span>`)}${dato("Estado", esc(p.Estado))}${dato("Fase", esc(p.Fase))}${dato("Semáforo", chipSemaforo(p.Semaforo))}
+        ${dato("Código Almera", p.Codigo_Almera ? esc(p.Codigo_Almera) : `<span class="sub">Sin registrar</span>`)}${dato("Estado", chipEstadoP(p.Estado))}${dato("Fase", chipFase(p.Fase))}${dato("Semáforo", chipSemaforo(p.Semaforo))}
         ${dato("Avance real / plan", barraAvance(p.Avance_Real, p.Avance_Planeado))}
         ${dato("Inicio", fecha(p.Fecha_Inicio))}${dato("Fin planeado", fecha(p.Fecha_Fin_Plan))}
         ${dato("Presupuesto", cop(p.Presupuesto))}${dato("Ejecutado", cop(p.Ejecutado))}
@@ -1375,7 +1386,7 @@
     }[tab]();
     el.innerHTML = `
       <button class="btn enlace" id="b-volver">← Volver a proyectos</button>
-      <div class="titulo-fila"><div><h1>${esc(p.Nombre)}</h1><div class="sub">${esc(p.ID_Proyecto)}${p.Codigo_Almera ? ` · Almera ${esc(p.Codigo_Almera)}` : ""} · ${esc(p.Cliente_Area)} · PM ${esc(nombreUsuario(p.PM))}</div></div>
+      <div class="titulo-fila"><div><h1>${esc(p.Nombre)}</h1><div class="ficha-chips">${chipEstadoP(p.Estado)}${chipFase(p.Fase)}${p.Semaforo ? chipSemaforo(p.Semaforo) : ""}</div><div class="sub">${esc(p.ID_Proyecto)}${p.Codigo_Almera ? ` · Almera ${esc(p.Codigo_Almera)}` : ""} · ${esc(p.Cliente_Area)} · PM ${esc(nombreUsuario(p.PM))}</div></div>
         <div class="acciones">
           ${enlace(p.URL_Repositorio, "Repositorio")}${enlace(p.URL_Documentos, "Documentos")}
           ${puedeP("seguimiento") && p.Estado === "Activo" ? `<button class="btn primario" id="b-seg">Registrar seguimiento</button>` : ""}
@@ -1930,8 +1941,8 @@
     const doc = `
       ${cabDocumento("Hoja de vida del proyecto", p.Nombre, `${esc(pid)}${p.Codigo_Almera ? ` · Almera ${esc(p.Codigo_Almera)}` : ""} · ${esc(p.Cliente_Area || "")}`)}
       <section class="hv-kpis">
-        <div><span>Estado</span><b>${t(p.Estado)}</b></div><div><span>Fase</span><b>${t(p.Fase)}</b></div>
-        <div><span>Semáforo</span><b>${t(p.Semaforo)}</b></div><div><span>Avance real / plan</span><b>${pct(p.Avance_Real)} / ${pct(p.Avance_Planeado)}</b></div>
+        <div><span>Estado</span><b>${chipEstadoP(p.Estado)}</b></div><div><span>Fase</span><b>${chipFase(p.Fase)}</b></div>
+        <div><span>Semáforo</span><b>${chipSemaforo(p.Semaforo)}</b></div><div><span>Avance real / plan</span><b>${pct(p.Avance_Real)} / ${pct(p.Avance_Planeado)}</b></div>
         <div><span>Presupuesto ejecutado</span><b>${Number(p.Presupuesto) ? Math.round((Number(p.Ejecutado) || 0) / Number(p.Presupuesto) * 100) + "%" : "—"}</b></div>
         <div><span>Compromisos abiertos</span><b>${abiertos} de ${comps.length}</b></div>
         <div><span>Riesgos abiertos</span><b>${riesgos.filter((r) => ["Abierto", "Materializado"].includes(r.Estado)).length} de ${riesgos.length}</b></div>
@@ -1983,7 +1994,7 @@ ${x.h}</section>`).join("")}
   const bacDe = (p) => { const lb = lineaBase(p); return lb.pb !== null && lb.pb > 0 ? lb.pb : Number(p.Presupuesto) || 0; };
   const evmDe = (p) => R.valorGanado(bacDe(p), p.Avance_Real, p.Avance_Planeado, p.Ejecutado);
   const semIndice = (x) => (x === null ? "" : x >= 0.95 ? "Verde" : x >= 0.85 ? "Amarillo" : "Rojo");
-  const fmtIndice = (x) => (x === null ? `<span class="sub">—</span>` : `${chipSemaforo(semIndice(x)).replace(/>[^<>]*$/, ">")}<b>${x.toFixed(2).replace(".", ",")}</b>`);
+  const fmtIndice = (x) => (x === null ? `<span class="sub">—</span>` : `<span class="dot" style="background:${COLORES[semIndice(x)]}" aria-hidden="true"></span><b>${x.toFixed(2).replace(".", ",")}</b>`);
   function cardDesempeno(p) {
     const v = evmDe(p);
     if (!v) return "";
@@ -2590,7 +2601,7 @@ ${x.h}</section>`).join("")}
       <h2>1. Estado de los proyectos</h2>
       ${tabla(["Proyecto", "PM", "Semáforo", "Avance", "Δ semana", "Seguimiento", "Novedad"], activos.sort((a, b) => ({ Rojo: 0, Amarillo: 1, Verde: 2 }[a.Semaforo] ?? 3) - ({ Rojo: 0, Amarillo: 1, Verde: 2 }[b.Semaforo] ?? 3)).map((p) => {
         const v = variacion(p), e = R.estadoSeguimiento(p, S.datos.Seguimientos);
-        return `<tr><td><b>${t(p.Nombre)}</b>${p.Codigo_Almera ? `<br><small>Almera ${esc(p.Codigo_Almera)}</small>` : ""}</td><td>${t(nombreUsuario(p.PM))}</td><td>${t(p.Semaforo)}</td>
+        return `<tr><td><b>${t(p.Nombre)}</b>${p.Codigo_Almera ? `<br><small>Almera ${esc(p.Codigo_Almera)}</small>` : ""}</td><td>${t(nombreUsuario(p.PM))}</td><td>${chipSemaforo(p.Semaforo)}</td>
           <td>${pct(p.Avance_Real)} / ${pct(p.Avance_Planeado)}</td><td>${v === null ? "—" : `${v > 0 ? "+" : ""}${v} pts`}</td><td>${t(e.estado)}</td><td>${t(p.Comentario_Estado)}</td></tr>`;
       }), "No hay proyectos activos en la selección.")}
       <h2>2. Seguimientos de la semana</h2>
@@ -4558,7 +4569,7 @@ ${x.h}</section>`).join("")}
       <button type="button" class="btn primario" id="b-acta-pdf">Subir acta (PDF)</button>
       <div id="acta-estado" class="acta-estado" aria-live="polite"></div></div>`;
     const contexto = `${datalistRecursos("dl-recursos")}<div class="contexto">
-      <div><span class="sub">Último reporte</span><b>${ult ? `${fecha(ult.Fecha_Corte)} · ${pct(ult.Avance_Real)} · ${esc(ult.Semaforo)}` : "Es el primer reporte"}</b></div>
+      <div><span class="sub">Último reporte</span><b>${ult ? `${fecha(ult.Fecha_Corte)} · ${pct(ult.Avance_Real)} · ${chipSemaforo(ult.Semaforo)}` : "Es el primer reporte"}</b></div>
       <div><span class="sub">Plan registrado</span><b>${pct(p.Avance_Planeado)}</b></div>
       <div><span class="sub">Frecuencia</span><b>${esc(p.Frecuencia_Seguimiento)}</b></div></div>`;
     const despues = `
