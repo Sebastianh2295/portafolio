@@ -268,16 +268,26 @@
       return Excel.run(async (ctx) => {
         const t = ctx.workbook.tables.getItem(tabla);
         const col = t.columns.getItem(colId).getDataBodyRange().load("values");
+        const cuerpo = t.getDataBodyRange().load("columnCount");
         await ctx.sync();
         const buscar = new Set(ids.map(String));
-        const indices = col.values.map((r, i) => (buscar.has(String(r[0])) ? i : -1)).filter((i) => i >= 0).sort((a, b) => b - a);
-        let quedan = col.values.length;
-        for (const i of indices) {
-          if (quedan === 1) { const r = t.getDataBodyRange().getRow(0); r.load("columnCount"); await ctx.sync(); r.values = [Array(r.columnCount).fill("")]; }
-          else { t.rows.getItemAt(i).delete(); quedan -= 1; }
+        const idx = col.values.map((r, i) => (buscar.has(String(r[0])) ? i : -1)).filter((i) => i >= 0);
+        if (!idx.length) return 0;
+        const total = col.values.length, todas = idx.length === total;
+        // Filas seguidas se borran como un solo bloque (borrar cientos de filas una a una hace fallar a Excel en línea).
+        const bloques = [];
+        idx.sort((a, b) => a - b).forEach((i) => { const u = bloques[bloques.length - 1]; if (u && i === u[0] + u[1]) u[1] += 1; else bloques.push([i, 1]); });
+        bloques.reverse();                                              // de abajo hacia arriba: los índices de arriba no cambian
+        let ops = 0;
+        for (const [ini, n] of bloques) {
+          let a = ini, c = n;
+          if (todas && a === 0) { a = 1; c = n - 1; }                   // la tabla no puede quedar sin filas: la primera se deja en blanco
+          if (c > 0) { t.getDataBodyRange().getRow(a).getResizedRange(c - 1, 0).delete(Excel.DeleteShiftDirection.up); ops += 1; }
+          if (ops >= 20) { await ctx.sync(); ops = 0; }
         }
+        if (todas) t.getDataBodyRange().getRow(0).values = [Array(cuerpo.columnCount).fill("")];
         await ctx.sync();
-        return indices.length;
+        return idx.length;
       });
     },
 
