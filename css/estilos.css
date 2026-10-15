@@ -1111,3 +1111,48 @@ table.gt-izq thead th { position: sticky; top: 0; z-index: 3; height: 48px; back
 .crv-graf h3 { font-size: 13px; margin: 4px 0 6px; color: #445; }
 .crono-seg .acciones { display: inline-flex; gap: 6px; }
 .gt-leyenda .sub { margin-left: auto; }
+
+/* ===== v61 Vista «Avance por EDT» ===== */
+.gt-modos { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; margin: 12px 0 4px; font-size: 12.5px; color: #556; }
+.gt-modos label { display: inline-flex; gap: 6px; align-items: center; }
+.gt-seg-grande button { padding: 8px 16px; font-weight: 600; }
+.ed-wrap { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 16px; margin-top: 10px; align-items: start; }
+.ed-arbol { overflow-x: auto; padding-bottom: 6px; }
+.ed-raiz { display: flex; justify-content: center; position: relative; padding-bottom: 18px; }
+.ed-raiz::after { content: ""; position: absolute; bottom: 0; left: 50%; height: 18px; border-left: 2px solid #b8c2cf; }
+.ed-root { min-width: 300px; max-width: 420px; text-align: center; padding: 10px 16px !important; }
+.ed-root .ed-tit { font-size: 15px; }
+.ed-fases { display: grid; gap: 14px; position: relative; padding-top: 18px; min-width: min-content; }
+.ed-fases::before { content: ""; position: absolute; top: 0; left: var(--ed-l, 8%); right: var(--ed-l, 8%); border-top: 2px solid #b8c2cf; }
+.ed-col { position: relative; display: flex; flex-direction: column; min-width: 150px; }
+.ed-col::before { content: ""; position: absolute; top: -18px; left: 50%; height: 18px; border-left: 2px solid #b8c2cf; }
+.ed-fase { min-height: 64px; }
+.ed-fase .ed-tit { font-size: 13px; }
+.ed-subs { display: flex; flex-direction: column; gap: 8px; margin: 10px 0 0 14px; padding-left: 12px; border-left: 2px solid #c9d1dc; }
+.ed-subs .ed-caja { position: relative; }
+.ed-subs .ed-caja::before { content: ""; position: absolute; left: -14px; top: 50%; width: 12px; border-top: 2px solid #c9d1dc; }
+.ed-caja { border: 1.5px solid; border-radius: 8px; padding: 7px 9px; font-size: 11.5px; line-height: 1.3; box-shadow: 0 1px 2px rgba(16,40,80,.06); transition: transform .12s ease, box-shadow .12s ease; }
+.ed-caja:hover { transform: translateY(-1px); box-shadow: 0 4px 10px rgba(16,40,80,.12); }
+.ed-tit { font-weight: 600; color: #1d2b3e; }
+.ed-num { color: #51617a; font-weight: 700; }
+.ed-av { margin-top: 3px; color: #445; }
+.ed-av span { color: #667; }
+.ed-pp { margin-left: 4px; font-weight: 700; color: #1e6b41; }
+.ed-pp.menos { color: #b3261e; } .ed-pp.mas { color: #1e6b41; }
+.ed-warn .ed-pp { color: #8a5a00; }
+.ed-comp { background: #d6e9d2; border-color: #4f8a43; }
+.ed-ok { background: #e6f4e3; border-color: #7fb873; }
+.ed-warn { background: #fff3cc; border-color: #d9a400; }
+.ed-bad { background: #fde3e1; border-color: #c62828; border-width: 2px; }
+.ed-noini { background: #f1f3f5; border-color: #b9c0c9; }
+.ed-noini .ed-tit { color: #445; font-weight: 500; }
+.ed-leyenda { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 14px; font-size: 11.5px; color: #556; align-items: center; }
+.ed-leyenda span { display: inline-flex; align-items: center; gap: 6px; }
+.ed-leyenda i { width: 16px; height: 11px; border: 1.5px solid; border-radius: 3px; display: inline-block; }
+.ed-lado { display: flex; flex-direction: column; gap: 12px; }
+.ed-panel { border: 1px solid var(--linea); border-radius: 10px; padding: 10px 14px; background: #fff; font-size: 12.5px; }
+.ed-panel h3 { margin: 0 0 6px; font-size: 14px; color: var(--azul, #104994); }
+.ed-panel ul { margin: 0; padding-left: 18px; } .ed-panel li { margin: 2px 0; }
+.ed-panel > div { margin: 2px 0; }
+.ed-bloq { border-color: #f1bdb5; background: #fff8f7; }
+@media (max-width: 1100px) { .ed-wrap { grid-template-columns: 1fr; } }

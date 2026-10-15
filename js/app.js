@@ -2148,6 +2148,63 @@
     }, (fd) => (fd.Fecha_Corte && fd.Fecha_Corte > hoy ? "La fecha de corte no puede ser futura." : ""), { antes });
   }
 
+  // ---------- Vista «Avance por EDT»: árbol de fases con avance real vs planeado al corte ----------
+  // Verde oscuro = completado · verde = en plazo (≤ 5 pp) · amarillo = atraso 6-15 pp · rojo = atraso ≥ 16 pp · gris = no iniciado.
+  function claseAvance(real, plan) {
+    if (real >= 100) return "ed-comp";
+    if (real === 0 && plan === 0) return "ed-noini";
+    const d = real - plan;
+    return d >= -5 ? "ed-ok" : d >= -15 ? "ed-warn" : "ed-bad";
+  }
+  function vistaEDT(p, ts, corte) {
+    if (!ts.length) return vacio("Sin tareas.");
+    // Avance de un nodo: sus tareas hoja (o él mismo si es hoja), ponderadas por duración.
+    const hijosDe = (i) => { const n = Number(ts[i].Nivel) || 1, out = []; for (let j = i + 1; j < ts.length && (Number(ts[j].Nivel) || 1) > n; j++) out.push(j); return out; };
+    const avance = (i) => {
+      const desc = hijosDe(i).map((j) => ts[j]);
+      const hojas = desc.length ? desc : [ts[i]];
+      const c = calcCronograma(hojas.map((t) => ({ ...t, Resumen: desc.length && t.Resumen === "Sí" ? "Sí" : "No" })), corte);
+      return { real: c.real, plan: c.plan };
+    };
+    const niv = (i) => Number(ts[i].Nivel) || 1;
+    const minN = Math.min(...ts.map((t, i) => niv(i)));
+    const raices = ts.map((t, i) => i).filter((i) => niv(i) === minN);
+    // Una sola raíz (Project): raíz = esa tarea, fases = su nivel siguiente. Varias (Planner): raíz = el proyecto.
+    let raizTxt, raizAv, fases, edtRaiz = "";
+    if (raices.length === 1 && hijosDe(raices[0]).length) {
+      const r = raices[0]; edtRaiz = String(ts[r].EDT || "");
+      raizTxt = ts[r].Nombre; raizAv = avance(r);
+      fases = hijosDe(r).filter((j) => niv(j) === minN + 1);
+    } else {
+      raizTxt = p.Nombre; raizAv = calcCronograma(ts, corte); fases = raices;
+    }
+    // Numeración relativa (1, 1.1, 1.1.1) como en el comité; el EDT real queda en el título.
+    const num = (t) => { const e = String(t.EDT || ""); return edtRaiz && e.startsWith(edtRaiz) ? "1" + e.slice(edtRaiz.length) : e; };
+    const dif = (a) => { const d = a.real - a.plan; return d === 0 ? "" : `<b class="ed-pp ${d > 0 ? "mas" : d < -5 ? "menos" : ""}">${d > 0 ? "+" : ""}${d} pp</b>`; };
+    const caja = (t, a, cls = "") => `<div class="ed-caja ${claseAvance(a.real, a.plan)} ${cls}" title="${esc(`${t.EDT || ""} · ${t.Nombre}${t.Inicio ? ` · ${fecha(t.Inicio)} → ${fecha(t.Fin)}` : ""}${t.Responsable ? ` · ${t.Responsable}` : ""}`)}">
+        <div class="ed-tit"><span class="ed-num">${esc(num(t))}</span> ${t.Hito === "Sí" ? "◆ " : ""}${esc(t.Nombre)}</div>
+        <div class="ed-av">Real <b>${a.real}%</b> <span>/ ${a.plan}%</span> ${dif(a)}</div></div>`;
+    const columnas = fases.map((i) => {
+      const subs = hijosDe(i).filter((j) => niv(j) === niv(i) + 1);
+      return `<div class="ed-col">${caja(ts[i], avance(i), "ed-fase")}${subs.length ? `<div class="ed-subs">${subs.map((j) => caja(ts[j], avance(j))).join("")}</div>` : ""}</div>`;
+    }).join("");
+    const ult = R.seguimientosDe(p.ID_Proyecto, S.datos.Seguimientos).slice(-1)[0];
+    const lista = (txt) => { const l = String(txt || "").split(/\n|•|·|;|(?:^|\s)-\s/).map((x) => x.trim()).filter(Boolean); return l.length ? `<ul>${l.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : `<p class="sub">Sin registrar.</p>`; };
+    const equipo = [["Gerente de proyecto", nombreUsuario(p.PM)], ...stakeholdersDe(p.ID_Proyecto).map((x) => [x.Rol, x.Nombre])].filter(([, n]) => n);
+    return `<div class="ed-wrap">
+      <div class="ed-arbol">
+        <div class="ed-raiz">${caja({ EDT: edtRaiz, Nombre: raizTxt }, raizAv, "ed-root")}</div>
+        <div class="ed-fases" style="grid-template-columns:repeat(${Math.max(1, fases.length)},minmax(150px,1fr));--ed-l:${(100 / (2 * Math.max(1, fases.length))).toFixed(2)}%">${columnas}</div>
+        <div class="ed-leyenda"><span><i class="ed-comp"></i>Completado</span><span><i class="ed-ok"></i>En plazo (≤ 5 pp)</span><span><i class="ed-warn"></i>Atraso 6-15 pp</span><span><i class="ed-bad"></i>Atraso ≥ 16 pp</span><span><i class="ed-noini"></i>No iniciado</span><span class="sub">Real / plan al corte ${fecha(corte)}</span></div>
+      </div>
+      <aside class="ed-lado">
+        <div class="ed-panel"><h3>Logros del periodo</h3>${ult ? lista(ult.Logros) : `<p class="sub">Aún no hay seguimientos.</p>`}${ult ? `<div class="sub">Sesión del ${fecha(ult.Fecha_Corte)}</div>` : ""}</div>
+        <div class="ed-panel"><h3>Próximos pasos</h3>${ult ? lista(ult.Proximos_Pasos) : `<p class="sub">—</p>`}</div>
+        ${ult && ult.Bloqueos ? `<div class="ed-panel ed-bloq"><h3>Bloqueos</h3>${lista(ult.Bloqueos)}</div>` : ""}
+        <div class="ed-panel"><h3>Equipo</h3>${equipo.map(([r, n]) => `<div><b>${esc(r)}:</b> ${esc(n)}</div>`).join("")}</div>
+      </aside></div>`;
+  }
+
   // ---------- Diagrama de Gantt ----------
   const ESCALAS_GT = { ajustar: { t: "Ajustar" }, semanas: { px: 7, t: "Semanas" }, meses: { px: 2.4, t: "Meses" }, trimestres: { px: 0.9, t: "Trimestres" } };
   const VISTAS_GT = { todo: "Todo", activas: "En curso y próximas", atr: "Atrasadas", hitos: "Hitos" };
@@ -2164,7 +2221,7 @@
     if (!tareasDe(pid).length) return `<div class="card"><div class="titulo-fila"><h2>Cronograma</h2>${puede ? `<button class="btn primario" id="b-crono-imp">⇪ Cargar cronograma</button>` : ""}</div>
       ${vacio("Este proyecto aún no tiene cronograma. Cárgalo desde Planner o MS Project: el avance real y planeado se calcularán solos.")}${ayuda}</div>`;
     const hoy = R.hoyISO();
-    const F = (S.ganttF = S.ganttF || {})[pid] = (S.ganttF[pid] || { nivel: "", vista: "todo", q: "", cerr: [], escala: "ajustar", ver: "", comp: "" });
+    const F = (S.ganttF = S.ganttF || {})[pid] = (S.ganttF[pid] || { nivel: "", vista: "todo", q: "", cerr: [], escala: "ajustar", ver: "", comp: "", modo: "edt" });
     const verV = (F.ver && vs.find((v) => v.ID_Version === F.ver)) || vig;
     const esVig = !verV || !vig || verV.ID_Version === vig.ID_Version;
     const ts = tareasDe(pid, verV && verV.ID_Version);
@@ -2278,6 +2335,9 @@
       ${viejo ? `<div class="aviso-seg">⚠ El cronograma tiene ${R.difDias(hoy, p.Cronograma_Fecha)} días sin actualizar. Carga una nueva versión con el próximo seguimiento.</div>` : ""}
       ${finTarde ? `<div class="aviso-seg">⚠ El cronograma termina el ${fecha(c.fin)}, después del fin planeado (${fecha(p.Fecha_Fin_Plan)}).${puede ? ` <button class="btn enlace" id="b-crono-cc">Registrar control de cambios</button>` : ""}</div>` : ""}
       ${difAv && puede ? `<div class="aviso-seg info">El avance del proyecto (${pct(p.Avance_Real)} / ${pct(p.Avance_Planeado)}) no coincide con el cronograma (${c.real}% / ${c.plan}%). <button class="btn enlace" id="b-crono-av">Actualizar avance</button></div>` : ""}
+      <div class="gt-modos"><div class="gt-seg gt-seg-grande" role="tablist">${[["edt", "📊 Avance por EDT"], ["gantt", "▤ Gantt"]].map(([k, t]) => `<button type="button" class="${(F.modo || "edt") === k ? "activo" : ""}" data-gt-modo="${k}">${t}</button>`).join("")}</div>
+        ${vs.length > 1 ? `<label>Versión <select id="gt-ver">${optVer}</select></label>` : ""}</div>
+      ${(F.modo || "edt") === "edt" ? vistaEDT(p, ts, corte) : `
       <div class="gt-barra-h">
         <div class="gt-chips" role="group" aria-label="Qué mostrar">${Object.entries(VISTAS_GT).map(([k, v]) => `<button type="button" class="${F.vista === k ? "activo" : ""}" data-gt-vista="${k}">${v} <span>${nVista(k)}</span></button>`).join("")}</div>
         <input id="gt-q" type="search" placeholder="Buscar tarea, responsable o EDT" value="${esc(F.q)}" aria-label="Buscar">
@@ -2285,7 +2345,6 @@
       <div class="gt-barra-h gt-barra-2">
         <label>Escala <span class="gt-seg">${Object.entries(ESCALAS_GT).map(([k, v]) => `<button type="button" class="${F.escala === k ? "activo" : ""}" data-gt-esc="${k}">${v.t}</button>`).join("")}</span></label>
         ${niveles.length > 1 ? `<label>Niveles <select id="gt-nivel"><option value="">Todos</option>${niveles.slice(0, -1).map((n) => `<option value="${n}" ${String(F.nivel) === String(n) ? "selected" : ""}>Hasta ${n}</option>`).join("")}</select></label>` : ""}
-        ${vs.length > 1 ? `<label>Versión <select id="gt-ver">${optVer}</select></label>` : ""}
         <label>Comparar con <select id="gt-comp">${optComp}</select></label>
         <span class="gt-acc">${resumenes && !filtrando ? `<button type="button" class="btn chico" id="gt-exp" title="Expandir todo">⊞</button><button type="button" class="btn chico" id="gt-con" title="Contraer todo">⊟</button>` : ""}${verHoy && F.escala !== "ajustar" ? `<button type="button" class="btn chico" id="gt-hoy">◎ Hoy</button>` : ""}</span>
       </div>
@@ -2300,6 +2359,7 @@
         <div class="gt-hbar" id="gt-hbar" ${W <= anchoDisp + 2 ? "hidden" : ""}><div style="width:${W}px;height:1px"></div></div></div>
         <div class="gt-leyenda"><span><i class="gt-l-ok"></i>Completada</span><span><i class="gt-l-curso"></i>En curso</span><span><i class="gt-l-atr"></i>Atrasada</span><span><i class="gt-l-pend"></i>Por iniciar</span><span><i class="gt-l-res"></i>Fase / resumen</span><span><i class="gt-l-hito"></i>Hito</span>${F.comp ? `<span><i class="gt-l-base"></i>${F.comp === "lb" ? "Línea base" : `V${esc(compV ? compV.Numero : "")}`}</span>` : ""}<span><i class="gt-l-hoy"></i>${esVig ? "Hoy" : "Corte"}</span><span class="sub">Arrastra la línea de tiempo para moverte.</span></div>`
       : vacio("Ninguna tarea coincide con el filtro.")}
+      `}
     </div>
     ${seccionVersiones(p, puede)}`;
   }
@@ -2396,6 +2456,7 @@
       const marcar = (i, on) => { if (izq[i]) izq[i].classList.toggle("gt-sobre", on); if (dr[i]) dr[i].classList.toggle("gt-sobre", on); };
       [izq, dr].forEach((arrF) => arrF.forEach((r, i) => { r.addEventListener("mouseenter", () => marcar(i, true)); r.addEventListener("mouseleave", () => marcar(i, false)); }));
     }
+    el.querySelectorAll("[data-gt-modo]").forEach((x) => x.addEventListener("click", () => { F.modo = x.dataset.gtModo; delete F.scroll; render(); }));
     el.querySelectorAll("[data-gt-esc]").forEach((x) => x.addEventListener("click", () => { F.escala = x.dataset.gtEsc; delete F.scroll; render(); }));
     el.querySelectorAll("[data-gt-vista]").forEach((x) => x.addEventListener("click", () => { F.vista = x.dataset.gtVista; delete F.scroll; render(); }));
     el.querySelectorAll("[data-gt-tog]").forEach((x) => x.addEventListener("click", (ev) => { ev.stopPropagation(); const k = x.dataset.gtTog; F.cerr = F.cerr.includes(k) ? F.cerr.filter((y) => y !== k) : [...F.cerr, k]; render(); }));
