@@ -36,6 +36,8 @@
     Documentos: ["ID_Documento", "ID_Proyecto", "Nombre", "URL", "Tipo", "Descripcion", "Registrado_Por", "Fecha_Registro"],
     // Líneas base del proyecto (LB0 = original; cada re-planeación aprobada crea una nueva).
     LineasBase: ["ID_LB", "ID_Proyecto", "Numero", "Fecha", "Fecha_Inicio", "Fecha_Fin", "Presupuesto", "Motivo", "ID_Cambio", "Registrado_Por"],
+    // Cronograma importado (Planner en Excel o MS Project en XML): una fila por tarea; se reemplaza en cada importación.
+    Tareas: ["ID_Tarea", "ID_Proyecto", "Orden", "EDT", "Nivel", "Nombre", "Grupo", "Inicio", "Fin", "Duracion_Dias", "Pct_Completado", "Hito", "Resumen", "Responsable", "Inicio_Base", "Fin_Base", "Predecesoras", "Origen", "Fecha_Importacion"],
     // Sugerencias de mejora de la app (cualquier usuario las registra; Admin/PMO las gestionan).
     Sugerencias: ["ID_Sugerencia", "Fecha_Hora", "Usuario", "Modulo", "Contexto", "ID_Proyecto", "Tipo", "Prioridad", "Descripcion", "URL_Referencia", "Adjuntos", "Estado", "Respuesta", "Version_App", "Version_Implementada", "Actualizado_Por", "Actualizado_El"],
     // Registro de auditoría: quién cambió qué y cuándo.
@@ -48,7 +50,7 @@
   const TABLAS = Object.keys(ESTRUCTURA);
   // Columnas agregadas en versiones posteriores: si faltan en el Excel, se crean al final de la tabla.
   const COLUMNAS_NUEVAS = {
-    Proyectos: ["URL_Repositorio", "URL_Documentos", "Proveedores", "Codigo_Almera", "Dedicacion_PM", "Fecha_Fin_Base", "Presupuesto_Base", "Fecha_Inicio_Base", "Valor", "Urgencia", "Riesgo_Prio", "Esfuerzo", "Alineacion", "Impacto_Paciente"],
+    Proyectos: ["URL_Repositorio", "URL_Documentos", "Proveedores", "Codigo_Almera", "Dedicacion_PM", "Fecha_Fin_Base", "Presupuesto_Base", "Fecha_Inicio_Base", "Valor", "Urgencia", "Riesgo_Prio", "Esfuerzo", "Alineacion", "Impacto_Paciente", "Cronograma_Origen", "Cronograma_Archivo", "Cronograma_Fecha", "Cronograma_Por"],
     Stakeholders: ["Dedicacion", "ID_Recurso"],
     Riesgos: ["ID_Seguimiento", "Origen", "Fecha_Identificacion"],
     Seguimientos: ["Fecha_Acta", "URL_Acta", "Acta_Archivo", "Ejecutado", "Avance_Planeado"],
@@ -56,7 +58,7 @@
     Comentarios: ["Adjuntos", "Editado_El"],
     Cambios: ["Numero_CC", "URL_Documento"],
   };
-  const COLS_FECHA = ["Fecha_Inicio_Base", "Fecha_Creacion", "Editado_El", "Fecha_Recepcion", "Fecha_Deseada", "Fecha_Estado", "Fecha_Identificacion", "Fecha_Fin_Base", "Nueva_Fecha_Fin", "Fecha_Decision", "Fecha", "Fecha_Registro", "Fecha_Inicio", "Fecha_Fin_Plan", "Actualizado_El", "Fecha_Plan", "Fecha_Real", "Fecha_Corte", "Fecha_Compromiso", "Fecha_Cierre", "Fecha_Acta"];
+  const COLS_FECHA = ["Inicio", "Fin", "Inicio_Base", "Fin_Base", "Fecha_Importacion", "Cronograma_Fecha", "Fecha_Inicio_Base", "Fecha_Creacion", "Editado_El", "Fecha_Recepcion", "Fecha_Deseada", "Fecha_Estado", "Fecha_Identificacion", "Fecha_Fin_Base", "Nueva_Fecha_Fin", "Fecha_Decision", "Fecha", "Fecha_Registro", "Fecha_Inicio", "Fecha_Fin_Plan", "Actualizado_El", "Fecha_Plan", "Fecha_Real", "Fecha_Corte", "Fecha_Compromiso", "Fecha_Cierre", "Fecha_Acta"];
 
   // Excel puede convertir "2026-09-28" en número de serie; aquí se devuelve a texto ISO.
   const serialAISO = (v) => new Date(Math.round((v - 25569) * 86400000)).toISOString().slice(0, 10);
