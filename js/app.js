@@ -2088,6 +2088,9 @@
   }
 
   // Pestaña «Cronograma»: resumen + diagrama de Gantt.
+  // Escalas del Gantt: píxeles por día.
+  const ESCALAS_GT = { semanas: { px: 7, t: "Semanas" }, meses: { px: 2.4, t: "Meses" }, trimestres: { px: 0.9, t: "Trimestres" }, anios: { px: 0.42, t: "Años" } };
+  const MES_CORTO = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
   function seccionGantt(p, puede) {
     const ts = tareasDe(p.ID_Proyecto);
     const ayuda = `<div class="crono-ayuda"><div><b>Planner</b><span>En el plan: «…» (más opciones) → <b>Exportar plan a Excel</b>.</span></div>
@@ -2095,39 +2098,82 @@
     if (!ts.length) return `<div class="card"><div class="titulo-fila"><h2>Cronograma</h2>${puede ? `<button class="btn primario" id="b-crono-imp">⇪ Importar cronograma</button>` : ""}</div>
       ${vacio("Este proyecto aún no tiene cronograma. Impórtalo desde Planner o MS Project: el avance real y planeado se calcularán solos.")}${ayuda}</div>`;
     const hoy = R.hoyISO(), c = calcCronograma(ts, hoy);
-    const F = (S.ganttF = S.ganttF || {})[p.ID_Proyecto] = (S.ganttF[p.ID_Proyecto] || { nivel: "", atr: false, q: "" });
+    const meses0 = Math.max(1, R.difDias(c.fin || hoy, c.inicio || hoy) / 30);
+    const F = (S.ganttF = S.ganttF || {})[p.ID_Proyecto] = (S.ganttF[p.ID_Proyecto] || { nivel: "", atr: false, q: "", cerr: [], escala: meses0 <= 4 ? "semanas" : meses0 <= 14 ? "meses" : meses0 <= 40 ? "trimestres" : "anios" });
     const niveles = [...new Set(ts.map((t) => Number(t.Nivel) || 1))].sort((a, b) => a - b);
     const viejo = p.Cronograma_Fecha && R.difDias(hoy, p.Cronograma_Fecha) > 15 && p.Estado === "Activo";
     const finTarde = c.fin && p.Fecha_Fin_Plan && c.fin > p.Fecha_Fin_Plan;
     const difAv = Math.abs((Number(p.Avance_Real) || 0) - c.real) >= 3 || Math.abs((Number(p.Avance_Planeado) || 0) - c.plan) >= 3;
-    let lista = ts.filter((t) => (!F.nivel || (Number(t.Nivel) || 1) <= Number(F.nivel)) && (!F.atr || estadoTarea(t, hoy) === "atr") && (!F.q || normTxt(`${t.Nombre} ${t.Responsable} ${t.EDT}`).includes(normTxt(F.q))));
-    // Escala de tiempo: del primer al último mes del cronograma.
-    const ini = (c.inicio || hoy).slice(0, 8) + "01";
-    const finM = (() => { const f = c.fin || hoy; const [y, m] = f.split("-").map(Number); return `${y}-${String(m).padStart(2, "0")}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`; })();
-    const total = Math.max(1, R.difDias(finM, ini) + 1);
-    const pos = (f) => Math.max(0, Math.min(100, (R.difDias(f, ini) / total) * 100));
-    const meses = mesesEntre(ini.slice(0, 7), finM.slice(0, 7));
-    const cabMeses = meses.map((ym) => { const a = pos(`${ym}-01`), b = pos(finDeMes(ym)) + 100 / total; return `<span style="left:${a}%;width:${b - a}%">${meses.length > 14 ? etiquetaMes(ym).slice(0, 3) : etiquetaMes(ym)}</span>`; }).join("");
-    const lineaHoy = hoy >= ini && hoy <= finM ? `<span class="gt-hoy" style="left:${pos(hoy)}%" title="Hoy"></span>` : "";
+    const conResp = ts.some((t) => t.Responsable);
+    const filtrando = F.atr || F.q;
+    // Filas visibles: nivel, búsqueda, atrasadas y ramas contraídas.
+    const cerr = new Set(F.cerr.map(String));
+    const lista = [];
+    let ocultarHasta = null;
+    ts.forEach((t) => {
+      const n = Number(t.Nivel) || 1;
+      if (ocultarHasta !== null && !filtrando) { if (n > ocultarHasta) return; ocultarHasta = null; }
+      if (F.nivel && n > Number(F.nivel)) return;
+      if (F.atr && estadoTarea(t, hoy) !== "atr") return;
+      if (F.q && !normTxt(`${t.Nombre} ${t.Responsable} ${t.EDT}`).includes(normTxt(F.q))) return;
+      lista.push(t);
+      if (t.Resumen === "Sí" && cerr.has(String(t.Orden))) ocultarHasta = n;
+    });
+    // Escala de tiempo en píxeles, con margen de medio mes a cada lado.
+    const pxDia = ESCALAS_GT[F.escala].px;
+    const ini = R.sumarDias((c.inicio || hoy).slice(0, 8) + "01", -1);
+    const finR = (() => { const f = c.fin > hoy ? c.fin : hoy; const [y, m] = f.split("-").map(Number); return `${y}-${String(m).padStart(2, "0")}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`; })();
+    const dias = R.difDias(finR, ini) + 1, W = Math.round(dias * pxDia);
+    const x = (f) => Math.round(R.difDias(f, ini) * pxDia);
+    // Encabezado de dos niveles.
+    const meses = mesesEntre(ini.slice(0, 7), finR.slice(0, 7));
+    const celda = (a, b, txt, cls = "") => { const w = b - a; return `<span class="${cls}" style="left:${a}px;width:${w}px">${w >= 26 ? `<em>${txt}</em>` : ""}</span>`; };
+    let arriba = "", abajo = "", lineas = [];
+    const anios = [...new Set(meses.map((m) => m.slice(0, 4)))];
+    if (F.escala === "semanas") {
+      arriba = meses.map((ym) => celda(Math.max(0, x(`${ym}-01`)), x(finDeMes(ym)) + Math.round(pxDia), `${MES_CORTO[Number(ym.slice(5, 7)) - 1]} ${ym.slice(0, 4)}`)).join("");
+      let d = ini; while (new Date(d + "T12:00").getDay() !== 1) d = R.sumarDias(d, 1);
+      for (; d <= finR; d = R.sumarDias(d, 7)) { abajo += celda(x(d), x(d) + Math.round(7 * pxDia), String(Number(d.slice(8, 10)))); lineas.push(x(d)); }
+    } else if (F.escala === "meses") {
+      arriba = anios.map((y) => celda(Math.max(0, x(`${y}-01-01`)), Math.min(W, x(`${y}-12-31`) + Math.round(pxDia)), y)).join("");
+      abajo = meses.map((ym) => { lineas.push(Math.max(0, x(`${ym}-01`))); return celda(Math.max(0, x(`${ym}-01`)), x(finDeMes(ym)) + Math.round(pxDia), MES_CORTO[Number(ym.slice(5, 7)) - 1]); }).join("");
+    } else {
+      arriba = anios.map((y) => celda(Math.max(0, x(`${y}-01-01`)), Math.min(W, x(`${y}-12-31`) + Math.round(pxDia)), y)).join("");
+      const trims = [...new Set(meses.map((ym) => `${ym.slice(0, 4)}-${Math.floor((Number(ym.slice(5, 7)) - 1) / 3)}`))];
+      abajo = trims.map((k) => {
+        const [y, q] = k.split("-").map(Number), a = Math.max(0, x(`${y}-${String(q * 3 + 1).padStart(2, "0")}-01`)), b = Math.min(W, x(finDeMes(`${y}-${String(q * 3 + 3).padStart(2, "0")}`)) + Math.round(pxDia));
+        lineas.push(a); return celda(a, b, F.escala === "anios" ? `T${q + 1}` : `T${q + 1}`);
+      }).join("");
+    }
+    // Fondo de la línea de tiempo: divisiones y la línea de hoy (un solo gradiente por fila, sin cortes).
+    const xh = x(hoy);
+    const grid = lineas.filter((l) => l > 0).map((l) => `transparent ${l}px, #e3e8ef ${l}px, #e3e8ef ${l + 1}px, transparent ${l + 1}px`).join(", ");
+    const fondo = `linear-gradient(90deg, transparent ${xh - 1}px, #e08a00 ${xh - 1}px, #e08a00 ${xh + 1}px, transparent ${xh + 1}px)${grid ? `, linear-gradient(90deg, transparent 0, ${grid}, transparent ${W}px)` : ""}`;
+    const der = [];
     const filas = lista.map((t) => {
-      const est = estadoTarea(t, hoy), n = Number(t.Nivel) || 1, pc = Number(t.Pct_Completado) || 0;
+      const est = estadoTarea(t, hoy), n = Number(t.Nivel) || 1, pc = Number(t.Pct_Completado) || 0, res = t.Resumen === "Sí";
       let barra = "";
       if (t.Inicio && t.Fin) {
-        if (t.Hito === "Sí") barra = `<span class="gt-hito gt-${est}" style="left:${pos(t.Fin)}%" title="${esc(t.Nombre)} · ${fecha(t.Fin)}"></span>`;
+        const tip = `${t.Nombre} · ${fecha(t.Inicio)} → ${fecha(t.Fin)} · ${pc}%${t.Responsable ? ` · ${t.Responsable}` : ""}`;
+        if (t.Hito === "Sí") barra = `<span class="gt-hito gt-${est}" style="left:${x(t.Fin)}px" title="${esc(tip)}"></span><span class="gt-etq" style="left:${x(t.Fin) + 10}px">${fecha(t.Fin)}</span>`;
         else {
-          const a = pos(t.Inicio), w = Math.max(0.6, pos(t.Fin) + 100 / total - a);
-          barra = `<span class="gt-barra gt-${est} ${t.Resumen === "Sí" ? "gt-resumen" : ""}" style="left:${a}%;width:${w}%" title="${esc(t.Nombre)} · ${fecha(t.Inicio)} → ${fecha(t.Fin)} · ${pc}%"><i style="width:${pc}%"></i></span>`;
+          const a = x(t.Inicio), w = Math.max(4, x(t.Fin) + Math.round(pxDia) - a);
+          barra = `<span class="gt-barra gt-${est} ${res ? "gt-resumen" : ""}" style="left:${a}px;width:${w}px" title="${esc(tip)}"><i style="width:${pc}%"></i></span>`;
+          if (!res && w > 0) barra += `<span class="gt-etq" style="left:${a + w + 6}px">${pc}%</span>`;
         }
-        if (t.Inicio_Base && t.Fin_Base && t.Hito !== "Sí") { const a = pos(t.Inicio_Base), w = Math.max(0.4, pos(t.Fin_Base) + 100 / total - a); barra += `<span class="gt-base" style="left:${a}%;width:${w}%" title="Línea base: ${fecha(t.Inicio_Base)} → ${fecha(t.Fin_Base)}"></span>`; }
+        if (!res && t.Inicio_Base && t.Fin_Base && t.Hito !== "Sí") { const a = x(t.Inicio_Base), w = Math.max(3, x(t.Fin_Base) + Math.round(pxDia) - a); barra += `<span class="gt-base" style="left:${a}px;width:${w}px" title="Línea base: ${fecha(t.Inicio_Base)} → ${fecha(t.Fin_Base)}"></span>`; }
       }
-      return `<tr class="gt-fila gt-n${Math.min(n, 4)} ${t.Resumen === "Sí" ? "gt-res" : ""} ${est === "atr" ? "gt-fila-atr" : ""}">
-        <td class="gt-edt">${esc(t.EDT)}</td>
-        <td class="gt-nom" style="padding-left:${(n - 1) * 14 + 8}px">${t.Hito === "Sí" ? `<span class="gt-rombo">◆</span>` : ""}${esc(t.Nombre)}</td>
-        <td class="opc gt-resp">${esc(t.Responsable || "")}</td>
-        <td class="nowrap">${fecha(t.Inicio)}</td><td class="nowrap">${fecha(t.Fin)}</td>
-        <td class="gt-pct"><span class="gt-est gt-est-${est}">${pc}%</span></td>
-        <td class="gt-linea"><div class="gt-pista">${lineaHoy}${barra}</div></td></tr>`;
+      const abierto = !cerr.has(String(t.Orden));
+      const tog = res && !filtrando ? `<button type="button" class="gt-tog" data-gt-tog="${esc(t.Orden)}" aria-label="${abierto ? "Contraer" : "Expandir"}">${abierto ? "▾" : "▸"}</button>` : `<span class="gt-tog-v"></span>`;
+      const cls = `gt-n${Math.min(n, 4)} ${res ? "gt-res" : ""} ${est === "atr" && !res ? "gt-fila-atr" : ""}`;
+      der.push(`<div class="gt-r ${cls}">${barra}</div>`);
+      return `<tr class="gt-fila ${cls}">
+        <td class="gt-c gt-c1" title="${esc(`${t.EDT} · ${t.Nombre}${t.Responsable ? ` · ${t.Responsable}` : ""}`)}"><div class="gt-nom" style="padding-left:${(n - 1) * 14}px">${tog}<span class="gt-edt">${esc(t.EDT)}</span>${t.Hito === "Sí" ? `<span class="gt-rombo">◆</span>` : ""}<span class="gt-txt">${esc(t.Nombre)}</span></div></td>
+        ${conResp ? `<td class="gt-c gt-c2"><span class="gt-resp" title="${esc(t.Responsable || "")}">${esc(t.Responsable || "")}</span></td>` : ""}
+        <td class="gt-c gt-c3">${fecha(t.Inicio)}</td><td class="gt-c gt-c4">${fecha(t.Fin)}</td>
+        <td class="gt-c gt-c5"><span class="gt-est gt-est-${est}">${pc}%</span></td></tr>`;
     }).join("");
+    const resumenes = ts.filter((t) => t.Resumen === "Sí").length;
     return `<div class="card"><div class="titulo-fila"><h2>Cronograma <span class="pill ${p.Cronograma_Origen === "Planner" ? "planner" : "msproject"}">${esc(p.Cronograma_Origen || "Importado")}</span></h2>
         <div class="acciones">${puede ? `<button class="btn primario" id="b-crono-imp">⇪ Reimportar</button>` : ""}${puede ? `<button class="btn" id="b-crono-quitar">Quitar</button>` : ""}</div></div>
       <p class="sub">Importado el ${fecha(p.Cronograma_Fecha)}${p.Cronograma_Por ? ` por ${esc(nombreUsuario(p.Cronograma_Por))}` : ""}${p.Cronograma_Archivo ? ` · ${esc(p.Cronograma_Archivo)}` : ""}.</p>
@@ -2138,14 +2184,21 @@
       ${viejo ? `<div class="aviso-seg">⚠ El cronograma tiene ${R.difDias(hoy, p.Cronograma_Fecha)} días sin actualizar. Reimpórtalo antes del próximo seguimiento.</div>` : ""}
       ${finTarde ? `<div class="aviso-seg">⚠ El cronograma termina el ${fecha(c.fin)}, después del fin planeado (${fecha(p.Fecha_Fin_Plan)}).${puede ? ` <button class="btn enlace" id="b-crono-cc">Registrar control de cambios</button>` : ""}</div>` : ""}
       ${difAv && puede ? `<div class="aviso-seg info">El avance del proyecto (${pct(p.Avance_Real)} / ${pct(p.Avance_Planeado)}) no coincide con el cronograma (${c.real}% / ${c.plan}%). <button class="btn enlace" id="b-crono-av">Actualizar avance</button></div>` : ""}
-      <div class="gt-filtros">
-        ${niveles.length > 1 ? `<label class="filtro"><span>Mostrar</span><select id="gt-nivel"><option value="">Todos los niveles</option>${niveles.slice(0, -1).map((n) => `<option value="${n}" ${String(F.nivel) === String(n) ? "selected" : ""}>Hasta nivel ${n}</option>`).join("")}</select></label>` : ""}
-        <label class="filtro crece"><span>Buscar</span><input id="gt-q" type="search" placeholder="Tarea, responsable o EDT" value="${esc(F.q)}"></label>
+      <div class="gt-barra-h">
+        <div class="gt-seg" role="group" aria-label="Escala">${Object.entries(ESCALAS_GT).map(([k, v]) => `<button type="button" class="${F.escala === k ? "activo" : ""}" data-gt-esc="${k}">${v.t}</button>`).join("")}</div>
+        <button type="button" class="btn chico" id="gt-hoy">◎ Hoy</button>
+        ${resumenes ? `<button type="button" class="btn chico" id="gt-exp">Expandir todo</button><button type="button" class="btn chico" id="gt-con">Contraer todo</button>` : ""}
+        ${niveles.length > 1 ? `<select id="gt-nivel" aria-label="Niveles"><option value="">Todos los niveles</option>${niveles.slice(0, -1).map((n) => `<option value="${n}" ${String(F.nivel) === String(n) ? "selected" : ""}>Hasta nivel ${n}</option>`).join("")}</select>` : ""}
+        <input id="gt-q" type="search" placeholder="Buscar tarea, responsable o EDT" value="${esc(F.q)}" aria-label="Buscar">
         <label class="check gt-chk"><input type="checkbox" id="gt-atr" ${F.atr ? "checked" : ""}> Solo atrasadas</label>
-        <span class="gt-leyenda"><i class="gt-l-ok"></i>Completada<i class="gt-l-curso"></i>En curso<i class="gt-l-atr"></i>Atrasada<i class="gt-l-pend"></i>Por iniciar${c.conBase ? `<i class="gt-l-base"></i>Línea base` : ""}<i class="gt-l-hoy"></i>Hoy</span>
       </div>
-      <div class="tabla-scroll gt-scroll"><table class="no-orden no-recortar gantt"><thead><tr><th>EDT</th><th>Tarea</th><th class="opc">Responsable</th><th>Inicio</th><th>Fin</th><th>%</th><th class="gt-linea"><div class="gt-meses">${cabMeses}</div></th></tr></thead>
-        <tbody>${filas || `<tr><td colspan="7">${vacio("Ninguna tarea coincide con el filtro.")}</td></tr>`}</tbody></table></div></div>`;
+      <div class="gt-leyenda"><span><i class="gt-l-ok"></i>Completada</span><span><i class="gt-l-curso"></i>En curso</span><span><i class="gt-l-atr"></i>Atrasada</span><span><i class="gt-l-pend"></i>Por iniciar</span><span><i class="gt-l-res"></i>Resumen</span><span><i class="gt-l-hito"></i>Hito</span>${c.conBase ? `<span><i class="gt-l-base"></i>Línea base</span>` : ""}<span><i class="gt-l-hoy"></i>Hoy</span></div>
+      ${filas ? `<div class="gt-cont" id="gt-cont">
+        <table class="no-orden no-recortar gt-izq ${conResp ? "con-resp" : ""}"><thead><tr><th class="gt-c1">Tarea</th>${conResp ? `<th class="gt-c2">Responsable</th>` : ""}<th class="gt-c3">Inicio</th><th class="gt-c4">Fin</th><th class="gt-c5">%</th></tr></thead><tbody>${filas}</tbody></table>
+        <div class="gt-der" id="gt-scroll" data-hoy="${xh}"><div class="gt-tl" style="width:${W}px;--gt-w:${W}px;--gt-fondo:${fondo}">
+          <div class="gt-cab gt-cab1"><div class="gt-escala">${arriba}</div></div>
+          <div class="gt-cab gt-cab2"><div class="gt-escala">${abajo}<span class="gt-hoy-cab" style="left:${xh}px">Hoy</span></div></div>
+          ${der.join("")}</div></div></div>` : vacio("Ninguna tarea coincide con el filtro.")}</div>`;
   }
   function enlazarGantt(el, p) {
     const b = el.querySelector("#b-crono-imp");
@@ -2161,6 +2214,23 @@
     const av = el.querySelector("#b-crono-av");
     if (av) av.addEventListener("click", () => { const c = calcCronograma(tareasDe(p.ID_Proyecto)); guardar(() => S.api.actualizarPorId("Proyectos", "ID_Proyecto", p.ID_Proyecto, { Avance_Real: c.real, Avance_Planeado: c.plan, ...sello() }), `Avance actualizado: ${c.real}% / ${c.plan}%`); });
     if (!F) return;
+    const sc = el.querySelector("#gt-scroll");
+    // Al abrir, la línea de tiempo se ubica cerca de hoy (se recuerda la posición mientras no se cambie de escala).
+    const irHoy = () => { if (sc) sc.scrollLeft = Math.max(0, Number(sc.dataset.hoy) - sc.clientWidth / 3); };
+    if (sc) {
+      if (F.scroll !== undefined) sc.scrollLeft = F.scroll; else irHoy();
+      sc.addEventListener("scroll", () => { F.scroll = sc.scrollLeft; }, { passive: true });
+      // Resaltar la misma fila en la tabla y en la línea de tiempo.
+      const izq = [...el.querySelectorAll(".gt-izq tbody tr")], dr = [...el.querySelectorAll(".gt-r")];
+      const marcar = (i, on) => { if (izq[i]) izq[i].classList.toggle("gt-sobre", on); if (dr[i]) dr[i].classList.toggle("gt-sobre", on); };
+      izq.forEach((r, i) => { r.addEventListener("mouseenter", () => marcar(i, true)); r.addEventListener("mouseleave", () => marcar(i, false)); });
+      dr.forEach((r, i) => { r.addEventListener("mouseenter", () => marcar(i, true)); r.addEventListener("mouseleave", () => marcar(i, false)); });
+    }
+    el.querySelector("#gt-hoy").addEventListener("click", irHoy);
+    el.querySelectorAll("[data-gt-esc]").forEach((x) => x.addEventListener("click", () => { F.escala = x.dataset.gtEsc; delete F.scroll; render(); }));
+    el.querySelectorAll("[data-gt-tog]").forEach((x) => x.addEventListener("click", (ev) => { ev.stopPropagation(); const k = x.dataset.gtTog; F.cerr = F.cerr.includes(k) ? F.cerr.filter((y) => y !== k) : [...F.cerr, k]; render(); }));
+    const ex = el.querySelector("#gt-exp"); if (ex) ex.addEventListener("click", () => { F.cerr = []; render(); });
+    const co = el.querySelector("#gt-con"); if (co) co.addEventListener("click", () => { const ts = tareasDe(p.ID_Proyecto); const min = Math.min(...ts.map((t) => Number(t.Nivel) || 1)); F.cerr = ts.filter((t) => t.Resumen === "Sí" && (Number(t.Nivel) || 1) > min).map((t) => String(t.Orden)); render(); });
     const n = el.querySelector("#gt-nivel"); if (n) n.addEventListener("change", () => { F.nivel = n.value; render(); });
     const a = el.querySelector("#gt-atr"); if (a) a.addEventListener("change", () => { F.atr = a.checked; render(); });
     const t = el.querySelector("#gt-q"); if (t) t.addEventListener("change", () => { F.q = t.value; render(); });
