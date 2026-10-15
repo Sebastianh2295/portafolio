@@ -1854,7 +1854,9 @@
     const provs = idsLista(p.Proveedores).map(proveedor).filter(Boolean);
     const tks = ticketsDe(pid);
     const e = R.estadoSeguimiento(p, S.datos.Seguimientos);
-    const t = (v) => esc(v === 0 ? "0" : v || "—");
+    // Palabras muy largas (URLs, códigos) se pueden partir sin cortar las palabras normales.
+    const wbr = (v) => String(v).split(/(\s+)/).map((w) => (w.length < 28 ? esc(w) : (w.match(/.{1,20}/g) || []).map(esc).join("<wbr>"))).join("");
+    const t = (v) => (v === 0 ? "0" : v ? wbr(v) : "—");
     const fila = (k, v) => `<tr><th>${k}</th><td>${v}</td></tr>`;
     const tabla = (cab, filas, vacioTxt) => filas.length ? `<table class="hv-t"><thead><tr>${cab.map((c) => `<th>${c}</th>`).join("")}</tr></thead><tbody>${filas.join("")}</tbody></table>` : `<p class="hv-vacio">${vacioTxt}</p>`;
     // Cronología: todo lo que ha pasado, en orden.
@@ -1869,6 +1871,62 @@
     eventos.sort((a, b) => a.f.localeCompare(b.f));
     const fechaEv = (f) => (f.length > 10 ? `${fecha(f.slice(0, 10))} ${f.slice(11, 16)}` : fecha(f));
     const abiertos = comps.filter((c) => !R.cerrado(c)).length;
+    const vencidosC = comps.filter((c) => R.estadoCompromiso(c) === "Vencido").length;
+    const cambiosP = cambiosDe(pid), depsP = depsDe(pid).length + bloqueaA(pid).length, lecc = leccionesDe(pid);
+    const vEvm = evmDe(p), f2 = (x) => (x === null ? "—" : x.toFixed(2).replace(".", ","));
+    const plural = (n, uno, varios) => `${n} ${n === 1 ? uno : varios}`;
+    const enlaceHV = (u, txt) => (esURL(u) ? `<a class="hv-link" href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(txt || u)}</a>` : t(u));
+    const docs = documentosDe(pid);
+    const secciones = [
+      { t: "Datos generales", d: `PM ${nombreUsuario(p.PM)} · ${fecha(p.Fecha_Inicio)} → ${fecha(p.Fecha_Fin_Plan)}`, h: `      <table class="hv-ficha">${[
+        fila("PM responsable", t(nombreUsuario(p.PM))), fila("Metodología", t(p.Metodologia)), fila("Prioridad", t(p.Prioridad)),
+        fila("Fecha de inicio", fecha(p.Fecha_Inicio)), fila("Fin planeado", fecha(p.Fecha_Fin_Plan)), fila("Frecuencia de seguimiento", t(p.Frecuencia_Seguimiento)),
+        fila("Estado del seguimiento", `${t(e.estado)} · próximo ${fecha(e.proximo)}`), fila("Presupuesto", cop(p.Presupuesto)), fila("Ejecutado", cop(p.Ejecutado)),
+        fila("Repositorio", enlaceHV(p.URL_Repositorio)), fila("Documentos", enlaceHV(p.URL_Documentos)), fila("Comentario de estado", t(p.Comentario_Estado)),
+      ].join("")}</table>` },
+      { t: "Desempeño y línea base", d: vEvm ? `SPI ${f2(vEvm.SPI)} · CPI ${f2(vEvm.CPI)}${lineaBase(p).tiene ? ` · LB${lineaBase(p).num}` : ""}` : "sin presupuesto", h: `${(() => { const v = evmDe(p); if (!v) return `<p class="hv-vacio">Sin presupuesto registrado: no se calcula el valor ganado.</p>`;
+        const f = (x) => (x === null ? "—" : x.toFixed(2).replace(".", ","));
+        return `<table class="hv-ficha">${[fila("SPI · cronograma", `${f(v.SPI)} <small>(valor ganado / valor planeado; 1 = según plan)</small>`), fila("CPI · costo", `${f(v.CPI)} <small>(valor ganado / costo real; 1 = según presupuesto)</small>`),
+          fila("Valor planeado (PV)", cop(Math.round(v.PV))), fila("Valor ganado (EV)", cop(Math.round(v.EV))), fila("Costo real (AC)", cop(v.AC)), fila("Estimado al terminar (EAC)", v.EAC !== null ? cop(Math.round(v.EAC)) : "—"),
+          fila("Presupuesto base (BAC)", `${cop(v.BAC)} <small>${lineaBase(p).tiene ? `línea base LB${lineaBase(p).num}` : "presupuesto actual"}</small>`)].join("")}</table>`; })()}
+      ${(() => { const lb = lineaBase(p); return lb.tiene ? `<p class="hv-p"><b>Línea base vigente (LB${lb.num}):</b> ${lb.ib ? `inicio ${fecha(lb.ib)} → actual ${fecha(p.Fecha_Inicio)}${lb.diasInicio ? ` (${lb.diasInicio > 0 ? "+" : ""}${lb.diasInicio} días)` : ""} · ` : ""}fin ${fecha(lb.fb)} → actual ${fecha(p.Fecha_Fin_Plan)}${lb.dias !== null ? ` (${lb.dias > 0 ? "+" : ""}${lb.dias} días)` : ""} · presupuesto ${lb.pb !== null ? cop(lb.pb) : "—"} → actual ${cop(p.Presupuesto)}${lb.pctCosto !== null ? ` (${lb.pctCosto > 0 ? "+" : ""}${lb.pctCosto}%)` : ""}</p>` : ""; })()}
+      ${(() => { const l = lineasBaseDe(p.ID_Proyecto); return l.length > 1 ? `<table class="hv-tabla"><thead><tr><th>LB</th><th>Fijada</th><th>Inicio</th><th>Fin</th><th>Presupuesto</th><th>Motivo</th></tr></thead><tbody>${l.map((x) => `<tr><td>LB${esc(x.Numero)}</td><td>${fecha(x.Fecha)}</td><td>${fecha(x.Fecha_Inicio)}</td><td>${fecha(x.Fecha_Fin)}</td><td>${x.Presupuesto !== "" && x.Presupuesto != null ? cop(x.Presupuesto) : "—"}</td><td>${esc(x.Motivo || "")}</td></tr>`).join("")}</tbody></table>` : ""; })()}` },
+      { t: "Equipo: stakeholders y proveedores", d: `${plural(stks.length, "persona", "personas")} · ${plural(provs.length, "proveedor", "proveedores")}`, h: `      ${tabla(["Rol", "Nombre", "Cargo / área", "Empresa", "Correo"], stks.map((x) => `<tr><td>${t(x.Rol)}</td><td>${t(x.Nombre)}</td><td>${t([x.Cargo, x.Area].filter(Boolean).join(" · "))}</td><td>${x.ID_Proveedor ? t((proveedor(x.ID_Proveedor) || {}).Nombre) : "Interno"}</td><td>${t(x.Correo)}</td></tr>`), "Sin stakeholders registrados.")}
+      <p class="hv-p"><b>Proveedores:</b> ${provs.length ? provs.map((x) => `${esc(x.Nombre)}${x.Servicio ? ` (${esc(x.Servicio)})` : ""}`).join(" · ") : "ninguno"}</p>` },
+      { t: "Hitos", d: `${hitos.length} · ${hitos.filter((h) => h.Estado === "Cumplido").length} cumplidos`, h: `      ${tabla(["Hito", "Fecha plan", "Fecha real", "Estado"], hitos.map((h) => `<tr><td>${t(h.Hito)}</td><td>${fecha(h.Fecha_Plan)}</td><td>${h.Fecha_Real ? fecha(h.Fecha_Real) : "—"}</td><td>${t(h.Estado)}</td></tr>`), "Sin hitos.")}` },
+      { t: "Sesiones de seguimiento", d: segs.length ? `${plural(segs.length, "sesión", "sesiones")} · última ${fecha(segs[segs.length - 1].Fecha_Corte)}` : "sin sesiones", h: `      ${tabla(["Fecha", "Avance", "Semáforo", "Logros", "Próximos pasos", "Bloqueos", "Acta"], segs.slice().reverse().map((x) => `<tr><td class="hv-nw">${fecha(x.Fecha_Corte)}</td><td>${pct(x.Avance_Real)}</td><td>${t(x.Semaforo)}</td><td>${t(x.Logros)}</td><td>${t(x.Proximos_Pasos)}</td><td>${t(x.Bloqueos)}</td><td>${x.Fecha_Acta ? fecha(x.Fecha_Acta) : "—"}${x.Acta_Archivo ? " · PDF" : ""}${esURL(x.URL_Acta) ? `<br>${enlaceHV(x.URL_Acta, "Ver acta ↗")}` : ""}</td></tr>`), "Sin seguimientos.")}` },
+      { t: "Compromisos", d: `${comps.length} · ${abiertos} abiertos${vencidosC ? ` · ${vencidosC} vencidos` : ""}`, h: `      ${tabla(["Compromiso", "Origen", "Responsable", "Fecha límite", "Estado", "Seguimiento"], comps.map((c) => {
+        const hilo = comentariosDe(c.ID_Compromiso);
+        return `<tr><td>${t(c.Compromiso)}</td><td>${esc(origen(c))}</td><td>${t(c.Responsable)}</td><td class="hv-nw">${fecha(c.Fecha_Compromiso)}</td>
+          <td>${esc(R.estadoCompromiso(c))}${R.cerrado(c) && c.Fecha_Cierre ? `<br><small>cerrado ${fecha(c.Fecha_Cierre)}</small>` : ""}</td>
+          <td>${hilo.length ? hilo.map((x) => `<div class="hv-com"><small>${fechaEv(String(x.Fecha_Hora))} · ${esc(nombreUsuario(x.Autor))}</small><br>${wbr(resumenCom(x))}</div>`).join("") : "—"}</td></tr>`;
+      }), "Sin compromisos.")}` },
+      { t: "Riesgos", d: `${riesgos.length} · ${riesgos.filter((r) => ["Abierto", "Materializado"].includes(r.Estado)).length} abiertos`, h: `      ${tabla(["No.", "Riesgo", "Responsable", "Inherente", "Planes", "Residual", "Origen"], riesgos.slice().sort((a, b) => numRiesgo(a) - numRiesgo(b)).map((r) => `<tr><td>${numRiesgo(r)}</td><td><small>${t(r.Tipo)} · ${t(r.Estado)}</small><br>${t(r.Descripcion)}</td><td>${t(r.Responsable)}</td>
+        <td class="hv-nw">${califTxt(r.Probabilidad_Inherente, r.Impacto_Inherente)}</td><td>${r.Plan_Mitigacion ? `<b>Mitigación:</b> ${t(r.Plan_Mitigacion)}` : ""}${r.Plan_Contingencia ? `<br><b>Contingencia:</b> ${t(r.Plan_Contingencia)}` : ""}</td>
+        <td class="hv-nw">${califTxt(r.Probabilidad_Residual, r.Impacto_Residual)}</td><td>${esc(origenRiesgo(r))}</td></tr>`), "Sin riesgos.")}` },
+      { t: "Control de cambios", d: cambiosP.length ? `${cambiosP.length} · ${cambiosP.filter((c) => c.Estado === "Aprobado").length} aprobados${cambiosP.some((c) => (c.Estado || "Solicitado") === "Solicitado") ? ` · ${cambiosP.filter((c) => (c.Estado || "Solicitado") === "Solicitado").length} por decidir` : ""}` : "sin cambios", h: `      ${(() => { const ap = cambiosDe(pid).filter((c) => c.Estado === "Aprobado"); return ap.length ? `<p class="hv-p"><b>Cambios aprobados:</b> ${ap.length} · ${IMPACTOS_CC.map((i) => { const n = ap.filter((c) => impactosDe(c).includes(i)).length; return n ? `${i}: ${n}` : ""; }).filter(Boolean).join(" · ")}</p>` : ""; })()}
+      ${tabla(["N.º / Fecha", "Impacta en", "Cambio", "Efecto", "Estado", "Documento"], cambiosDe(pid).map((c) => `<tr><td class="hv-nw">${c.Numero_CC ? `<b>${t(c.Numero_CC)}</b><br>` : ""}${fecha(c.Fecha)}</td><td>${t(impactosDe(c).join(", "))}</td><td>${t(c.Descripcion)}${c.Justificacion ? `<br><small>Por qué: ${t(c.Justificacion)}</small>` : ""}</td><td>${t(c.Impacto)}${c.Nueva_Fecha_Fin ? `<br><small>Nueva fecha fin ${fecha(c.Nueva_Fecha_Fin)}</small>` : ""}${num0(c.Nuevo_Presupuesto) !== null ? `<br><small>Nuevo presupuesto ${cop(c.Nuevo_Presupuesto)}</small>` : ""}</td><td>${t(c.Estado)}${c.Fecha_Decision ? `<br><small>${fecha(c.Fecha_Decision)}</small>` : ""}</td><td>${c.URL_Documento && esURL(c.URL_Documento) ? `<a href="${esc(c.URL_Documento)}" target="_blank" rel="noopener">Ver documento</a>` : "—"}</td></tr>`), "Sin cambios registrados.")}` },
+      { t: "Documentos del proyecto", d: docs.length ? plural(docs.length, "enlace", "enlaces") : "sin documentos", h: tabla(["Documento", "Tipo", "Descripción", "Enlace"], docs.map((d) => `<tr><td>${t(d.Nombre)}</td><td>${t(d.Tipo)}</td><td>${t(d.Descripcion)}</td><td>${esURL(d.URL) ? enlaceHV(d.URL, "Abrir documento ↗") : t(d.URL)}</td></tr>`), "Sin documentos registrados. Agrégalos en la pestaña Documentos.") },
+      { t: "Dependencias", d: depsP ? String(depsP) : "ninguna", h: `      ${tabla(["Relación", "Proyecto", "Tipo", "Alerta"], [...depsDe(pid).map((d) => `<tr><td>Depende de</td><td>${esc((proyecto(d.Depende_De) || {}).Nombre || d.Depende_De)}</td><td>${t(d.Tipo)}</td><td>${esc(conflictoDep(d) || "—")}</td></tr>`),
+        ...bloqueaA(pid).map((d) => `<tr><td>Bloquea a</td><td>${esc((proyecto(d.ID_Proyecto) || {}).Nombre || d.ID_Proyecto)}</td><td>${t(d.Tipo)}</td><td>${esc(conflictoDep(d) || "—")}</td></tr>`)], "Sin dependencias.")}` },
+      { t: "Tickets del helpdesk", d: tks.length ? `${tks.length} · ${tks.filter((k) => !["Resuelto", "Cerrado"].includes(k.Estado)).length} abiertos` : "ninguno", h: `      ${tabla(["N.º", "Título", "Estado", "Prioridad", "Registrado"], tks.map((k) => `<tr><td>${t(k.Numero)}</td><td>${t(k.Titulo)}</td><td>${t(k.Estado)}</td><td>${t(k.Prioridad)}</td><td>${fecha(k.Fecha_Registro)}</td></tr>`), "Sin tickets.")}` },
+      { t: "Lecciones aprendidas", d: lecc.length ? String(lecc.length) : "sin registrar", h: `      ${tabla(["Tipo", "Categoría", "Qué pasó", "Lección", "Recomendación"], leccionesDe(pid).map((l) => `<tr><td>${t(l.Tipo)}</td><td>${t(l.Categoria)}</td><td>${t(l.Situacion)}</td><td>${t(l.Leccion)}</td><td>${t(l.Recomendacion)}</td></tr>`), "Sin lecciones registradas.")}` },
+      { t: "Bitácora del proyecto", d: `${plural(eventos.length, "evento", "eventos")} en orden cronológico`, h: `${(() => {
+        if (!eventos.length) return `<p class="hv-vacio">Sin eventos registrados.</p>`;
+        const MES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+        const recorta = (x, n) => (x.length > n ? x.slice(0, n).replace(/\s+\S*$/, "") + "…" : x);
+        let mes = ""; const filas = [];
+        eventos.forEach((x) => {
+          const m = x.f.slice(0, 7);
+          if (m !== mes) { mes = m; filas.push(`<tr class="hv-mes"><td colspan="3">${MES[Number(m.slice(5, 7)) - 1] || ""} ${m.slice(0, 4)}</td></tr>`); }
+          filas.push(`<tr><td class="hv-nw">${fechaEv(x.f)}</td><td><span class="hv-tag hv-tag-${x.tipo.toLowerCase()}">${x.tipo}</span></td><td>${wbr(recorta(x.txt, 280))}</td></tr>`);
+        });
+        return `<table class="hv-t hv-bitacora"><colgroup><col style="width:18%"><col style="width:15%"><col></colgroup><thead><tr><th>Fecha</th><th>Tipo</th><th>Qué pasó</th></tr></thead><tbody>${filas.join("")}</tbody></table>
+          <p class="hv-nota">Los textos largos se resumen aquí; el detalle completo de cada comentario está en la sección «Compromisos».</p>`;
+      })()}` },
+    ];
+    const indice = `<nav class="hv-indice" id="hv-indice" aria-label="Contenido"><div class="hv-indice-t">Contenido</div>
+      <ol style="grid-template-rows:repeat(${Math.ceil(secciones.length / 2)},auto)">${secciones.map((x, i) => `<li><a href="#hv-s${i + 1}" data-hv-ir="hv-s${i + 1}"><span class="hv-ind-n">${i + 1}</span><span class="hv-ind-t">${esc(x.t)}</span><span class="hv-ind-d">${esc(x.d)}</span></a></li>`).join("")}</ol></nav>`;
     const doc = `
       ${cabDocumento("Hoja de vida del proyecto", p.Nombre, `${esc(pid)}${p.Codigo_Almera ? ` · Almera ${esc(p.Codigo_Almera)}` : ""} · ${esc(p.Cliente_Area || "")}`)}
       <section class="hv-kpis">
@@ -1876,47 +1934,12 @@
         <div><span>Semáforo</span><b>${t(p.Semaforo)}</b></div><div><span>Avance real / plan</span><b>${pct(p.Avance_Real)} / ${pct(p.Avance_Planeado)}</b></div>
         <div><span>Presupuesto ejecutado</span><b>${Number(p.Presupuesto) ? Math.round((Number(p.Ejecutado) || 0) / Number(p.Presupuesto) * 100) + "%" : "—"}</b></div>
         <div><span>Compromisos abiertos</span><b>${abiertos} de ${comps.length}</b></div>
+        <div><span>Riesgos abiertos</span><b>${riesgos.filter((r) => ["Abierto", "Materializado"].includes(r.Estado)).length} de ${riesgos.length}</b></div>
         ${(() => { const v = evmDe(p); const f = (x) => (x === null ? "—" : x.toFixed(2).replace(".", ",")); return v ? `<div><span>SPI · CPI</span><b>${f(v.SPI)} · ${f(v.CPI)}</b></div>` : ""; })()}
       </section>
-      <h2>1. Datos generales</h2>
-      <table class="hv-ficha">${[
-        fila("PM responsable", t(nombreUsuario(p.PM))), fila("Metodología", t(p.Metodologia)), fila("Prioridad", t(p.Prioridad)),
-        fila("Fecha de inicio", fecha(p.Fecha_Inicio)), fila("Fin planeado", fecha(p.Fecha_Fin_Plan)), fila("Frecuencia de seguimiento", t(p.Frecuencia_Seguimiento)),
-        fila("Estado del seguimiento", `${t(e.estado)} · próximo ${fecha(e.proximo)}`), fila("Presupuesto", cop(p.Presupuesto)), fila("Ejecutado", cop(p.Ejecutado)),
-        fila("Repositorio", t(p.URL_Repositorio)), fila("Documentos", t(p.URL_Documentos)), fila("Comentario de estado", t(p.Comentario_Estado)),
-      ].join("")}</table>
-      <h2>2. Stakeholders y proveedores</h2>
-      ${tabla(["Rol", "Nombre", "Cargo / área", "Empresa", "Correo"], stks.map((x) => `<tr><td>${t(x.Rol)}</td><td>${t(x.Nombre)}</td><td>${t([x.Cargo, x.Area].filter(Boolean).join(" · "))}</td><td>${x.ID_Proveedor ? t((proveedor(x.ID_Proveedor) || {}).Nombre) : "Interno"}</td><td>${t(x.Correo)}</td></tr>`), "Sin stakeholders registrados.")}
-      <p class="hv-p"><b>Proveedores:</b> ${provs.length ? provs.map((x) => `${esc(x.Nombre)}${x.Servicio ? ` (${esc(x.Servicio)})` : ""}`).join(" · ") : "ninguno"}</p>
-      <h2>3. Cronología del proyecto</h2>
-      ${tabla(["Fecha", "Tipo", "Qué pasó"], eventos.map((x) => `<tr><td class="hv-nw">${fechaEv(x.f)}</td><td>${x.tipo}</td><td>${esc(x.txt)}</td></tr>`), "Sin eventos registrados.")}
-      <h2>4. Sesiones de seguimiento</h2>
-      ${tabla(["Fecha", "Avance", "Semáforo", "Logros", "Próximos pasos", "Bloqueos", "Acta"], segs.slice().reverse().map((x) => `<tr><td class="hv-nw">${fecha(x.Fecha_Corte)}</td><td>${pct(x.Avance_Real)}</td><td>${t(x.Semaforo)}</td><td>${t(x.Logros)}</td><td>${t(x.Proximos_Pasos)}</td><td>${t(x.Bloqueos)}</td><td>${x.Fecha_Acta ? fecha(x.Fecha_Acta) : "—"}${x.Acta_Archivo ? " · PDF" : ""}</td></tr>`), "Sin seguimientos.")}
-      <h2>5. Compromisos</h2>
-      ${tabla(["Compromiso", "Origen", "Responsable", "Fecha límite", "Estado", "Seguimiento"], comps.map((c) => {
-        const hilo = comentariosDe(c.ID_Compromiso);
-        return `<tr><td>${t(c.Compromiso)}</td><td>${esc(origen(c))}</td><td>${t(c.Responsable)}</td><td class="hv-nw">${fecha(c.Fecha_Compromiso)}</td>
-          <td>${esc(R.estadoCompromiso(c))}${R.cerrado(c) && c.Fecha_Cierre ? `<br><small>cerrado ${fecha(c.Fecha_Cierre)}</small>` : ""}</td>
-          <td>${hilo.length ? hilo.map((x) => `<div class="hv-com"><small>${fechaEv(String(x.Fecha_Hora))} · ${esc(nombreUsuario(x.Autor))}</small><br>${esc(resumenCom(x))}</div>`).join("") : "—"}</td></tr>`;
-      }), "Sin compromisos.")}
-      <h2>6. Hitos</h2>
-      ${tabla(["Hito", "Fecha plan", "Fecha real", "Estado"], hitos.map((h) => `<tr><td>${t(h.Hito)}</td><td>${fecha(h.Fecha_Plan)}</td><td>${h.Fecha_Real ? fecha(h.Fecha_Real) : "—"}</td><td>${t(h.Estado)}</td></tr>`), "Sin hitos.")}
-      <h2>7. Riesgos</h2>
-      ${tabla(["No.", "Riesgo", "Responsable", "Inherente", "Planes", "Residual", "Origen"], riesgos.slice().sort((a, b) => numRiesgo(a) - numRiesgo(b)).map((r) => `<tr><td>${numRiesgo(r)}</td><td><small>${t(r.Tipo)} · ${t(r.Estado)}</small><br>${t(r.Descripcion)}</td><td>${t(r.Responsable)}</td>
-        <td class="hv-nw">${califTxt(r.Probabilidad_Inherente, r.Impacto_Inherente)}</td><td>${r.Plan_Mitigacion ? `<b>Mitigación:</b> ${t(r.Plan_Mitigacion)}` : ""}${r.Plan_Contingencia ? `<br><b>Contingencia:</b> ${t(r.Plan_Contingencia)}` : ""}</td>
-        <td class="hv-nw">${califTxt(r.Probabilidad_Residual, r.Impacto_Residual)}</td><td>${esc(origenRiesgo(r))}</td></tr>`), "Sin riesgos.")}
-      <h2>8. Control de cambios</h2>
-      ${(() => { const lb = lineaBase(p); return lb.tiene ? `<p class="hv-p"><b>Línea base vigente (LB${lb.num}):</b> ${lb.ib ? `inicio ${fecha(lb.ib)} → actual ${fecha(p.Fecha_Inicio)}${lb.diasInicio ? ` (${lb.diasInicio > 0 ? "+" : ""}${lb.diasInicio} días)` : ""} · ` : ""}fin ${fecha(lb.fb)} → actual ${fecha(p.Fecha_Fin_Plan)}${lb.dias !== null ? ` (${lb.dias > 0 ? "+" : ""}${lb.dias} días)` : ""} · presupuesto ${lb.pb !== null ? cop(lb.pb) : "—"} → actual ${cop(p.Presupuesto)}${lb.pctCosto !== null ? ` (${lb.pctCosto > 0 ? "+" : ""}${lb.pctCosto}%)` : ""}</p>` : ""; })()}
-      ${(() => { const l = lineasBaseDe(p.ID_Proyecto); return l.length > 1 ? `<table class="hv-tabla"><thead><tr><th>LB</th><th>Fijada</th><th>Inicio</th><th>Fin</th><th>Presupuesto</th><th>Motivo</th></tr></thead><tbody>${l.map((x) => `<tr><td>LB${esc(x.Numero)}</td><td>${fecha(x.Fecha)}</td><td>${fecha(x.Fecha_Inicio)}</td><td>${fecha(x.Fecha_Fin)}</td><td>${x.Presupuesto !== "" && x.Presupuesto != null ? cop(x.Presupuesto) : "—"}</td><td>${esc(x.Motivo || "")}</td></tr>`).join("")}</tbody></table>` : ""; })()}
-      ${(() => { const ap = cambiosDe(pid).filter((c) => c.Estado === "Aprobado"); return ap.length ? `<p class="hv-p"><b>Cambios aprobados:</b> ${ap.length} · ${IMPACTOS_CC.map((i) => { const n = ap.filter((c) => impactosDe(c).includes(i)).length; return n ? `${i}: ${n}` : ""; }).filter(Boolean).join(" · ")}</p>` : ""; })()}
-      ${tabla(["N.º / Fecha", "Impacta en", "Cambio", "Efecto", "Estado", "Documento"], cambiosDe(pid).map((c) => `<tr><td class="hv-nw">${c.Numero_CC ? `<b>${t(c.Numero_CC)}</b><br>` : ""}${fecha(c.Fecha)}</td><td>${t(impactosDe(c).join(", "))}</td><td>${t(c.Descripcion)}${c.Justificacion ? `<br><small>Por qué: ${t(c.Justificacion)}</small>` : ""}</td><td>${t(c.Impacto)}${c.Nueva_Fecha_Fin ? `<br><small>Nueva fecha fin ${fecha(c.Nueva_Fecha_Fin)}</small>` : ""}${num0(c.Nuevo_Presupuesto) !== null ? `<br><small>Nuevo presupuesto ${cop(c.Nuevo_Presupuesto)}</small>` : ""}</td><td>${t(c.Estado)}${c.Fecha_Decision ? `<br><small>${fecha(c.Fecha_Decision)}</small>` : ""}</td><td>${c.URL_Documento && esURL(c.URL_Documento) ? `<a href="${esc(c.URL_Documento)}" target="_blank" rel="noopener">Ver documento</a>` : "—"}</td></tr>`), "Sin cambios registrados.")}
-      <h2>9. Dependencias</h2>
-      ${tabla(["Relación", "Proyecto", "Tipo", "Alerta"], [...depsDe(pid).map((d) => `<tr><td>Depende de</td><td>${esc((proyecto(d.Depende_De) || {}).Nombre || d.Depende_De)}</td><td>${t(d.Tipo)}</td><td>${esc(conflictoDep(d) || "—")}</td></tr>`),
-        ...bloqueaA(pid).map((d) => `<tr><td>Bloquea a</td><td>${esc((proyecto(d.ID_Proyecto) || {}).Nombre || d.ID_Proyecto)}</td><td>${t(d.Tipo)}</td><td>${esc(conflictoDep(d) || "—")}</td></tr>`)], "Sin dependencias.")}
-      <h2>10. Lecciones aprendidas</h2>
-      ${tabla(["Tipo", "Categoría", "Qué pasó", "Lección", "Recomendación"], leccionesDe(pid).map((l) => `<tr><td>${t(l.Tipo)}</td><td>${t(l.Categoria)}</td><td>${t(l.Situacion)}</td><td>${t(l.Leccion)}</td><td>${t(l.Recomendacion)}</td></tr>`), "Sin lecciones registradas.")}
-      <h2>11. Tickets del helpdesk</h2>
-      ${tabla(["N.º", "Título", "Estado", "Prioridad", "Registrado"], tks.map((k) => `<tr><td>${t(k.Numero)}</td><td>${t(k.Titulo)}</td><td>${t(k.Estado)}</td><td>${t(k.Prioridad)}</td><td>${fecha(k.Fecha_Registro)}</td></tr>`), "Sin tickets.")}
+      ${indice}
+      ${secciones.map((x, i) => `<section class="hv-sec" id="hv-s${i + 1}"><h2><span>${i + 1}. ${esc(x.t)}</span><a class="hv-arriba" href="#hv-indice" data-hv-ir="hv-indice">↑ Contenido</a></h2>
+${x.h}</section>`).join("")}
       <footer class="hv-pie">Fundación Santa Fe de Bogotá · Oficina de Proyectos · Hoja de vida ${esc(pid)} · Documento generado desde el Portafolio PMO</footer>`;
     mostrarDocumento(`Hoja de vida · ${p.Nombre}`, doc, `Hoja de vida ${pid} - ${p.Nombre}`);
   }
@@ -1933,6 +1956,14 @@
     document.body.classList.add("con-hv");
     const cerrar = () => { o.remove(); document.body.classList.remove("con-hv"); };
     o.querySelector("#hv-cerrar").addEventListener("click", cerrar);
+    // Índice: salta a la sección dentro del documento (en el PDF quedan como vínculos internos).
+    o.addEventListener("click", (ev) => {
+      const a = ev.target.closest("[data-hv-ir]");
+      if (!a) return;
+      ev.preventDefault();
+      const destino = o.querySelector("#" + a.dataset.hvIr);
+      if (destino) destino.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
     o.querySelector("#hv-imprimir").addEventListener("click", () => {
       const tituloAnt = document.title;
       document.title = nombreArchivo;

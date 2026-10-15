@@ -698,7 +698,7 @@ td .vacio { padding: 14px; }
 .hv-sub, .hv-gen { color: #666; font-size: 11.5px; }
 .hv-gen { text-align: right; }
 .hv h2 { font-size: 15px; color: #104994; border-bottom: 1px solid #6BBAEF; padding-bottom: 3px; margin: 18px 0 8px; break-after: avoid; }
-.hv-kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.hv-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
 .hv-kpis div { background: #EAF2FB; border-left: 3px solid #104994; padding: 6px 10px; }
 .hv-kpis span { display: block; color: #666; font-size: 10.5px; }
 .hv-kpis b { color: #104994; font-size: 15px; }
@@ -948,3 +948,32 @@ a.cc-doc:hover { text-decoration: underline; }
 .hv-tabla th, .hv-tabla td { border: 1px solid #cfd8e3; padding: 3px 6px; text-align: left; }
 .hv-tabla th { background: #eef3f9; color: #104994; }
 .aviso-seg { margin-top: 6px; color: #8a5a00; background: #fff6e0; border: 1px solid #f0d9a0; border-radius: 6px; padding: 6px 8px; font-size: 12px; }
+
+/* ===== v55 Hoja de vida: índice, secciones y bitácora ===== */
+.hv td, .hv th { overflow-wrap: break-word; }
+.hv a { color: #104994; }
+.hv-link { word-break: break-all; }
+.hv-indice { margin: 16px 0 6px; border: 1px solid #cfe0f3; border-radius: 10px; background: linear-gradient(180deg, #f4f9ff, #fff); padding: 12px 16px 10px; break-inside: avoid; scroll-margin-top: 90px; }
+.hv-indice-t { font-size: 13px; font-weight: bold; color: #104994; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 6px; }
+.hv-indice ol { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; grid-auto-flow: column; gap: 2px 22px; }
+.hv-indice a { display: grid; grid-template-columns: 24px 1fr; grid-template-rows: auto auto; column-gap: 8px; text-decoration: none; color: inherit; padding: 5px 6px; border-radius: 6px; border-bottom: 1px dotted #cfd8e3; }
+.hv-indice a:hover { background: #e8f1fc; }
+.hv-ind-n { grid-row: span 2; align-self: center; width: 22px; height: 22px; border-radius: 50%; background: #104994; color: #fff; font-size: 11px; font-weight: bold; display: flex; align-items: center; justify-content: center; }
+.hv-ind-t { font-weight: bold; color: #104994; font-size: 12.5px; }
+.hv-ind-d { color: #666; font-size: 10.5px; }
+.hv-sec { scroll-margin-top: 90px; }
+.hv h2 { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.hv-arriba { font-size: 10.5px; font-weight: normal; text-decoration: none; color: #6b8bb5 !important; white-space: nowrap; }
+.hv-arriba:hover { text-decoration: underline; }
+.hv-bitacora { table-layout: fixed; }
+.hv-mes td { background: #EAF2FB !important; color: #104994; font-weight: bold; font-size: 11.5px; letter-spacing: .5px; text-transform: uppercase; padding: 6px !important; border-bottom: 2px solid #6BBAEF !important; }
+.hv-tag { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 10.5px; background: #eef1f5; color: #445; white-space: nowrap; }
+.hv-tag-seguimiento { background: #e3efff; color: #104994; }
+.hv-tag-compromiso { background: #e6f5ea; color: #1e6b35; }
+.hv-tag-comentario { background: #f3eefb; color: #5b3d8a; }
+.hv-tag-hito { background: #fff3dc; color: #8a5a00; }
+.hv-tag-ticket { background: #fde9e7; color: #9b2c22; }
+.hv-tag-inicio { background: #104994; color: #fff; }
+.hv-nota { color: #666; font-size: 10.5px; font-style: italic; margin-top: 4px; }
+@media (max-width: 760px) { .hv-indice ol { grid-template-columns: 1fr; grid-auto-flow: row; grid-template-rows: none !important; } }
+@media print { .hv-indice a:hover { background: none; } .hv-sec > h2 { break-after: avoid; } .hv-mes { break-after: avoid; } }
