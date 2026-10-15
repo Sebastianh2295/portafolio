@@ -947,3 +947,4 @@ a.cc-doc:hover { text-decoration: underline; }
 .hv-tabla { width: 100%; border-collapse: collapse; font-size: 11px; margin: 6px 0 10px; }
 .hv-tabla th, .hv-tabla td { border: 1px solid #cfd8e3; padding: 3px 6px; text-align: left; }
 .hv-tabla th { background: #eef3f9; color: #104994; }
+.aviso-seg { margin-top: 6px; color: #8a5a00; background: #fff6e0; border: 1px solid #f0d9a0; border-radius: 6px; padding: 6px 8px; font-size: 12px; }

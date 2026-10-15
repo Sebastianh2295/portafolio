@@ -88,9 +88,23 @@
   }
 
   // Sugerencia de semáforo por desviación (plan - real). Es una guía: el PM decide.
-  function semaforoSugerido(real, plan) {
+  // Cronograma: puntos por debajo del plan (≤5 verde, ≤15 amarillo). Costo (si hay CPI): ≥0,95 verde, ≥0,85 amarillo. Gana el peor.
+  const ORDEN_SEM = { Verde: 0, Amarillo: 1, Rojo: 2 };
+  function semaforoSugerido(real, plan, cpi) {
     const d = (Number(plan) || 0) - (Number(real) || 0);
-    return { semaforo: d <= 5 ? "Verde" : d <= 15 ? "Amarillo" : "Rojo", desviacion: d };
+    const porTiempo = d <= 5 ? "Verde" : d <= 15 ? "Amarillo" : "Rojo";
+    const porCosto = cpi === null || cpi === undefined || !isFinite(cpi) ? null : cpi >= 0.95 ? "Verde" : cpi >= 0.85 ? "Amarillo" : "Rojo";
+    const semaforo = porCosto && ORDEN_SEM[porCosto] > ORDEN_SEM[porTiempo] ? porCosto : porTiempo;
+    return { semaforo, desviacion: d, porTiempo, porCosto };
+  }
+  // Valor ganado (EVM). BAC = presupuesto de la línea base (o el actual); PV = %plan·BAC; EV = %real·BAC; AC = ejecutado.
+  function valorGanado(bac, real, plan, ejecutado) {
+    const BAC = Number(bac) || 0, r = Number(real) || 0, pl = Number(plan) || 0, AC = Number(ejecutado) || 0;
+    if (!BAC) return null;
+    const PV = (pl / 100) * BAC, EV = (r / 100) * BAC;
+    const SPI = PV > 0 ? EV / PV : null, CPI = AC > 0 && EV > 0 ? EV / AC : null;
+    const EAC = CPI ? BAC / CPI : null;
+    return { BAC, PV, EV, AC, SPI, CPI, EAC, VAC: EAC !== null ? BAC - EAC : null, SV: EV - PV, CV: AC > 0 ? EV - AC : null };
   }
 
   function siguienteIdProyecto(proyectos) {
@@ -128,6 +142,6 @@
 
   window.REGLAS = {
     ROLES, DIAS_FRECUENCIA, hoyISO, sumarDias, difDias, semanaISO, roles, tieneRol, puede, puedeEditar, soloPM, esPMde, esMio, visibles,
-    DIAS_COMPROMISO_POR_VENCER, ESTADOS_COMPROMISO, estadoBase, cerrado, seguimientosDe, estadoSeguimiento, estadoCompromiso, semaforoSugerido, siguienteIdProyecto, siguienteIdHijo, kpis, calificacion, nivelRiesgo,
+    DIAS_COMPROMISO_POR_VENCER, ESTADOS_COMPROMISO, estadoBase, cerrado, seguimientosDe, estadoSeguimiento, estadoCompromiso, semaforoSugerido, valorGanado, siguienteIdProyecto, siguienteIdHijo, kpis, calificacion, nivelRiesgo,
   };
 })();

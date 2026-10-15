@@ -625,6 +625,10 @@
         ${tarjeta("Proyectos en rojo", k.rojos, `${Math.round((k.rojos / Math.max(1, k.activos)) * 100)}% de los activos`, k.rojos > 0, "rojos")}
         ${tarjeta("Presupuesto ejecutado", pct(k.pctEjecutado), `${cop(k.ejecutado)} de ${cop(k.presupuesto)}`, k.pctEjecutado > 100, "activos")}
         ${tarjeta("Seguimientos al día", pct(k.pctAlDia), "activos sin reporte vencido", k.pctAlDia < 80, "seguimiento")}
+        ${(() => { const vs = activos.map(evmDe).filter(Boolean), sum = (f) => vs.reduce((a, v) => a + (v[f] || 0), 0);
+          const pv = sum("PV"), ev = sum("EV"), ac = vs.filter((v) => v.AC > 0 && v.EV > 0).reduce((a, v) => a + v.AC, 0), evc = vs.filter((v) => v.AC > 0 && v.EV > 0).reduce((a, v) => a + v.EV, 0);
+          const spi = pv > 0 ? ev / pv : null, cpi = ac > 0 ? evc / ac : null, f = (x) => (x === null ? "—" : x.toFixed(2).replace(".", ","));
+          return tarjeta("Desempeño (valor ganado)", `${f(spi)} · ${f(cpi)}`, "SPI cronograma · CPI costo (1 = según plan)", (spi !== null && spi < 0.9) || (cpi !== null && cpi < 0.9), "activos"); })()}
       </div>
 
       <div class="card"><div class="titulo-fila"><h2>Salud del portafolio</h2><span class="sub">${activos.length} proyecto(s) activos por semáforo · clic para ver</span></div>${activos.length ? salud : vacio("No hay proyectos activos en la selección.")}</div>
@@ -876,7 +880,7 @@
   const correoDe = (c) => correosDe(c).join("; ");
   const esMioComp = (c) => { const u = S.usuario; return responsablesDe(c).some((x) => (x.Correo && lc(x.Correo) === lc(u.Correo)) || (u.Nombre && lc(x.Nombre) === lc(u.Nombre))); };
   function alertas() {
-    const ids = new Set(visibles().map((p) => p.ID_Proyecto));
+    const ids = new Set(visibles().filter((p) => p.Estado !== "Cancelado").map((p) => p.ID_Proyecto));   // lo cancelado no genera alertas
     const lista = S.datos.Compromisos.filter((c) => ids.has(c.ID_Proyecto) && !R.cerrado(c))
       .map((c) => ({ c, e: R.estadoCompromiso(c), mio: esMioComp(c) }))
       .sort((a, b) => (b.mio - a.mio) || String(a.c.Fecha_Compromiso || "9999").localeCompare(String(b.c.Fecha_Compromiso || "9999")));
@@ -1325,6 +1329,7 @@
         ${dato("Repositorio", enlace(p.URL_Repositorio, "Abrir") || `<span class="sub">Sin registrar</span>`)}${dato("Documentos", enlace(p.URL_Documentos, "Abrir") || `<span class="sub">Sin registrar</span>`)}
         <div class="dato ancho"><div class="dato-k">Comentario de estado</div><div class="dato-v">${esc(p.Comentario_Estado || "—")}</div></div>
       </div>
+      ${cardDesempeno(p)}
       ${(() => { const cc = cambiosDe(p.ID_Proyecto); const ap = cc.filter((c) => c.Estado === "Aprobado"), pe = cc.filter((c) => c.Estado === "Solicitado");
         return `<div class="card"><div class="titulo-fila"><h2>Control de cambios <span class="contador">${cc.length}</span></h2><div class="acciones">${puedeP("editarProyecto") ? `<button class="btn chico primario" id="b-cambio-res">+ Control de cambios</button>` : ""}<button class="btn chico" data-ir-tab="cambios">Ver todos</button></div></div>
           ${cc.length ? `<div class="cc-resumen">${ap.length ? `<span class="pill aprobado">${ap.length} aprobado(s)</span>` : ""}${pe.length ? `<span class="pill solicitado">${pe.length} por decidir</span>` : ""}${IMPACTOS_CC.map((i) => { const n = ap.filter((c) => impactosDe(c).includes(i)).length; return n ? `<span class="pill cc-imp">${esc(i)}: ${n}</span>` : ""; }).join("")}</div>
@@ -1428,10 +1433,10 @@
     enlazarCompromisos(el);
     el.querySelectorAll("[data-edit-seg]").forEach((b) => b.addEventListener("click", () => formEditarSeguimiento(segs.find((s) => s.ID_Seguimiento === b.dataset.editSeg))));
     if (segs.length && $("#g-curva")) grafico($("#g-curva"), { type: "line", data: { labels: segs.map((s) => fecha(s.Fecha_Corte)), datasets: [
-      { label: "Avance real", data: segs.map((s) => Number(s.Avance_Real) || 0), borderColor: COLORES.azul, backgroundColor: COLORES.azul, tension: 0.2 }] },
-      options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { min: 0, max: 100, ticks: { callback: (v) => v + "%" } } } } });
+      { label: "Avance real", data: segs.map((s) => Number(s.Avance_Real) || 0), borderColor: COLORES.azul, backgroundColor: COLORES.azul, tension: 0.2 },
+      ...(segs.some((s) => s.Avance_Planeado !== "" && s.Avance_Planeado !== undefined && s.Avance_Planeado !== null) ? [{ label: "Avance planeado", data: segs.map((s) => (s.Avance_Planeado === "" || s.Avance_Planeado == null ? null : Number(s.Avance_Planeado))), borderColor: "#9aa5b1", backgroundColor: "#9aa5b1", borderDash: [6, 4], spanGaps: true, tension: 0.2 }] : [])] },
+      options: { maintainAspectRatio: false, plugins: { legend: { display: segs.some((s) => s.Avance_Planeado !== "" && s.Avance_Planeado != null) } }, scales: { y: { min: 0, max: 100, ticks: { callback: (v) => v + "%" } } } } });
   }
-  const nivel = (c) => { const n = R.nivelRiesgo(Number(c) || 0); return `<span class="pill riesgo-${n.toLowerCase()}">${n} (${Number(c) || 0})</span>`; };
 
   // ---------- Cronograma ----------
   function vCronograma(el) {
@@ -1871,6 +1876,7 @@
         <div><span>Semáforo</span><b>${t(p.Semaforo)}</b></div><div><span>Avance real / plan</span><b>${pct(p.Avance_Real)} / ${pct(p.Avance_Planeado)}</b></div>
         <div><span>Presupuesto ejecutado</span><b>${Number(p.Presupuesto) ? Math.round((Number(p.Ejecutado) || 0) / Number(p.Presupuesto) * 100) + "%" : "—"}</b></div>
         <div><span>Compromisos abiertos</span><b>${abiertos} de ${comps.length}</b></div>
+        ${(() => { const v = evmDe(p); const f = (x) => (x === null ? "—" : x.toFixed(2).replace(".", ",")); return v ? `<div><span>SPI · CPI</span><b>${f(v.SPI)} · ${f(v.CPI)}</b></div>` : ""; })()}
       </section>
       <h2>1. Datos generales</h2>
       <table class="hv-ficha">${[
@@ -1942,6 +1948,27 @@
   // ---------- Control de cambios y línea base ----------
   const cambiosDe = (pid) => (S.datos.Cambios || []).filter((c) => c.ID_Proyecto === pid).sort((a, b) => String(b.Fecha).localeCompare(String(a.Fecha)) || String(b.ID_Cambio).localeCompare(String(a.ID_Cambio), "es", { numeric: true }));
   // ---------- Líneas base (varias por proyecto: LB0 original, LB1, LB2… re-planeaciones) ----------
+  // ---------- Desempeño (valor ganado) ----------
+  const bacDe = (p) => { const lb = lineaBase(p); return lb.pb !== null && lb.pb > 0 ? lb.pb : Number(p.Presupuesto) || 0; };
+  const evmDe = (p) => R.valorGanado(bacDe(p), p.Avance_Real, p.Avance_Planeado, p.Ejecutado);
+  const semIndice = (x) => (x === null ? "" : x >= 0.95 ? "Verde" : x >= 0.85 ? "Amarillo" : "Rojo");
+  const fmtIndice = (x) => (x === null ? `<span class="sub">—</span>` : `${chipSemaforo(semIndice(x)).replace(/>[^<>]*$/, ">")}<b>${x.toFixed(2).replace(".", ",")}</b>`);
+  function cardDesempeno(p) {
+    const v = evmDe(p);
+    if (!v) return "";
+    const dato = (k, val, ayuda) => `<div class="dato" title="${esc(ayuda)}"><div class="dato-k">${k}</div><div class="dato-v">${val}</div></div>`;
+    const lect = [
+      v.SPI !== null ? `Cronograma: va al <b>${Math.round(v.SPI * 100)}%</b> del ritmo planeado${v.SPI >= 1 ? " (al día o adelantado)" : ""}.` : "Cronograma: registra el avance planeado para calcular el SPI.",
+      v.CPI !== null ? `Costo: por cada $1 ejecutado se ha logrado <b>$${v.CPI.toFixed(2).replace(".", ",")}</b> de avance${v.CPI >= 1 ? " (dentro del presupuesto)" : ""}.` : "Costo: registra el ejecutado en los seguimientos para calcular el CPI.",
+      v.EAC !== null ? `Si sigue así, terminaría costando <b>${cop(Math.round(v.EAC))}</b> (${v.VAC >= 0 ? "ahorro" : "sobrecosto"} de ${cop(Math.abs(Math.round(v.VAC)))}).` : "",
+    ].filter(Boolean);
+    return `<div class="card"><h2>Desempeño · valor ganado</h2>
+      <div class="datos">${dato("SPI · cronograma", fmtIndice(v.SPI), "Valor ganado / valor planeado. 1 = según plan; menor a 1 = atrasado.")}${dato("CPI · costo", fmtIndice(v.CPI), "Valor ganado / costo real. 1 = según presupuesto; menor a 1 = sobrecosto.")}
+        ${dato("Valor planeado (PV)", cop(Math.round(v.PV)), "Avance planeado × presupuesto de la línea base")}${dato("Valor ganado (EV)", cop(Math.round(v.EV)), "Avance real × presupuesto de la línea base")}
+        ${dato("Costo real (AC)", cop(v.AC), "Presupuesto ejecutado a la fecha")}${dato("Estimado al terminar (EAC)", v.EAC !== null ? cop(Math.round(v.EAC)) : "—", "Presupuesto / CPI")}</div>
+      <p class="sub">${lect.join(" ")} Base: ${cop(v.BAC)} (${lineaBase(p).tiene ? `línea base LB${lineaBase(p).num}` : "presupuesto actual"}). Verde ≥ 0,95 · amarillo ≥ 0,85 · rojo &lt; 0,85.</p></div>`;
+  }
+
   const lineasBaseDe = (pid) => (S.datos.LineasBase || []).filter((x) => x.ID_Proyecto === pid).sort((a, b) => Number(a.Numero) - Number(b.Numero));
   // La vigente es la última; la original, la LB0. Si el proyecto es de antes de esta versión, se usan sus columnas *_Base.
   function lineaBase(p) {
@@ -2032,7 +2059,8 @@
       ...(nuevo && puedeDecidir ? [{ k: "Estado_Inicial", label: "Estado", tipo: "select", opciones: [["Solicitado", "Solicitado (queda por decidir)"], ["Aprobado", "Ya aprobado (p. ej. en comité): se aplica de una vez"]], def: "Solicitado" },
         { k: "Rebase", label: "Si ya está aprobado y cambia fecha o presupuesto…", tipo: "select", opciones: [["Sí", "Generar nueva línea base"], ["No", "Mantener la línea base actual"]], def: "Sí" }] : []),
     ];
-    const validar = (fd) => (!fd.Tipo ? "Marca en qué impacta el cambio (tiempo, costo, alcance…)." : !fd.Descripcion ? "Describe qué cambia." : "");
+    const validar = (fd) => (!fd.Tipo ? "Marca en qué impacta el cambio (tiempo, costo, alcance…)." : !fd.Descripcion ? "Describe qué cambia." : !String(fd.Justificacion || "").trim() ? "Explica por qué se necesita el cambio (justificación)." :
+      fd.Nueva_Fecha_Fin && p.Fecha_Inicio && fd.Nueva_Fecha_Fin < p.Fecha_Inicio ? "La nueva fecha fin no puede ser anterior al inicio del proyecto." : "");
     modal(nuevo ? `Control de cambios · ${p.Nombre}` : `Control de cambios${c.Numero_CC ? ` ${c.Numero_CC}` : ""}`, campos, nuevo ? {} : c, (fd) => {
       if (decidido) { delete fd.Nueva_Fecha_Fin; delete fd.Nuevo_Presupuesto; }
       if (nuevo) {
@@ -2070,7 +2098,7 @@
     const efectos = [c.Nueva_Fecha_Fin ? `fecha fin ${fecha(p.Fecha_Fin_Plan)} → ${fecha(c.Nueva_Fecha_Fin)}` : "", num0(c.Nuevo_Presupuesto) !== null ? `presupuesto ${cop(p.Presupuesto)} → ${cop(c.Nuevo_Presupuesto)}` : ""].filter(Boolean);
     if (efectos.length) campos.push({ k: "Rebase", label: "¿Generar una nueva línea base con los valores aprobados?", tipo: "select", opciones: [["Sí", "Sí, re-planear (nueva LB)"], ["No", "No, mantener la línea base actual"]], def: "Sí" });
     modal(`Decidir cambio · ${impactosDe(c).join(", ") || c.Tipo}`, campos, {}, (fd) => guardar(() => aplicarCambio(p, c, fd.Decision === "Rechazado" ? "Rechazado" : "Aprobado", fd.Comentario_Decision, fd.Rebase === "Sí"),
-      fd.Decision === "Rechazado" ? "Cambio rechazado" : "Cambio aprobado y aplicado"), null,
+      fd.Decision === "Rechazado" ? "Cambio rechazado" : "Cambio aprobado y aplicado"), (fd) => (fd.Decision === "Rechazado" && !String(fd.Comentario_Decision || "").trim() ? "Escribe el motivo del rechazo." : ""),
     { antes: `<div class="resumen-filtro"><b>${esc(c.Descripcion)}</b>${efectos.length ? `<br>Si se aprueba: ${esc(efectos.join(" · "))}` : "<br>No cambia fechas ni presupuesto."}</div>` });
   }
   // Nueva línea base (o editar una existente): inicio, fin, presupuesto, motivo y el control de cambios que la originó.
@@ -2244,16 +2272,23 @@
   }
 
   // ---------- Priorización del portafolio ----------
+  // Un solo modelo de priorización para demanda y portafolio (los pesos se ajustan en Backlog → pesos).
   const CRITERIOS = [
-    { k: "Valor", t: "Valor para la institución", peso: 0.35, inv: false },
-    { k: "Urgencia", t: "Urgencia", peso: 0.25, inv: false },
-    { k: "Riesgo_Prio", t: "Complejidad / riesgo de ejecución", peso: 0.2, inv: true },
-    { k: "Esfuerzo", t: "Esfuerzo / costo", peso: 0.2, inv: true },
+    { k: "Valor", t: "Valor / beneficio para la institución", peso: 25 },
+    { k: "Alineacion", t: "Alineación estratégica", peso: 20 },
+    { k: "Impacto_Paciente", t: "Impacto en paciente / seguridad", peso: 15 },
+    { k: "Urgencia", t: "Urgencia", peso: 15 },
+    { k: "Riesgo_Prio", t: "Complejidad / riesgo de ejecución", peso: 10, inv: true },
+    { k: "Esfuerzo", t: "Esfuerzo / costo", peso: 15, inv: true },
   ];
-  // Puntaje 0-100: más valor y urgencia suben; más riesgo y esfuerzo bajan.
+  const BASE_PRIO = ["Valor", "Urgencia", "Riesgo_Prio", "Esfuerzo"];
+  // Puntaje 0-100: más valor, alineación, impacto y urgencia suben; más riesgo y esfuerzo bajan.
+  // Proyectos anteriores sin alineación/impacto se califican con los cuatro criterios base (pesos re-normalizados).
   function puntaje(p) {
-    if (CRITERIOS.some((c) => !num0(p[c.k]))) return null;
-    const v = CRITERIOS.reduce((a, c) => a + c.peso * (c.inv ? 6 - Number(p[c.k]) : Number(p[c.k])), 0);
+    if (BASE_PRIO.some((k) => !num0(p[k]))) return null;
+    const w = pesosDemanda(), cs = CRITERIOS.filter((c) => num0(p[c.k]));
+    const total = cs.reduce((a, c) => a + (w[c.k] || 0), 0) || 1;
+    const v = cs.reduce((a, c) => a + (w[c.k] || 0) * (c.inv ? 6 - Number(p[c.k]) : Number(p[c.k])), 0) / total;
     return Math.round(((v - 1) / 4) * 100);
   }
   const cuadrante = (p) => { const v = Number(p.Valor), e = Number(p.Esfuerzo); return v >= 3 ? (e <= 3 ? "Ganancia rápida" : "Proyecto mayor") : (e <= 3 ? "Relleno" : "Reconsiderar"); };
@@ -2263,12 +2298,12 @@
     const sin = ps.filter((p) => puntaje(p) === null);
     const puede = (p) => R.puedeEditar(S.usuario, p, "editarProyecto");
     el.innerHTML = `<h1>Priorización del portafolio</h1>${barraFiltros()}
-      <div class="card"><h2>Cómo se calcula</h2><p class="sub">Cada proyecto se califica de 1 a 5 en «Editar proyecto» → sección Priorización. Puntaje (0 a 100) = ${CRITERIOS.map((c) => `${c.t} ${Math.round(c.peso * 100)}%${c.inv ? " (a menor, mejor)" : ""}`).join(" · ")}.</p></div>
+      <div class="card"><h2>Cómo se calcula</h2><p class="sub">Cada proyecto se califica de 1 a 5 en «Editar proyecto» → sección Priorización. Puntaje (0 a 100) = ${(() => { const w = pesosDemanda(), t = Object.values(w).reduce((a, b) => a + b, 0) || 1; return CRITERIOS.map((c) => `${c.t} ${Math.round((w[c.k] / t) * 100)}%${c.inv ? " (a menor, mejor)" : ""}`).join(" · "); })()}. Es el mismo modelo con el que se prioriza la demanda en el Backlog.</p></div>
       <div class="grid2">
         <div class="card"><h2>Ranking</h2>${cal.length ? `<div class="tabla-scroll"><table><thead><tr><th>#</th><th>Proyecto</th><th>Puntaje</th><th class="opc">V · U · R · E</th><th>Cuadrante</th></tr></thead><tbody>
           ${cal.map((p, i) => `<tr class="clic" data-pid="${esc(p.ID_Proyecto)}"><td>${i + 1}</td><td><b>${esc(p.Nombre)}</b><div class="sub">${esc(p.Estado)} · ${esc(nombreUsuario(p.PM))}</div></td>
             <td class="nowrap"><span class="cap-barra"><span class="cap-lleno" style="width:${puntaje(p)}%;background:var(--azul)"></span></span> <b>${puntaje(p)}</b></td>
-            <td class="opc">${CRITERIOS.map((c) => esc(p[c.k])).join(" · ")}</td><td>${pill(cuadrante(p))}</td></tr>`).join("")}</tbody></table></div>` : vacio("Aún no hay proyectos calificados.")}</div>
+            <td class="opc">${BASE_PRIO.map((k) => esc(p[k])).join(" · ")}</td><td>${pill(cuadrante(p))}</td></tr>`).join("")}</tbody></table></div>` : vacio("Aún no hay proyectos calificados.")}</div>
         <div class="card"><h2>Valor vs. esfuerzo</h2>${cal.length ? `<div class="grafico-alto"><canvas id="g-prio"></canvas></div><p class="sub">Arriba a la izquierda: ganancias rápidas (mucho valor, poco esfuerzo). El tamaño del punto es la urgencia.</p>` : vacio("Califica proyectos para ver la matriz.")}</div>
       </div>
       ${sin.length ? `<div class="card"><h2>Sin calificar <span class="contador">${sin.length}</span></h2><ul class="lista">${sin.map((p) => `<li>${esc(p.Nombre)} ${puede(p) ? `<button class="btn chico" data-calificar="${esc(p.ID_Proyecto)}">Calificar</button>` : ""}</li>`).join("")}</ul></div>` : ""}`;
@@ -2647,7 +2682,6 @@
     }
     return serializarResp(out);
   }
-  const resolverResponsable = (nombre, correo) => resolverResponsables([{ Nombre: nombre, Correo: correo }], true);
   // «Ana Pérez / Luis Gómez», «Ana; Luis», «Ana y Luis» → varios nombres.
   const separarNombres = (t) => String(t || "").split(/\s*(?:;|\/|\s+y\s+|\s+&\s+)\s*/i).map((x) => x.trim()).filter(Boolean);
   // Rol de la persona en el proyecto (si es stakeholder).
@@ -3746,14 +3780,7 @@
   const ABIERTOS_DEMANDA = ["Recibida", "En análisis", "Priorizada", "En comité", "Aprobada"];
   const DECISIONES = ["Aprobada", "Aplazada", "Rechazada"];
   // Criterios de priorización (1 a 5). "inv" = a menor valor, mejor. Los pesos se ajustan en la app.
-  const CRITERIOS_DEM = [
-    { k: "Valor", t: "Valor / beneficio para la institución", peso: 25 },
-    { k: "Alineacion", t: "Alineación estratégica", peso: 20 },
-    { k: "Impacto_Paciente", t: "Impacto en paciente / seguridad", peso: 15 },
-    { k: "Urgencia", t: "Urgencia", peso: 15 },
-    { k: "Riesgo_Prio", t: "Complejidad / riesgo de ejecución", peso: 10, inv: true },
-    { k: "Esfuerzo", t: "Esfuerzo / costo", peso: 15, inv: true },
-  ];
+  const CRITERIOS_DEM = CRITERIOS;
   const pesosDemanda = () => {
     const guardados = {};
     (S.datos.Catalogos || []).filter((c) => c.Lista === "Peso_Prioridad").forEach((c) => { const [k, v] = String(c.Valor).split(":"); if (k && !Number.isNaN(Number(v))) guardados[k] = Number(v); });
@@ -3935,12 +3962,17 @@
         if (fd.Decidido_Por) await asegurarRecurso({ Nombre: fd.Decidido_Por });
         await S.api.actualizarPorId("Demandas", "ID_Demanda", d.ID_Demanda, { Estado: fd.Decision, Fecha_Decision: fd.Fecha_Decision, Decidido_Por: fd.Decidido_Por, Comentario_Decision: fd.Comentario_Decision, Fecha_Estado: R.hoyISO() });
       }, `Demanda ${d.Codigo_Almera}: ${fd.Decision}`);
-    }, null, { antes: `<div class="resumen-filtro"><b>${esc(d.Nombre)}</b><br>Puntaje ${puntajeDemanda(d) ?? "sin calificar"}${obligatoria(d) ? " · Obligatoria" : ""} · ${esc(d.Tipo || "")} · ${esc(d.Area || "")}</div>` });
+    }, (fd) => {
+      if (!String(fd.Decidido_Por || "").trim()) return "Indica quién aprueba o decide en el comité.";
+      if (fd.Decision === "Aprobada" && puntajeDemanda(d) === null && !obligatoria(d)) return "Califica la demanda (todos los criterios) antes de aprobarla; solo las obligatorias se aprueban sin puntaje.";
+      if (fd.Decision !== "Aprobada" && !String(fd.Comentario_Decision || "").trim()) return `Escribe el motivo: una demanda ${String(fd.Decision || "").toLowerCase()} debe quedar justificada.`;
+      return "";
+    }, { antes: `<div class="resumen-filtro"><b>${esc(d.Nombre)}</b><br>Puntaje ${puntajeDemanda(d) ?? "sin calificar"}${obligatoria(d) ? " · Obligatoria" : ""} · ${esc(d.Tipo || "")} · ${esc(d.Area || "")}</div>` });
   }
   // Crea el proyecto con los datos de la demanda y deja ambos enlazados.
   function convertirDemanda(d) {
     const pref = { Nombre: d.Nombre, Cliente_Area: d.Area, PM: d.PM_Asignado, Codigo_Almera: d.Codigo_Almera, Estado: "Activo", Fase: "Inicio", Presupuesto: d.Costo_Estimado || 0,
-      Valor: d.Valor, Urgencia: d.Urgencia, Riesgo_Prio: d.Riesgo_Prio, Esfuerzo: d.Esfuerzo, Comentario_Estado: `Viene de la demanda ${d.Codigo_Almera}. ${d.Descripcion || ""}`.trim() };
+      Valor: d.Valor, Alineacion: d.Alineacion, Impacto_Paciente: d.Impacto_Paciente, Urgencia: d.Urgencia, Riesgo_Prio: d.Riesgo_Prio, Esfuerzo: d.Esfuerzo, Comentario_Estado: `Viene de la demanda ${d.Codigo_Almera}. ${d.Descripcion || ""}`.trim() };
     formProyecto(null, pref, async (idProyecto) => {
       await S.api.actualizarPorId("Demandas", "ID_Demanda", d.ID_Demanda, { Estado: "Convertida", ID_Proyecto: idProyecto, Fecha_Estado: R.hoyISO() });
       const personas = [["Sponsor", d.Sponsor], ["Solicitante", d.Solicitante]].filter(([, n]) => n);
@@ -4439,14 +4471,34 @@
         guardar(async () => { await S.api.agregarFila("Proyectos", fila); await guardarEquipo(id); if (alCrear) await alCrear(id); }, `Iniciativa ${fila.ID_Proyecto} registrada`);
       } else {
         const seCierra = fd.Estado === "Cerrado" && p.Estado !== "Cerrado";
-        if (seCierra) S.fichaTab = "lecciones";
+        if (seCierra) { S.fichaTab = "lecciones"; if ((S.cat.Fase || []).includes("Cierre")) fd.Fase = "Cierre"; }
+        const pend = seCierra ? pendientesCierre(p) : [];
         guardar(async () => { await S.api.actualizarPorId("Proyectos", "ID_Proyecto", p.ID_Proyecto, { ...fd, ...sello() }); await guardarEquipo(p.ID_Proyecto); },
-          seCierra ? "Proyecto cerrado. Es buen momento para registrar las lecciones aprendidas." : "Guardado");
+          seCierra ? `Proyecto cerrado.${pend.length ? ` Quedaron abiertos: ${pend.join(", ")}.` : ""} Es buen momento para registrar las lecciones aprendidas.` : "Guardado");
       }
-    }, (fd) => (fd.Fecha_Inicio && fd.Fecha_Fin_Plan && fd.Fecha_Fin_Plan < fd.Fecha_Inicio ? "La fecha fin no puede ser anterior a la fecha de inicio." : ""),
+    }, (fd) => {
+      if (fd.Fecha_Inicio && fd.Fecha_Fin_Plan && fd.Fecha_Fin_Plan < fd.Fecha_Inicio) return "La fecha fin no puede ser anterior a la fecha de inicio.";
+      if (!nuevo && fd.Estado === "Cerrado" && p.Estado !== "Cerrado") {
+        const sol = cambiosDe(p.ID_Proyecto).filter((c) => (c.Estado || "Solicitado") === "Solicitado").length;
+        if (sol) return `No se puede cerrar: hay ${sol} control(es) de cambio por decidir. Apruébalos o recházalos en la pestaña Cambios.`;
+      }
+      if (fd.Avance_Real !== "" && fd.Avance_Planeado !== "" && (Number(fd.Avance_Real) > 100 || Number(fd.Avance_Planeado) > 100)) return "El avance va de 0 a 100%.";
+      return "";
+    },
     !nuevo && R.puede(u, "verTodo") ? { init: (m) => { initProv(m); initEquipo(m); }, eliminar: { texto: "Eliminar proyecto", titulo: `Eliminar ${p.ID_Proyecto}`,
       mensaje: `Se borrará «${p.Nombre}» con todos sus seguimientos, compromisos, hitos, riesgos, stakeholders y actas. No se puede deshacer. Si solo terminó, mejor cambia su estado a Cerrado o Cancelado.`,
       accion: () => { S.vista = "proyectos"; guardar(() => eliminarProyecto(p.ID_Proyecto), `Proyecto ${p.ID_Proyecto} eliminado`); } } } : { init: (m) => { initProv(m); initEquipo(m); } });
+  }
+
+  // Lo que sigue abierto al cerrar un proyecto (se avisa; no bloquea salvo cambios por decidir).
+  function pendientesCierre(p) {
+    const pid = p.ID_Proyecto, n = [];
+    const comps = S.datos.Compromisos.filter((c) => c.ID_Proyecto === pid && !R.cerrado(c)).length;
+    const rsg = (S.datos.Riesgos || []).filter((r) => r.ID_Proyecto === pid && ["Abierto", "Materializado"].includes(r.Estado)).length;
+    const hit = (S.datos.Hitos || []).filter((h) => h.ID_Proyecto === pid && h.Estado !== "Cumplido").length;
+    const tks = (S.datos.Tickets || []).filter((t) => t.ID_Proyecto === pid && !["Resuelto", "Cerrado"].includes(t.Estado)).length;
+    if (comps) n.push(`${comps} compromiso(s)`); if (rsg) n.push(`${rsg} riesgo(s)`); if (hit) n.push(`${hit} hito(s)`); if (tks) n.push(`${tks} ticket(s)`);
+    return n;
   }
 
   function formSeguimiento(p) {
@@ -4494,13 +4546,27 @@
         const real = m.querySelector("[name=Avance_Real]").value, plan = m.querySelector("[name=Avance_Planeado]").value;
         let html = "";
         sugerido = "";
+        const ejec = m.querySelector("[name=Ejecutado]").value;
         if (real !== "" && plan !== "") {
-          const s = R.semaforoSugerido(real, plan);
+          const v = R.valorGanado(bacDe(p), real, plan, ejec);
+          const s = R.semaforoSugerido(real, plan, v ? v.CPI : null);
           sugerido = s.semaforo;
           const actual = m.querySelector("[name=Semaforo]").value;
           const texto = s.desviacion > 0 ? `${s.desviacion} pts por debajo del plan` : s.desviacion < 0 ? `${-s.desviacion} pts por encima del plan` : "igual al plan";
-          html = `Semáforo sugerido: ${chipSemaforo(s.semaforo)} (${texto}).${actual !== s.semaforo ? ` <button type="button" class="btn enlace" data-usar-sug>Usar sugerido</button>` : " Coincide con el elegido."}`;
+          const costo = v && v.CPI !== null ? ` · costo: CPI ${v.CPI.toFixed(2).replace(".", ",")}${s.porCosto !== "Verde" ? " (sobrecosto)" : ""}` : "";
+          html = `Semáforo sugerido: ${chipSemaforo(s.semaforo)} (cronograma: ${texto}${costo}).${actual !== s.semaforo ? ` <button type="button" class="btn enlace" data-usar-sug>Usar sugerido</button>` : " Coincide con el elegido."}`;
         }
+        const avisos = [];
+        if (ult && real !== "" && Number(real) < (Number(ult.Avance_Real) || 0)) avisos.push(`El avance real bajó frente al último reporte (${pct(ult.Avance_Real)}).`);
+        if (ejec !== "" && ult && ult.Ejecutado !== "" && ult.Ejecutado != null && Number(ejec) < Number(ult.Ejecutado)) avisos.push(`El ejecutado es acumulado y quedó por debajo del último reporte (${cop(ult.Ejecutado)}).`);
+        if (ejec !== "" && bacDe(p) && Number(ejec) > bacDe(p)) avisos.push(`El ejecutado supera el presupuesto (${cop(bacDe(p))}): evalúa un control de cambios de costo.`);
+        if (real !== "" && Number(real) >= 100 && p.Fase !== "Cierre") avisos.push("Avance del 100%: considera pasar el proyecto a la fase de Cierre.");
+        const fc = m.querySelector("[name=Fecha_Corte]").value || R.hoyISO();
+        if (p.Fecha_Inicio && p.Fecha_Fin_Plan && p.Fecha_Fin_Plan > p.Fecha_Inicio) {
+          const lin = Math.max(0, Math.min(100, Math.round((R.difDias(fc, p.Fecha_Inicio) / R.difDias(p.Fecha_Fin_Plan, p.Fecha_Inicio)) * 100)));
+          html += `<div class="sub">Referencia: por fechas (reparto lineal) a ${fecha(fc)} llevaría ~${lin}%. Usa el % de tu cronograma si lo tienes.</div>`;
+        }
+        if (avisos.length) html += `<div class="aviso-seg">⚠ ${avisos.map(esc).join("<br>⚠ ")}</div>`;
         if (caja.innerHTML !== html) caja.innerHTML = html;   // no redibujar si no cambió (evita perder el clic)
       };
       // Delegado en la caja: el botón puede redibujarse sin perder el evento.
@@ -4510,7 +4576,7 @@
         m.querySelector("[name=Semaforo]").value = sugerido;
         sug();
       });
-      ["Avance_Real", "Avance_Planeado", "Semaforo"].forEach((k) => ["input", "change"].forEach((t) => m.querySelector(`[name=${k}]`).addEventListener(t, sug)));
+      ["Avance_Real", "Avance_Planeado", "Semaforo", "Ejecutado", "Fecha_Corte"].forEach((k) => ["input", "change"].forEach((t) => m.querySelector(`[name=${k}]`).addEventListener(t, sug)));
       sug();
       const cont = $("#comp-nuevos");
       const enlazar = () => cont.querySelectorAll(".c-quitar").forEach((b) => { b.onclick = () => { if (cont.children.length > 1) b.parentElement.remove(); else b.parentElement.querySelectorAll("input").forEach((i) => { i.value = ""; }); }; });
@@ -4559,7 +4625,7 @@
       const idSeg = R.siguienteIdHijo("SEG", S.datos.Seguimientos, "ID_Seguimiento", p.ID_Proyecto);
       const fila = {
         ID_Seguimiento: idSeg, ID_Proyecto: p.ID_Proyecto, Fecha_Corte: fd.Fecha_Corte, Semana: R.semanaISO(fd.Fecha_Corte),
-        Avance_Real: fd.Avance_Real, Semaforo: fd.Semaforo, Ejecutado: fd.Ejecutado, Logros: fd.Logros, Proximos_Pasos: fd.Proximos_Pasos,
+        Avance_Real: fd.Avance_Real, Avance_Planeado: fd.Avance_Planeado, Semaforo: fd.Semaforo, Ejecutado: fd.Ejecutado, Logros: fd.Logros, Proximos_Pasos: fd.Proximos_Pasos,
         Bloqueos: fd.Bloqueos, Reportado_Por: S.usuario.Correo, Fecha_Acta: fd.Fecha_Acta, URL_Acta: fd.URL_Acta,
         Acta_Archivo: "",   // se marca solo cuando el PDF quedó completo en Excel
       };
@@ -4601,9 +4667,11 @@
     ];
     modal(h ? "Editar hito" : `Nuevo hito · ${p.Nombre}`, campos, h || {}, (fd) => {
       if (fd.Fecha_Real) fd.Estado = "Cumplido";
+      else if (fd.Estado === "Cumplido") fd.Fecha_Real = R.hoyISO();
       if (h) guardar(() => S.api.actualizarPorId("Hitos", "ID_Hito", h.ID_Hito, fd));
       else guardar(() => S.api.agregarFila("Hitos", { ID_Hito: R.siguienteIdHijo("HIT", S.datos.Hitos, "ID_Hito", p.ID_Proyecto), ID_Proyecto: p.ID_Proyecto, ...fd }), "Hito agregado");
-    }, null, h ? { eliminar: { texto: "Eliminar hito", mensaje: `Se borrará el hito «${h.Hito}».`, accion: () => guardar(() => S.api.eliminarFilas("Hitos", "ID_Hito", [h.ID_Hito]), "Hito eliminado") } } : {});
+    }, (fd) => (!String(fd.Hito || "").trim() ? "Escribe el nombre del hito." : !fd.Fecha_Plan ? "La fecha planeada es obligatoria." : fd.Fecha_Real && fd.Fecha_Real > R.hoyISO() ? "La fecha real no puede ser futura." : ""),
+    h ? { eliminar: { texto: "Eliminar hito", mensaje: `Se borrará el hito «${h.Hito}».`, accion: () => guardar(() => S.api.eliminarFilas("Hitos", "ID_Hito", [h.ID_Hito]), "Hito eliminado") } } : {});
   }
 
   function formRiesgo(p, r) {
@@ -4647,7 +4715,12 @@
       const resp = async () => { if (fd.Responsable) { const rec = await asegurarRecurso({ Nombre: fd.Responsable }); if (rec) fd.Responsable = rec.Nombre; } };
       if (r) guardar(async () => { await resp(); await S.api.actualizarPorId("Riesgos", "ID_Riesgo", r.ID_Riesgo, fd); });
       else guardar(async () => { await resp(); await S.api.agregarFila("Riesgos", { ID_Riesgo: R.siguienteIdHijo("RSG", S.datos.Riesgos, "ID_Riesgo", p.ID_Proyecto), ID_Proyecto: p.ID_Proyecto, ...fd }); }, "Riesgo agregado");
-    }, null, r ? { init, eliminar: { texto: "Eliminar riesgo", mensaje: `Se borrará el riesgo «${r.Descripcion}».`, accion: () => guardar(() => S.api.eliminarFilas("Riesgos", "ID_Riesgo", [r.ID_Riesgo]), "Riesgo eliminado") } } : { init });
+    }, (fd) => {
+      if (!String(fd.Descripcion || "").trim()) return "Describe el riesgo.";
+      const ci = R.calificacion(fd.Probabilidad_Inherente, fd.Impacto_Inherente), cr = R.calificacion(fd.Probabilidad_Residual, fd.Impacto_Residual);
+      if (fd.Tipo !== "Oportunidad" && ci && cr && cr > ci) return `La calificación residual (${cr}) no puede ser mayor que la inherente (${ci}): mitigar debe reducir el riesgo.`;
+      return "";
+    }, r ? { init, eliminar: { texto: "Eliminar riesgo", mensaje: `Se borrará el riesgo «${r.Descripcion}».`, accion: () => guardar(() => S.api.eliminarFilas("Riesgos", "ID_Riesgo", [r.ID_Riesgo]), "Riesgo eliminado") } } : { init });
   }
 
   function formUsuario(uEdit) {
@@ -4906,6 +4979,7 @@
       { seccion: "1. Avance" },
       { k: "Fecha_Corte", label: "Fecha de corte", tipo: "date" },
       { k: "Avance_Real", label: "Avance real (%)", tipo: "number", min: 0, max: 100 },
+      { k: "Avance_Planeado", label: "Avance planeado a la fecha (%)", tipo: "number", min: 0, max: 100 },
       { k: "Semaforo", label: "Semáforo", tipo: "select", opciones: S.cat.Semaforo },
       { k: "Ejecutado", label: "Presupuesto ejecutado a la fecha (COP)", tipo: "number", min: 0 },
       { seccion: "2. Qué pasó en el periodo" },
@@ -5007,7 +5081,7 @@
           ID_Compromiso: R.siguienteIdHijo("CMP", S.datos.Compromisos, "ID_Compromiso", s.ID_Proyecto, i), ID_Proyecto: s.ID_Proyecto, ID_Seguimiento: s.ID_Seguimiento,
           Compromiso: c.Compromiso, Responsable: c.Responsable, Fecha_Compromiso: c.Fecha_Compromiso, Estado: "Pendiente", Fecha_Cierre: "", Registrado_Por: S.usuario.Correo })));
         if (esUltimo && p) await S.api.actualizarPorId("Proyectos", "ID_Proyecto", p.ID_Proyecto, {
-          ...(fd.Avance_Real !== "" ? { Avance_Real: fd.Avance_Real } : {}), ...(fd.Semaforo ? { Semaforo: fd.Semaforo } : {}), ...(fd.Ejecutado !== "" ? { Ejecutado: fd.Ejecutado } : {}), ...sello() });
+          ...(fd.Avance_Real !== "" ? { Avance_Real: fd.Avance_Real } : {}), ...(fd.Avance_Planeado !== "" && fd.Avance_Planeado !== undefined ? { Avance_Planeado: fd.Avance_Planeado } : {}), ...(fd.Semaforo ? { Semaforo: fd.Semaforo } : {}), ...(fd.Ejecutado !== "" ? { Ejecutado: fd.Ejecutado } : {}), ...sello() });
       }, "Sesión actualizada");
     }, (fd) => (fd.Fecha_Corte && fd.Fecha_Corte > R.hoyISO() ? "La fecha de corte no puede ser futura." : ""), {
       antes: bloqueActa, despues, init, recoger,
