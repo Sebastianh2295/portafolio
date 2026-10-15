@@ -1036,13 +1036,19 @@ tr.fila-inactiva td > b, tr.fila-inactiva .persona { opacity: .75; }
 .gt-l-res { background: #3b4a66; height: 5px !important; } .gt-l-hito { width: 9px !important; height: 9px !important; background: #e0a000; transform: rotate(45deg); border-radius: 1px !important; }
 .gt-l-base { background: #c3ccd8; height: 3px !important; } .gt-l-hoy { width: 2px !important; height: 13px !important; background: #e08a00; border-radius: 0 !important; }
 /* Dos paneles: tabla de tareas (fija) + línea de tiempo (desplazable). Filas de alto fijo para que coincidan. */
-.gt-cont { display: flex; border: 1px solid var(--linea); border-radius: 10px; overflow: hidden; background: #fff; }
+.gt-cont { position: relative; border: 1px solid var(--linea); border-radius: 10px; overflow: auto; max-height: 72vh; background: #fff; }
+.gt-grid { display: flex; align-items: flex-start; }
 table.gt-izq { border-collapse: collapse; font-size: 12px; flex: none; border-right: 2px solid #dfe5ec; table-layout: fixed; }
 table.gt-izq th, table.gt-izq td { padding: 0 8px; height: 30px; border-bottom: 1px solid #eef1f5; white-space: nowrap; vertical-align: middle; background: #fff; box-sizing: border-box; }
-table.gt-izq thead th { height: 48px; background: #f6f8fb; color: #445; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; border-bottom: 1px solid #dfe5ec; }
+table.gt-izq thead th { position: sticky; top: 0; z-index: 3; height: 48px; background: #f6f8fb; color: #445; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; border-bottom: 1px solid #dfe5ec; }
 .gt-c1 { width: 270px; max-width: 270px; } .gt-c2 { width: 110px; max-width: 110px; } .gt-c3, .gt-c4 { width: 82px; } .gt-c5 { width: 48px; text-align: right; }
 .gt-c3, .gt-c4 { color: #556; font-variant-numeric: tabular-nums; }
-.gt-der { flex: 1; overflow-x: auto; overflow-y: hidden; min-width: 0; }
+.gt-der { flex: 1; min-width: 0; }
+.gt-cabw { position: sticky; top: 0; z-index: 3; overflow: hidden; }
+.gt-cuerpo { overflow: hidden; cursor: grab; user-select: none; }
+.gt-cuerpo.arrastrando { cursor: grabbing; }
+.gt-hbar { position: sticky; bottom: 0; z-index: 4; overflow-x: auto; overflow-y: hidden; height: 14px; margin-left: 482px; background: #f6f8fb; border-top: 1px solid #dfe5ec; }
+.gt-izq.con-resp ~ .gt-hbar, .gt-cont:has(.gt-izq.con-resp) .gt-hbar { margin-left: 592px; }
 .gt-tl { position: relative; min-width: 100%; }
 .gt-escala em { font-style: normal; }
 .gt-cab1 .gt-escala em { position: sticky; left: 6px; }
@@ -1051,7 +1057,7 @@ table.gt-izq thead th { height: 48px; background: #f6f8fb; color: #445; font-siz
 .gt-izq .gt-res td, .gt-r.gt-res { background-color: #f7f9fc; }
 .gt-izq .gt-n1.gt-res td, .gt-r.gt-n1.gt-res { background-color: #eef3fa; }
 .gt-izq tr.gt-sobre td, .gt-r.gt-sobre { background-color: #eaf2fd !important; }
-table.gt-izq { width: 482px; } table.gt-izq.con-resp { width: 592px; }
+.gt-c6 { width: 58px; text-align: center; } .gt-c6 .gt-dif { margin: 0; }
 .gt-nom { display: flex; align-items: center; gap: 5px; overflow: hidden; }
 .gt-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gt-edt { color: #8a94a3; font-size: 11px; font-variant-numeric: tabular-nums; flex: none; }
@@ -1083,3 +1089,25 @@ table.gt-izq { width: 482px; } table.gt-izq.con-resp { width: 592px; }
 .gt-base { position: absolute; top: 23px; height: 3px; border-radius: 2px; background: #c3ccd8; }
 .gt-etq { position: absolute; top: 8px; font-size: 10.5px; color: #778; white-space: nowrap; pointer-events: none; }
 @media (max-width: 760px) { .gt-c1 { width: 180px; max-width: 180px; } .gt-izq .gt-c2, .gt-izq .gt-c3, .gt-izq .gt-c4 { display: none; } }
+
+/* v59: vistas, versiones y comparación */
+.gt-barra-h { gap: 8px 10px; }
+.gt-barra-2 { font-size: 12px; color: #556; margin-top: 0; }
+.gt-barra-2 label { display: inline-flex; align-items: center; gap: 6px; }
+.gt-acc { display: inline-flex; gap: 6px; margin-left: auto; }
+.gt-chips { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.gt-chips button { border: 1px solid var(--linea); background: #fff; border-radius: 999px; padding: 5px 12px; font: inherit; font-size: 12.5px; cursor: pointer; color: #345; }
+.gt-chips button span { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 4px; border-radius: 999px; background: #eef2f7; font-size: 11px; color: #556; }
+.gt-chips button.activo { background: var(--azul, #104994); border-color: var(--azul, #104994); color: #fff; }
+.gt-chips button.activo span { background: rgba(255,255,255,.25); color: #fff; }
+.gt-barra b { position: absolute; right: 5px; top: -1px; font-size: 9.5px; line-height: 14px; color: #fff; text-shadow: 0 0 2px rgba(0,0,0,.35); }
+.gt-pend b, .gt-curso b, .gt-atr b { color: #223; text-shadow: none; }
+.gt-barra.gt-pend { background: #c9d3e0; box-shadow: inset 0 0 0 1px #aab7c8; }
+.gt-hito-ref { background: #fff !important; box-shadow: 0 0 0 1.5px #9aa7b8 !important; top: 11px; width: 9px; height: 9px; margin-left: -4px; }
+.gt-dif { display: inline-block; margin-left: 5px; padding: 0 5px; border-radius: 8px; font-size: 10.5px; font-weight: 600; }
+.gt-dif.mal { background: #fbe3e0; color: #9b2c22; } .gt-dif.bien { background: #e3f5ea; color: #17663a; }
+.pill.vnum { background: #1d3557; color: #fff; }
+.crono-det summary { cursor: pointer; font-size: 12.5px; color: var(--azul, #104994); margin: 6px 0; }
+.crv-graf h3 { font-size: 13px; margin: 4px 0 6px; color: #445; }
+.crono-seg .acciones { display: inline-flex; gap: 6px; }
+.gt-leyenda .sub { margin-left: auto; }

@@ -38,6 +38,8 @@
     LineasBase: ["ID_LB", "ID_Proyecto", "Numero", "Fecha", "Fecha_Inicio", "Fecha_Fin", "Presupuesto", "Motivo", "ID_Cambio", "Registrado_Por"],
     // Cronograma importado (Planner en Excel o MS Project en XML): una fila por tarea; se reemplaza en cada importación.
     Tareas: ["ID_Tarea", "ID_Proyecto", "Orden", "EDT", "Nivel", "Nombre", "Grupo", "Inicio", "Fin", "Duracion_Dias", "Pct_Completado", "Hito", "Resumen", "Responsable", "Inicio_Base", "Fin_Base", "Predecesoras", "Origen", "Fecha_Importacion"],
+    // Versiones del cronograma (una por cada carga), con su corte, sesión asociada y avance de ese momento.
+    Cronogramas: ["ID_Version", "ID_Proyecto", "Numero", "Fecha_Corte", "Fecha_Importacion", "Origen", "Archivo", "ID_Seguimiento", "Tareas", "Avance_Real", "Avance_Plan", "Inicio", "Fin", "Atrasadas", "Hitos", "Nota", "Registrado_Por"],
     // Sugerencias de mejora de la app (cualquier usuario las registra; Admin/PMO las gestionan).
     Sugerencias: ["ID_Sugerencia", "Fecha_Hora", "Usuario", "Modulo", "Contexto", "ID_Proyecto", "Tipo", "Prioridad", "Descripcion", "URL_Referencia", "Adjuntos", "Estado", "Respuesta", "Version_App", "Version_Implementada", "Actualizado_Por", "Actualizado_El"],
     // Registro de auditoría: quién cambió qué y cuándo.
@@ -57,6 +59,7 @@
     Compromisos: ["Correo_Responsable", "Dias_Alerta", "ID_Recurso", "Fecha_Creacion"],
     Comentarios: ["Adjuntos", "Editado_El"],
     Cambios: ["Numero_CC", "URL_Documento"],
+    Tareas: ["ID_Version"],
   };
   const COLS_FECHA = ["Inicio", "Fin", "Inicio_Base", "Fin_Base", "Fecha_Importacion", "Cronograma_Fecha", "Fecha_Inicio_Base", "Fecha_Creacion", "Editado_El", "Fecha_Recepcion", "Fecha_Deseada", "Fecha_Estado", "Fecha_Identificacion", "Fecha_Fin_Base", "Nueva_Fecha_Fin", "Fecha_Decision", "Fecha", "Fecha_Registro", "Fecha_Inicio", "Fecha_Fin_Plan", "Actualizado_El", "Fecha_Plan", "Fecha_Real", "Fecha_Corte", "Fecha_Compromiso", "Fecha_Cierre", "Fecha_Acta"];
 
