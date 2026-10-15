@@ -1124,7 +1124,7 @@ table.gt-izq thead th { position: sticky; top: 0; z-index: 3; height: 48px; back
 .ed-root .ed-tit { font-size: 15px; }
 .ed-fases { display: grid; gap: 14px; position: relative; padding-top: 18px; min-width: min-content; }
 .ed-fases::before { content: ""; position: absolute; top: 0; left: var(--ed-l, 8%); right: var(--ed-l, 8%); border-top: 2px solid #b8c2cf; }
-.ed-col { position: relative; display: flex; flex-direction: column; min-width: 150px; }
+.ed-col { position: relative; display: flex; flex-direction: column; min-width: 128px; }
 .ed-col::before { content: ""; position: absolute; top: -18px; left: 50%; height: 18px; border-left: 2px solid #b8c2cf; }
 .ed-fase { min-height: 64px; }
 .ed-fase .ed-tit { font-size: 13px; }
@@ -1169,3 +1169,5 @@ table.gt-izq thead th { position: sticky; top: 0; z-index: 3; height: 48px; back
 .hv-edt .ed-subs .ed-caja::before { left: -10px; width: 8px; }
 .hv-edt .ed-leyenda { font-size: 9.5px; margin-top: 8px; }
 .hv-edt .ed-caja:hover { transform: none; }
+.ed-wrap.muchas { grid-template-columns: 1fr; }
+.ed-wrap.muchas .ed-lado { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }

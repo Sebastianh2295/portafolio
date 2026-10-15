@@ -1894,17 +1894,19 @@
     Pct: ["%completado", "porcentajecompletado", "%complete", "percentcomplete", "completado", "avance", "%"],
     Responsable: ["asignadoa", "assignedto", "asignado", "responsable", "nombresdelosrecursos", "resourcenames", "recursos"],
     Inicio: ["fechadeinicio", "startdate", "inicio", "start", "comienzo"],
-    Fin: ["fechadevencimiento", "duedate", "vencimiento", "fin", "finish", "finalizar", "fechafin", "fechadefin"],
+    Fin: ["fechadevencimiento", "duedate", "vencimiento", "fin", "finish", "finalizar", "finalizacion", "fechafin", "fechadefin"],
+    Duracion: ["duracion", "duration"],
     Checklist: ["elementoscompletadosdelalistadecomprobacion", "completedchecklistitems"],
     Etiquetas: ["etiquetas", "labels"],
     EDT: ["edt", "wbs", "numerodeesquema", "outlinenumber"],
     Nivel: ["niveldeesquema", "outlinelevel", "nivel"],
     Hito: ["hito", "milestone"],
-    Id: ["iddetarea", "iddelatarea", "taskid", "id", "uid", "identificadorunico", "uniqueid"],
+    Id: ["iddetarea", "iddelatarea", "taskid", "numerodetarea", "tasknumber", "id", "uid", "identificadorunico", "uniqueid"],
   };
   async function leerPlannerExcel(file) {
     const X = await libXlsx();
-    const wb = X.read(new Uint8Array(await file.arrayBuffer()), { type: "array", cellDates: true });
+    // Fechas como número de serie (sin zona horaria): así una tarea que termina a las 5 p. m. no salta al día siguiente.
+    const wb = X.read(new Uint8Array(await file.arrayBuffer()), { type: "array", cellDates: false });
     let hoja = null, filas = [], iCab = -1, mapa = null;
     for (const n of wb.SheetNames) {
       const f = X.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: "" });
@@ -1916,10 +1918,15 @@
     mapa = Object.fromEntries(Object.entries(SINONIMOS_PLAN).map(([k, sin]) => [k, sin.map((s) => cab.indexOf(s)).find((i) => i >= 0) ?? -1]));
     const val = (r, k) => (mapa[k] >= 0 ? r[mapa[k]] : "");
     // Nombre del plan: Planner lo deja en las primeras filas («Nombre del plan»).
-    const filaPlan = filas.slice(0, iCab).find((r) => /plan/i.test(String(r[0])));
+    const filaPlan = filas.slice(0, iCab).find((r) => /nombre del (plan|proyecto)|plan name|project name/i.test(String(r[0]))) || filas.slice(0, iCab).find((r) => /plan/i.test(String(r[0])));
     const crudas = filas.slice(iCab + 1).filter((r) => String(val(r, "Nombre")).trim());
+    // % completado como fracción (0,29 = 29 %) cuando todos los valores numéricos están entre 0 y 1.
+    const nums = crudas.map((r) => val(r, "Pct")).filter((v) => typeof v === "number");
+    const fraccion = nums.length > 0 && nums.every((v) => v >= 0 && v <= 1);
+    const durCero = (v) => { const t = String(v ?? "").trim(); return t !== "" && /^0+([.,]0+)?\s*(d|h|dí|di|hor|day|hour|sem|w|$)/i.test(t); };
     const tareas = crudas.map((r) => {
-      let pct = numPct(val(r, "Pct"));
+      const pv = val(r, "Pct");
+      let pct = typeof pv === "number" && fraccion ? pv * 100 : numPct(pv);
       if (pct === null) {
         const pr = normTxt(val(r, "Progreso"));
         const ch = String(val(r, "Checklist")).match(/(\d+)\s*\/\s*(\d+)/);
@@ -1930,13 +1937,15 @@
       const inicio = aFechaISO(val(r, "Inicio"), X), fin = aFechaISO(val(r, "Fin"), X);
       return { ID_Externo: String(val(r, "Id") || "").trim(), EDT: String(val(r, "EDT") || ""), Nivel: Number(val(r, "Nivel")) || 0, Nombre: nombre, Grupo: String(val(r, "Grupo") || "").trim(),
         Inicio: inicio || fin, Fin: fin || inicio, Pct_Completado: Math.round(pct),
-        Hito: esSi(val(r, "Hito")) || /\bhito\b|milestone/i.test(etiquetas) || /^hito\b/i.test(nombre) ? "Sí" : "No",
+        Hito: esSi(val(r, "Hito")) || durCero(val(r, "Duracion")) || /\bhito\b|milestone/i.test(etiquetas) || /^hito\b/i.test(nombre) ? "Sí" : "No",
         Resumen: "No", Responsable: String(val(r, "Responsable") || "").replace(/\s*;\s*/g, "; ").trim(), Inicio_Base: "", Fin_Base: "", Predecesoras: "" };
     });
-    // Con EDT/nivel (Project guardado como Excel) se respeta; si no (Planner), cada depósito es un grupo de nivel 1.
+    // Jerarquía: columna de nivel o, si no, la profundidad del número de esquema/EDT (1.2.3 = nivel 3), como en Planner Premium.
+    // Solo si el archivo no trae ninguna de las dos se agrupa por depósito (Planner básico).
+    if (!tareas.some((t) => t.Nivel) && tareas.filter((t) => /^\d+(\.\d+)*$/.test(t.EDT.trim())).length >= tareas.length * 0.8) tareas.forEach((t) => { t.Nivel = t.EDT.trim() ? t.EDT.trim().split(".").length : 1; });
     if (tareas.some((t) => t.Nivel)) {
-      tareas.forEach((t, i) => { if (!t.Nivel) t.Nivel = 1; const sig = tareas[i + 1]; t.Resumen = sig && sig.Nivel > t.Nivel ? "Sí" : "No"; });
-      return { origen: "MS Project (Excel)", nombre: hoja, tareas };
+      tareas.forEach((t, i) => { if (!t.Nivel) t.Nivel = 1; const sig = tareas[i + 1]; t.Resumen = sig && sig.Nivel > t.Nivel ? "Sí" : "No"; if (t.Resumen === "Sí") t.Hito = "No"; });
+      return { origen: mapa.Grupo >= 0 || filaPlan ? "Planner" : "MS Project (Excel)", nombre: filaPlan ? String(filaPlan[1] || filaPlan[0]).trim() : hoja, tareas };
     }
     const grupos = [...new Set(tareas.map((t) => t.Grupo || "Sin depósito"))];
     const salida = [];
@@ -2219,10 +2228,10 @@
     const ult = R.seguimientosDe(p.ID_Proyecto, S.datos.Seguimientos).slice(-1)[0];
     const lista = (txt) => { const l = String(txt || "").split(/\n|•|·|;|(?:^|\s)-\s/).map((x) => x.trim()).filter(Boolean); return l.length ? `<ul>${l.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : `<p class="sub">Sin registrar.</p>`; };
     const equipo = [["Gerente de proyecto", nombreUsuario(p.PM)], ...stakeholdersDe(p.ID_Proyecto).map((x) => [x.Rol, x.Nombre])].filter(([, n]) => n);
-    return `<div class="ed-wrap ${conLado ? "" : "sin-lado"}">
+    return `<div class="ed-wrap ${conLado ? "" : "sin-lado"} ${fases.length > 5 ? "muchas" : ""}">
       <div class="ed-arbol">
         <div class="ed-raiz">${caja({ EDT: edtRaiz, Nombre: raizTxt }, raizAv, "ed-root")}</div>
-        <div class="ed-fases" style="grid-template-columns:repeat(${Math.max(1, fases.length)},minmax(150px,1fr));--ed-l:${(100 / (2 * Math.max(1, fases.length))).toFixed(2)}%">${columnas}</div>
+        <div class="ed-fases" style="grid-template-columns:repeat(${Math.max(1, fases.length)},minmax(128px,1fr));--ed-l:${(100 / (2 * Math.max(1, fases.length))).toFixed(2)}%">${columnas}</div>
         <div class="ed-leyenda"><span><i class="ed-comp"></i>Completado</span><span><i class="ed-ok"></i>En plazo (≤ 5 pp)</span><span><i class="ed-warn"></i>Atraso 6-15 pp</span><span><i class="ed-bad"></i>Atraso ≥ 16 pp</span><span><i class="ed-noini"></i>No iniciado</span><span class="sub">Real / plan al corte ${fecha(corte)}</span></div>
       </div>
       ${conLado ? `<aside class="ed-lado">
