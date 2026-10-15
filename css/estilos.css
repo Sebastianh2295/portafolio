@@ -1156,3 +1156,16 @@ table.gt-izq thead th { position: sticky; top: 0; z-index: 3; height: 48px; back
 .ed-panel > div { margin: 2px 0; }
 .ed-bloq { border-color: #f1bdb5; background: #fff8f7; }
 @media (max-width: 1100px) { .ed-wrap { grid-template-columns: 1fr; } }
+.ed-wrap.sin-lado { grid-template-columns: 1fr; }
+.hv-edt { margin: 6px 0 12px; break-inside: avoid; }
+.hv-edt .ed-arbol { overflow: visible; }
+.hv-edt .ed-fases { gap: 8px; min-width: 0; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)) !important; }
+.hv-edt .ed-col { min-width: 0; }
+.hv-edt .ed-caja { font-size: 9.5px; padding: 5px 6px; box-shadow: none; }
+.hv-edt .ed-fase .ed-tit { font-size: 10.5px; }
+.hv-edt .ed-root { min-width: 240px; }
+.hv-edt .ed-root .ed-tit { font-size: 12px; }
+.hv-edt .ed-subs { margin-left: 8px; padding-left: 8px; gap: 5px; }
+.hv-edt .ed-subs .ed-caja::before { left: -10px; width: 8px; }
+.hv-edt .ed-leyenda { font-size: 9.5px; margin-top: 8px; }
+.hv-edt .ed-caja:hover { transform: none; }

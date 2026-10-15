@@ -1399,7 +1399,7 @@
         <div class="acciones">
           ${enlace(p.URL_Repositorio, "Repositorio")}${enlace(p.URL_Documentos, "Documentos")}
           ${puedeP("seguimiento") && p.Estado === "Activo" ? `<button class="btn primario" id="b-seg">Registrar seguimiento</button>` : ""}
-          <button class="btn" id="b-hv" title="Documento con todo el historial del proyecto, listo para guardar como PDF">📄 Hoja de vida</button>
+          <button class="btn" id="b-hv" title="Documento con todo el historial del proyecto, listo para guardar como PDF">📄 Informe de proyecto</button>
           ${puedeP("editarProyecto") ? `<button class="btn" id="b-editar">Editar proyecto</button>` : ""}
         </div></div>
       ${p.Estado === "Activo" && e.estado !== "Al día" ? `<div class="aviso ${e.estado === "Vencido" ? "rojo" : ""}">${e.estado === "Vencido" ? `El seguimiento está vencido desde el ${fecha(e.proximo)}.` : `El próximo seguimiento vence el ${fecha(e.proximo)}.`}${puedeP("seguimiento") ? " Usa «Registrar seguimiento»." : ""}</div>` : ""}
@@ -2156,7 +2156,7 @@
     const d = real - plan;
     return d >= -5 ? "ed-ok" : d >= -15 ? "ed-warn" : "ed-bad";
   }
-  function vistaEDT(p, ts, corte) {
+  function vistaEDT(p, ts, corte, conLado = true) {
     if (!ts.length) return vacio("Sin tareas.");
     // Avance de un nodo: sus tareas hoja (o él mismo si es hoja), ponderadas por duración.
     const hijosDe = (i) => { const n = Number(ts[i].Nivel) || 1, out = []; for (let j = i + 1; j < ts.length && (Number(ts[j].Nivel) || 1) > n; j++) out.push(j); return out; };
@@ -2191,18 +2191,18 @@
     const ult = R.seguimientosDe(p.ID_Proyecto, S.datos.Seguimientos).slice(-1)[0];
     const lista = (txt) => { const l = String(txt || "").split(/\n|•|·|;|(?:^|\s)-\s/).map((x) => x.trim()).filter(Boolean); return l.length ? `<ul>${l.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : `<p class="sub">Sin registrar.</p>`; };
     const equipo = [["Gerente de proyecto", nombreUsuario(p.PM)], ...stakeholdersDe(p.ID_Proyecto).map((x) => [x.Rol, x.Nombre])].filter(([, n]) => n);
-    return `<div class="ed-wrap">
+    return `<div class="ed-wrap ${conLado ? "" : "sin-lado"}">
       <div class="ed-arbol">
         <div class="ed-raiz">${caja({ EDT: edtRaiz, Nombre: raizTxt }, raizAv, "ed-root")}</div>
         <div class="ed-fases" style="grid-template-columns:repeat(${Math.max(1, fases.length)},minmax(150px,1fr));--ed-l:${(100 / (2 * Math.max(1, fases.length))).toFixed(2)}%">${columnas}</div>
         <div class="ed-leyenda"><span><i class="ed-comp"></i>Completado</span><span><i class="ed-ok"></i>En plazo (≤ 5 pp)</span><span><i class="ed-warn"></i>Atraso 6-15 pp</span><span><i class="ed-bad"></i>Atraso ≥ 16 pp</span><span><i class="ed-noini"></i>No iniciado</span><span class="sub">Real / plan al corte ${fecha(corte)}</span></div>
       </div>
-      <aside class="ed-lado">
+      ${conLado ? `<aside class="ed-lado">
         <div class="ed-panel"><h3>Logros del periodo</h3>${ult ? lista(ult.Logros) : `<p class="sub">Aún no hay seguimientos.</p>`}${ult ? `<div class="sub">Sesión del ${fecha(ult.Fecha_Corte)}</div>` : ""}</div>
         <div class="ed-panel"><h3>Próximos pasos</h3>${ult ? lista(ult.Proximos_Pasos) : `<p class="sub">—</p>`}</div>
         ${ult && ult.Bloqueos ? `<div class="ed-panel ed-bloq"><h3>Bloqueos</h3>${lista(ult.Bloqueos)}</div>` : ""}
         <div class="ed-panel"><h3>Equipo</h3>${equipo.map(([r, n]) => `<div><b>${esc(r)}:</b> ${esc(n)}</div>`).join("")}</div>
-      </aside></div>`;
+      </aside>` : ""}</div>`;
   }
 
   // ---------- Diagrama de Gantt ----------
@@ -2468,7 +2468,7 @@
     const t = el.querySelector("#gt-q"); if (t) t.addEventListener("change", () => { F.q = t.value; render(); });
   }
 
-  // ---------- Hoja de vida del proyecto (PDF con marca FSFB) ----------
+  // ---------- Informe de proyecto (antes «hoja de vida»; PDF con marca FSFB) ----------
   function hojaDeVida(p) {
     const pid = p.ID_Proyecto;
     const segs = R.seguimientosDe(pid, S.datos.Seguimientos);
@@ -2523,6 +2523,8 @@
       { t: "Hitos", d: `${hitos.length} · ${hitos.filter((h) => h.Estado === "Cumplido").length} cumplidos`, h: `      ${tabla(["Hito", "Fecha plan", "Fecha real", "Estado"], hitos.map((h) => `<tr><td>${t(h.Hito)}</td><td>${fecha(h.Fecha_Plan)}</td><td>${h.Fecha_Real ? fecha(h.Fecha_Real) : "—"}</td><td>${t(h.Estado)}</td></tr>`), "Sin hitos.")}` },
       { t: "Cronograma", d: tsHV.length ? `${p.Cronograma_Origen || "importado"} · ${cHV.real}% real / ${cHV.plan}% plan${cHV.atrasadas.length ? ` · ${cHV.atrasadas.length} atrasadas` : ""}` : "sin importar",
         h: !tsHV.length ? `<p class="hv-vacio">Sin cronograma importado. Se importa desde Planner (Excel) o MS Project (XML) en la pestaña Cronograma.</p>` : `<p class="hv-p">Importado de <b>${esc(p.Cronograma_Origen || "")}</b> el ${fecha(p.Cronograma_Fecha)} · ${cHV.hojas} tareas y ${cHV.hitos} hitos · del ${fecha(cHV.inicio)} al ${fecha(cHV.fin)}${p.Fecha_Fin_Plan && cHV.fin > p.Fecha_Fin_Plan ? ` <b>(termina después del fin planeado ${fecha(p.Fecha_Fin_Plan)})</b>` : ""} · avance real ${cHV.real}% · planeado ${cHV.plan}%.</p>
+          <div class="hv-edt"><p class="hv-p"><b>Avance por EDT</b> (real / planeado al ${fecha(R.hoyISO())})</p>${vistaEDT(p, tsHV, R.hoyISO(), false)}</div>
+          <p class="hv-p"><b>Detalle de tareas</b></p>
           ${tabla(["EDT", "Tarea", "Inicio", "Fin", "%", "Estado"], (() => { const nmax = tsHV.filter((x) => Number(x.Nivel) <= 2).length <= 60 ? 2 : 1; return tsHV.filter((x) => Number(x.Nivel) <= nmax || estadoTarea(x) === "atr").slice(0, 80); })().map((x) => `<tr><td class="hv-nw">${t(x.EDT)}</td><td style="padding-left:${(Number(x.Nivel) - 1) * 10 + 6}px">${x.Resumen === "Sí" ? `<b>${t(x.Nombre)}</b>` : `${x.Hito === "Sí" ? "◆ " : ""}${t(x.Nombre)}`}</td><td class="hv-nw">${fecha(x.Inicio)}</td><td class="hv-nw">${fecha(x.Fin)}</td><td>${Number(x.Pct_Completado) || 0}%</td><td>${TXT_EST_TAREA[estadoTarea(x)]}</td></tr>`), "Sin tareas.")}
           <p class="hv-nota">Se muestran los niveles principales y las tareas atrasadas; el detalle completo está en la pestaña Cronograma de la app.</p>
           ${versionesDe(pid).length > 1 ? `<p class="hv-p"><b>Versiones del cronograma</b></p>${tabla(["Versión", "Corte", "Sesión", "Real / plan", "Fin", "Nota"], versionesDe(pid).slice().reverse().map((v) => { const sg = v.ID_Seguimiento && segs.find((x) => x.ID_Seguimiento === v.ID_Seguimiento); return `<tr><td>V${t(v.Numero)}</td><td class="hv-nw">${fecha(v.Fecha_Corte)}</td><td class="hv-nw">${sg ? fecha(sg.Fecha_Corte) : "—"}</td><td class="hv-nw">${pct(v.Avance_Real)} / ${pct(v.Avance_Plan)}</td><td class="hv-nw">${fecha(v.Fin)}</td><td>${t(v.Nota)}</td></tr>`; }), "")}` : ""}` },
@@ -2560,7 +2562,7 @@
     const indice = `<nav class="hv-indice" id="hv-indice" aria-label="Contenido"><div class="hv-indice-t">Contenido</div>
       <ol style="grid-template-rows:repeat(${Math.ceil(secciones.length / 2)},auto)">${secciones.map((x, i) => `<li><a href="#hv-s${i + 1}" data-hv-ir="hv-s${i + 1}"><span class="hv-ind-n">${i + 1}</span><span class="hv-ind-t">${esc(x.t)}</span><span class="hv-ind-d">${esc(x.d)}</span></a></li>`).join("")}</ol></nav>`;
     const doc = `
-      ${cabDocumento("Hoja de vida del proyecto", p.Nombre, `${esc(pid)}${p.Codigo_Almera ? ` · Almera ${esc(p.Codigo_Almera)}` : ""} · ${esc(p.Cliente_Area || "")}`)}
+      ${cabDocumento("Informe de proyecto", p.Nombre, `${esc(pid)}${p.Codigo_Almera ? ` · Almera ${esc(p.Codigo_Almera)}` : ""} · ${esc(p.Cliente_Area || "")}`)}
       <section class="hv-kpis">
         <div><span>Estado</span><b>${chipEstadoP(p.Estado)}</b></div><div><span>Fase</span><b>${chipFase(p.Fase)}</b></div>
         <div><span>Semáforo</span><b>${chipSemaforo(p.Semaforo)}</b></div><div><span>Avance real / plan</span><b>${pct(p.Avance_Real)} / ${pct(p.Avance_Planeado)}</b></div>
@@ -2572,8 +2574,8 @@
       ${indice}
       ${secciones.map((x, i) => `<section class="hv-sec" id="hv-s${i + 1}"><h2><span>${i + 1}. ${esc(x.t)}</span><a class="hv-arriba" href="#hv-indice" data-hv-ir="hv-indice">↑ Contenido</a></h2>
 ${x.h}</section>`).join("")}
-      <footer class="hv-pie">Fundación Santa Fe de Bogotá · Oficina de Proyectos · Hoja de vida ${esc(pid)} · Documento generado desde el Portafolio PMO</footer>`;
-    mostrarDocumento(`Hoja de vida · ${p.Nombre}`, doc, `Hoja de vida ${pid} - ${p.Nombre}`);
+      <footer class="hv-pie">Fundación Santa Fe de Bogotá · Oficina de Proyectos · Informe de proyecto ${esc(pid)} · Documento generado desde el Portafolio PMO</footer>`;
+    mostrarDocumento(`Informe de proyecto · ${p.Nombre}`, doc, `Informe de proyecto ${pid} - ${p.Nombre}`);
   }
   // Vista de documento imprimible (hoja de vida, informe semanal): se guarda como PDF desde Imprimir.
   function mostrarDocumento(titulo, html, nombreArchivo) {
