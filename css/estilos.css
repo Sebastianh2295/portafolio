@@ -940,3 +940,10 @@ th { letter-spacing: .03em; }
 .cc-resumen { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
 a.cc-doc { font-size: 13px; font-weight: 600; color: var(--azul); text-decoration: none; }
 a.cc-doc:hover { text-decoration: underline; }
+
+/* ===== v53 Líneas base múltiples ===== */
+.tabla-lb tr.lb-vigente td { background: #eef6ee; }
+.tabla-lb td { vertical-align: top; }
+.hv-tabla { width: 100%; border-collapse: collapse; font-size: 11px; margin: 6px 0 10px; }
+.hv-tabla th, .hv-tabla td { border: 1px solid #cfd8e3; padding: 3px 6px; text-align: left; }
+.hv-tabla th { background: #eef3f9; color: #104994; }
