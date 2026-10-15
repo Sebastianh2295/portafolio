@@ -56,8 +56,11 @@
     return segs.filter((s) => s.ID_Proyecto === pid).sort((a, b) => (a.Fecha_Corte < b.Fecha_Corte ? -1 : 1));
   }
 
+  // Una «sesión» (comité, mesa técnica, reunión) deja acta y compromisos, pero no es reporte de avance.
+  const esSesion = (s) => !!s && s.Tipo_Sesion === "Sesión";
+  const avancesDe = (pid, segs) => seguimientosDe(pid, segs).filter((s) => !esSesion(s));
   function estadoSeguimiento(p, segs, hoy = hoyISO()) {
-    const lista = seguimientosDe(p.ID_Proyecto, segs);
+    const lista = avancesDe(p.ID_Proyecto, segs);
     const ultimo = lista.length ? lista[lista.length - 1] : null;
     const dias = DIAS_FRECUENCIA[p.Frecuencia_Seguimiento] || 7;
     const base = (ultimo && ultimo.Fecha_Corte) || p.Fecha_Inicio || hoy;
@@ -142,6 +145,6 @@
 
   window.REGLAS = {
     ROLES, DIAS_FRECUENCIA, hoyISO, sumarDias, difDias, semanaISO, roles, tieneRol, puede, puedeEditar, soloPM, esPMde, esMio, visibles,
-    DIAS_COMPROMISO_POR_VENCER, ESTADOS_COMPROMISO, estadoBase, cerrado, seguimientosDe, estadoSeguimiento, estadoCompromiso, semaforoSugerido, valorGanado, siguienteIdProyecto, siguienteIdHijo, kpis, calificacion, nivelRiesgo,
+    DIAS_COMPROMISO_POR_VENCER, ESTADOS_COMPROMISO, estadoBase, cerrado, seguimientosDe, estadoSeguimiento, estadoCompromiso, semaforoSugerido, valorGanado, esSesion, avancesDe, siguienteIdProyecto, siguienteIdHijo, kpis, calificacion, nivelRiesgo,
   };
 })();

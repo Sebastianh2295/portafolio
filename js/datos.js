@@ -55,7 +55,7 @@
     Proyectos: ["URL_Repositorio", "URL_Documentos", "Proveedores", "Codigo_Almera", "Dedicacion_PM", "Fecha_Fin_Base", "Presupuesto_Base", "Fecha_Inicio_Base", "Valor", "Urgencia", "Riesgo_Prio", "Esfuerzo", "Alineacion", "Impacto_Paciente", "Cronograma_Origen", "Cronograma_Archivo", "Cronograma_Fecha", "Cronograma_Por"],
     Stakeholders: ["Dedicacion", "ID_Recurso"],
     Riesgos: ["ID_Seguimiento", "Origen", "Fecha_Identificacion"],
-    Seguimientos: ["Fecha_Acta", "URL_Acta", "Acta_Archivo", "Ejecutado", "Avance_Planeado"],
+    Seguimientos: ["Fecha_Acta", "URL_Acta", "Acta_Archivo", "Ejecutado", "Avance_Planeado", "Tipo_Sesion", "Nombre_Sesion"],
     Compromisos: ["Correo_Responsable", "Dias_Alerta", "ID_Recurso", "Fecha_Creacion"],
     Comentarios: ["Adjuntos", "Editado_El"],
     Cambios: ["Numero_CC", "URL_Documento"],

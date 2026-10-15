@@ -573,7 +573,7 @@
     for (let k = semanas - 1; k >= 0; k--) {
       const corte = R.sumarDias(hoy, -7 * k);
       const valores = activos.map((p) => {
-        const segs = R.seguimientosDe(p.ID_Proyecto, S.datos.Seguimientos).filter((s) => s.Fecha_Corte && s.Fecha_Corte <= corte && s.Avance_Real !== "");
+        const segs = R.avancesDe(p.ID_Proyecto, S.datos.Seguimientos).filter((s) => s.Fecha_Corte && s.Fecha_Corte <= corte && s.Avance_Real !== "");
         return segs.length ? Number(segs[segs.length - 1].Avance_Real) || 0 : null;
       }).filter((v) => v !== null);
       puntos.push({ semana: R.semanaISO(corte), valor: valores.length ? Math.round(valores.reduce((a, b) => a + b, 0) / valores.length) : null, n: valores.length });
@@ -698,7 +698,7 @@
   // ---------- Avances de la semana ----------
   function vAvances(el) {
     const ids = new Set(filtrados().map((p) => p.ID_Proyecto));
-    const segs = S.datos.Seguimientos.filter((s) => ids.has(s.ID_Proyecto));
+    const segs = S.datos.Seguimientos.filter((s) => ids.has(s.ID_Proyecto) && !R.esSesion(s));
     const semanaDe = (s) => s.Semana || R.semanaISO(s.Fecha_Corte);
     const actual = R.semanaISO(R.hoyISO());
     const semanas = [...new Set([actual, ...segs.map(semanaDe)])].sort().reverse();
@@ -1359,7 +1359,7 @@
       ${cardStakeholders(p, puedeP("editarProyecto"))}
       ${cardDependencias(p, puedeP("editarProyecto"))}
       <div class="card"><h2>Curva S del presupuesto</h2>${(() => { S._curvaP = datosCurvaS([p]); return S._curvaP ? `<div class="grafico-alto"><canvas id="g-curvas-p"></canvas></div><p class="sub">Planeado: ${num0(p.Presupuesto_Base) !== null ? "presupuesto de la línea base" : "presupuesto"} repartido entre inicio y fin. Real: ejecutado reportado en cada seguimiento.</p>` : vacio("Registra presupuesto y fechas para ver la curva S."); })()}</div>
-      <div class="card"><h2>Curva de avance</h2>${segs.length ? `<div class="grafico-alto"><canvas id="g-curva"></canvas></div>` : vacio("Aún no hay seguimientos. La curva aparece con el primer reporte.")}</div>
+      <div class="card"><h2>Curva de avance</h2>${segs.some((x) => !R.esSesion(x)) ? `<div class="grafico-alto"><canvas id="g-curva"></canvas></div>` : vacio("Aún no hay seguimientos. La curva aparece con el primer reporte.")}</div>
 `,
       compromisos: () => seccionCompromisos(p, comps, segs, puedeP("compromisos")),
       tickets: () => seccionTickets(p, puedeP("compromisos")),
@@ -1369,12 +1369,20 @@
       raci: () => seccionRACI(p, puedeP("editarProyecto")),
       lecciones: () => seccionLecciones(p, puedeP("editarProyecto")),
       auditoria: () => seccionAuditoria(p),
-      seguimientos: () => `      <div class="card"><div class="titulo-fila"><h2>Historial de sesiones de seguimiento</h2><div class="acciones"><button class="btn chico" id="b-expandir">Expandir compromisos</button><button class="btn chico" id="b-contraer">Contraer</button>${puedeP("seguimiento") && p.Estado === "Activo" ? `<button class="btn" id="b-seg2">+ Registrar seguimiento</button>` : ""}</div></div>
+      seguimientos: () => `      <div class="card"><div class="titulo-fila"><h2>Historial de seguimientos y sesiones</h2><div class="acciones"><button class="btn chico" id="b-expandir">Expandir compromisos</button><button class="btn chico" id="b-contraer">Contraer</button>${puedeP("seguimiento") && p.Estado !== "Cancelado" ? `<button class="btn" id="b-ses2">+ Registrar sesión</button>` : ""}${puedeP("seguimiento") && p.Estado === "Activo" ? `<button class="btn" id="b-seg2">+ Registrar seguimiento</button>` : ""}</div></div>
         <p class="sub">Cada fila es una sesión: su avance, lo que pasó, los compromisos que se acordaron y el acta.</p><div class="tabla-scroll"><table class="historial">
         <thead><tr><th>Sesión</th><th>Avance</th><th>Logros y próximos pasos</th><th>Bloqueos</th><th>Compromisos acordados</th><th>Acta</th></tr></thead>
         <tbody>${segs.slice().reverse().map((s) => {
           const acordados = S.datos.Compromisos.filter((c) => c.ID_Seguimiento === s.ID_Seguimiento).sort(porCreacion);
-          return `<tr><td><b>${fecha(s.Fecha_Corte)}</b><div class="sub">${esc(s.Semana)} · ${esc(nombreUsuario(s.Reportado_Por))}</div></td>
+          if (R.esSesion(s)) return `<tr class="fila-sesion"><td><b>${fecha(s.Fecha_Corte)}</b> <span class="pill sesion">Sesión</span>${s.Nombre_Sesion ? `<div><b>${esc(s.Nombre_Sesion)}</b></div>` : ""}<div class="sub">${esc(nombreUsuario(s.Reportado_Por))}</div></td>
+          <td><span class="sub">No reporta avance</span></td>
+          <td>${esc(s.Logros)}${s.Proximos_Pasos ? `<div class="sub">Sigue: ${esc(s.Proximos_Pasos)}</div>` : ""}</td><td>${esc(s.Bloqueos || "—")}</td>
+          <td>${acordados.length ? `<details class="acordados" data-seg-det="${esc(s.ID_Seguimiento)}" ${(S.segAbiertos || new Set()).has(s.ID_Seguimiento) ? "open" : ""}><summary><b>${acordados.length} compromiso(s)</b> <span class="sub">· ${acordados.filter((c) => !R.cerrado(c)).length} abierto(s)</span></summary>
+            <ul class="mini">${acordados.map((c) => `<li><button class="btn enlace" data-abrir-comp="${esc(c.ID_Compromiso)}">${esc(c.Compromiso)}</button> <span class="sub">${esc(c.Responsable)} · ${fecha(c.Fecha_Compromiso)}</span> ${pillComp(c)}</li>`).join("")}</ul></details>` : `<span class="sub">Sin compromisos</span>`}
+            ${puedeP("compromisos") ? `<div><button class="btn chico" data-comp-seg="${esc(s.ID_Seguimiento)}">+ Compromiso de esta sesión</button></div>` : ""}</td>
+          <td>${s.Fecha_Acta ? fecha(s.Fecha_Acta) : `<span class="sub">Sin fecha</span>`}<div class="celda-acta">${celdaActa(s, puedeP("seguimiento"))}</div>
+            ${puedeP("seguimiento") ? `<button class="btn chico enlace-edicion" data-edit-seg="${esc(s.ID_Seguimiento)}">Editar sesión</button>` : ""}</td></tr>`;
+          return `<tr><td><b>${fecha(s.Fecha_Corte)}</b> <span class="pill encurso">Seguimiento</span><div class="sub">${esc(s.Semana)} · ${esc(nombreUsuario(s.Reportado_Por))}</div></td>
           <td>${pct(s.Avance_Real)}${s.Avance_Planeado !== "" && s.Avance_Planeado != null ? ` <span class="sub">/ ${pct(s.Avance_Planeado)}</span>` : ""}<div>${chipSemaforo(s.Semaforo)}</div>${(() => { const v = (S.datos.Cronogramas || []).find((x) => x.ID_Seguimiento === s.ID_Seguimiento); return v ? `<button class="btn enlace" data-ir-crv="${esc(v.ID_Version)}" title="Ver el cronograma de esta sesión">📅 V${esc(v.Numero)}</button>` : ""; })()}</td>
           <td>${esc(s.Logros)}<div class="sub">Sigue: ${esc(s.Proximos_Pasos || "—")}</div></td><td>${esc(s.Bloqueos || "—")}</td>
           <td>${acordados.length ? (() => {
@@ -1413,6 +1421,7 @@
     if ($("#b-hito")) $("#b-hito").addEventListener("click", () => formHito(p));
     if ($("#b-comp")) $("#b-comp").addEventListener("click", () => formCompromiso(null, p));
     if ($("#b-seg2")) $("#b-seg2").addEventListener("click", () => formSeguimiento(p));
+    if ($("#b-ses2")) $("#b-ses2").addEventListener("click", () => formSeguimiento(p, "Sesión"));
     if ($("#b-tk")) $("#b-tk").addEventListener("click", () => formTicket(p));
     enlazarDocumentos(el, p);
     enlazarGantt(el, p);
@@ -1456,10 +1465,11 @@
     el.querySelectorAll("[data-riesgo]").forEach((b) => b.addEventListener("click", () => formRiesgo(p, riesgos.find((r) => r.ID_Riesgo === b.dataset.riesgo))));
     enlazarCompromisos(el);
     el.querySelectorAll("[data-edit-seg]").forEach((b) => b.addEventListener("click", () => formEditarSeguimiento(segs.find((s) => s.ID_Seguimiento === b.dataset.editSeg))));
-    if (segs.length && $("#g-curva")) grafico($("#g-curva"), { type: "line", data: { labels: segs.map((s) => fecha(s.Fecha_Corte)), datasets: [
-      { label: "Avance real", data: segs.map((s) => Number(s.Avance_Real) || 0), borderColor: COLORES.azul, backgroundColor: COLORES.azul, tension: 0.2 },
-      ...(segs.some((s) => s.Avance_Planeado !== "" && s.Avance_Planeado !== undefined && s.Avance_Planeado !== null) ? [{ label: "Avance planeado", data: segs.map((s) => (s.Avance_Planeado === "" || s.Avance_Planeado == null ? null : Number(s.Avance_Planeado))), borderColor: "#9aa5b1", backgroundColor: "#9aa5b1", borderDash: [6, 4], spanGaps: true, tension: 0.2 }] : [])] },
-      options: { maintainAspectRatio: false, plugins: { legend: { display: segs.some((s) => s.Avance_Planeado !== "" && s.Avance_Planeado != null) } }, scales: { y: { min: 0, max: 100, ticks: { callback: (v) => v + "%" } } } } });
+    const segsAv = segs.filter((x) => !R.esSesion(x));
+    if (segsAv.length && $("#g-curva")) grafico($("#g-curva"), { type: "line", data: { labels: segsAv.map((s) => fecha(s.Fecha_Corte)), datasets: [
+      { label: "Avance real", data: segsAv.map((s) => Number(s.Avance_Real) || 0), borderColor: COLORES.azul, backgroundColor: COLORES.azul, tension: 0.2 },
+      ...(segsAv.some((s) => s.Avance_Planeado !== "" && s.Avance_Planeado !== undefined && s.Avance_Planeado !== null) ? [{ label: "Avance planeado", data: segsAv.map((s) => (s.Avance_Planeado === "" || s.Avance_Planeado == null ? null : Number(s.Avance_Planeado))), borderColor: "#9aa5b1", backgroundColor: "#9aa5b1", borderDash: [6, 4], spanGaps: true, tension: 0.2 }] : [])] },
+      options: { maintainAspectRatio: false, plugins: { legend: { display: segsAv.some((s) => s.Avance_Planeado !== "" && s.Avance_Planeado != null) } }, scales: { y: { min: 0, max: 100, ticks: { callback: (v) => v + "%" } } } } });
   }
 
   // ---------- Cronograma ----------
@@ -2228,7 +2238,7 @@
       const subs = hijosDe(i).filter((j) => niv(j) === niv(i) + 1);
       return `<div class="ed-col">${caja(ts[i], avance(i), "ed-fase")}${subs.length ? `<div class="ed-subs">${subs.map((j) => caja(ts[j], avance(j))).join("")}</div>` : ""}</div>`;
     }).join("");
-    const ult = R.seguimientosDe(p.ID_Proyecto, S.datos.Seguimientos).slice(-1)[0];
+    const ult = R.avancesDe(p.ID_Proyecto, S.datos.Seguimientos).slice(-1)[0];
     // Paneles de la última sesión: se puede agregar o quitar ítems aquí mismo (quedan en esa sesión de seguimiento).
     const puedeSeg = R.puedeEditar(S.usuario, p, "seguimiento");
     const itemsDe = (txt) => partirItems(txt);
@@ -2511,7 +2521,7 @@
       const marcar = (i, on) => { if (izq[i]) izq[i].classList.toggle("gt-sobre", on); if (dr[i]) dr[i].classList.toggle("gt-sobre", on); };
       [izq, dr].forEach((arrF) => arrF.forEach((r, i) => { r.addEventListener("mouseenter", () => marcar(i, true)); r.addEventListener("mouseleave", () => marcar(i, false)); }));
     }
-    const ultSeg = () => R.seguimientosDe(pid, S.datos.Seguimientos).slice(-1)[0];
+    const ultSeg = () => R.avancesDe(pid, S.datos.Seguimientos).slice(-1)[0];
     el.querySelectorAll("[data-ed-add]").forEach((f) => f.addEventListener("submit", (ev) => {
       ev.preventDefault();
       const k = f.dataset.edAdd, txt = f.querySelector("input").value.trim(), sg = ultSeg();
@@ -2601,7 +2611,7 @@
           ${tabla(["EDT", "Tarea", "Inicio", "Fin", "%", "Estado"], (() => { const nmax = tsHV.filter((x) => Number(x.Nivel) <= 2).length <= 60 ? 2 : 1; return tsHV.filter((x) => Number(x.Nivel) <= nmax || estadoTarea(x) === "atr").slice(0, 80); })().map((x) => `<tr><td class="hv-nw">${t(x.EDT)}</td><td style="padding-left:${(Number(x.Nivel) - 1) * 10 + 6}px">${x.Resumen === "Sí" ? `<b>${t(x.Nombre)}</b>` : `${x.Hito === "Sí" ? "◆ " : ""}${t(x.Nombre)}`}</td><td class="hv-nw">${fecha(x.Inicio)}</td><td class="hv-nw">${fecha(x.Fin)}</td><td>${Number(x.Pct_Completado) || 0}%</td><td>${TXT_EST_TAREA[estadoTarea(x)]}</td></tr>`), "Sin tareas.")}
           <p class="hv-nota">Se muestran los niveles principales y las tareas atrasadas; el detalle completo está en la pestaña Cronograma de la app.</p>
           ${versionesDe(pid).length > 1 ? `<p class="hv-p"><b>Versiones del cronograma</b></p>${tabla(["Versión", "Corte", "Sesión", "Real / plan", "Fin", "Nota"], versionesDe(pid).slice().reverse().map((v) => { const sg = v.ID_Seguimiento && segs.find((x) => x.ID_Seguimiento === v.ID_Seguimiento); return `<tr><td>V${t(v.Numero)}</td><td class="hv-nw">${fecha(v.Fecha_Corte)}</td><td class="hv-nw">${sg ? fecha(sg.Fecha_Corte) : "—"}</td><td class="hv-nw">${pct(v.Avance_Real)} / ${pct(v.Avance_Plan)}</td><td class="hv-nw">${fecha(v.Fin)}</td><td>${t(v.Nota)}</td></tr>`; }), "")}` : ""}` },
-      { t: "Sesiones de seguimiento", d: segs.length ? `${plural(segs.length, "sesión", "sesiones")} · última ${fecha(segs[segs.length - 1].Fecha_Corte)}` : "sin sesiones", h: `      ${tabla(["Fecha", "Avance", "Semáforo", "Logros", "Próximos pasos", "Bloqueos", "Acta"], segs.slice().reverse().map((x) => `<tr><td class="hv-nw">${fecha(x.Fecha_Corte)}</td><td>${pct(x.Avance_Real)}</td><td>${t(x.Semaforo)}</td><td>${t(x.Logros)}</td><td>${t(x.Proximos_Pasos)}</td><td>${t(x.Bloqueos)}</td><td>${x.Fecha_Acta ? fecha(x.Fecha_Acta) : "—"}${x.Acta_Archivo ? " · PDF" : ""}${esURL(x.URL_Acta) ? `<br>${enlaceHV(x.URL_Acta, "Ver acta ↗")}` : ""}</td></tr>`), "Sin seguimientos.")}` },
+      { t: "Seguimientos y sesiones", d: segs.length ? `${plural(segs.length, "sesión", "sesiones")} · última ${fecha(segs[segs.length - 1].Fecha_Corte)}` : "sin sesiones", h: `      ${tabla(["Fecha", "Avance", "Semáforo", "Logros", "Próximos pasos", "Bloqueos", "Acta"], segs.slice().reverse().map((x) => `<tr><td class="hv-nw">${fecha(x.Fecha_Corte)}${R.esSesion(x) ? `<br><small>Sesión${x.Nombre_Sesion ? `: ${esc(x.Nombre_Sesion)}` : ""}</small>` : ""}</td><td>${R.esSesion(x) ? "—" : pct(x.Avance_Real)}</td><td>${R.esSesion(x) ? "—" : t(x.Semaforo)}</td><td>${t(x.Logros)}</td><td>${t(x.Proximos_Pasos)}</td><td>${t(x.Bloqueos)}</td><td>${x.Fecha_Acta ? fecha(x.Fecha_Acta) : "—"}${x.Acta_Archivo ? " · PDF" : ""}${esURL(x.URL_Acta) ? `<br>${enlaceHV(x.URL_Acta, "Ver acta ↗")}` : ""}</td></tr>`), "Sin seguimientos.")}` },
       { t: "Compromisos", d: `${comps.length} · ${abiertos} abiertos${vencidosC ? ` · ${vencidosC} vencidos` : ""}`, h: `      ${tabla(["Compromiso", "Origen", "Responsable", "Fecha límite", "Estado", "Seguimiento"], comps.map((c) => {
         const hilo = comentariosDe(c.ID_Compromiso);
         return `<tr><td>${t(c.Compromiso)}</td><td>${esc(origen(c))}</td><td>${t(c.Responsable)}</td><td class="hv-nw">${fecha(c.Fecha_Compromiso)}</td>
@@ -3298,7 +3308,7 @@ ${x.h}</section>`).join("")}
     const tabla = (cab, filas, vacioTxt) => filas.length ? `<table class="hv-t"><thead><tr>${cab.map((c) => `<th>${c}</th>`).join("")}</tr></thead><tbody>${filas.join("")}</tbody></table>` : `<p class="hv-vacio">${vacioTxt}</p>`;
     const segsSem = S.datos.Seguimientos.filter((s) => ids.has(s.ID_Proyecto) && enSemana(s.Fecha_Corte));
     const variacion = (p) => {
-      const hist = R.seguimientosDe(p.ID_Proyecto, S.datos.Seguimientos).filter((s) => s.Fecha_Corte <= fin);
+      const hist = R.avancesDe(p.ID_Proyecto, S.datos.Seguimientos).filter((s) => s.Fecha_Corte <= fin);
       const ult = hist[hist.length - 1], ant = hist.filter((s) => s.Fecha_Corte < ini).pop();
       return ult && ant ? (Number(ult.Avance_Real) || 0) - (Number(ant.Avance_Real) || 0) : null;
     };
@@ -3620,7 +3630,7 @@ ${x.h}</section>`).join("")}
       ${panelRiesgos("p:" + p.ID_Proyecto, riesgosDe(p.ID_Proyecto), { conProyecto: false, puedeFn: () => puede })}`;
   }
   // Campos de origen comunes al formulario y a la carga masiva.
-  const opcionesSesion = (pid) => R.seguimientosDe(pid, S.datos.Seguimientos).slice().reverse().map((s) => [s.ID_Seguimiento, `Sesión del ${fecha(s.Fecha_Corte)}${s.Fecha_Acta && s.Fecha_Acta !== s.Fecha_Corte ? ` (acta ${fecha(s.Fecha_Acta)})` : ""}`]);
+  const opcionesSesion = (pid) => R.seguimientosDe(pid, S.datos.Seguimientos).slice().reverse().map((s) => [s.ID_Seguimiento, `${R.esSesion(s) ? (s.Nombre_Sesion ? `${s.Nombre_Sesion} · ` : "Sesión del ") : "Seguimiento del "}${fecha(s.Fecha_Corte)}${s.Fecha_Acta && s.Fecha_Acta !== s.Fecha_Corte ? ` (acta ${fecha(s.Fecha_Acta)})` : ""}`]);
 
   // Lee el Excel del formato FSFB (o parecido): encabezados en cualquier fila de las primeras 15.
   let cargaXlsx = null;
@@ -4374,7 +4384,7 @@ ${x.h}</section>`).join("")}
     { t: "Fecha último comentario", v: (c) => { const l = comentariosDe(c.ID_Compromiso); const u = l[l.length - 1]; return u ? u.Fecha_Hora : ""; }, tipo: "fechahora", ancho: 16 },
   ];
   const colsSeguimiento = (conProy) => [
-    ...(conProy ? [C.proy] : []), { t: "Fecha de corte", v: (s) => s.Fecha_Corte, tipo: "fecha" }, { t: "Semana", v: (s) => s.Semana, ancho: 10 },
+    ...(conProy ? [C.proy] : []), { t: "Fecha de corte", v: (s) => s.Fecha_Corte, tipo: "fecha" }, { t: "Tipo", v: (s) => (R.esSesion(s) ? `Sesión${s.Nombre_Sesion ? `: ${s.Nombre_Sesion}` : ""}` : "Seguimiento"), ancho: 18 }, { t: "Semana", v: (s) => s.Semana, ancho: 10 },
     { t: "Avance real", v: (s) => s.Avance_Real, tipo: "pct" }, { t: "Semáforo", v: (s) => s.Semaforo, ancho: 11, color: true }, { t: "Ejecutado", v: (s) => s.Ejecutado, tipo: "cop" },
     { t: "Logros", v: (s) => s.Logros, ancho: 44 }, { t: "Próximos pasos", v: (s) => s.Proximos_Pasos, ancho: 40 }, { t: "Bloqueos", v: (s) => s.Bloqueos, ancho: 36 },
     { t: "Compromisos acordados", v: (s) => S.datos.Compromisos.filter((c) => c.ID_Seguimiento === s.ID_Seguimiento).length, tipo: "num" },
@@ -5269,15 +5279,18 @@ ${x.h}</section>`).join("")}
     return n;
   }
 
-  function formSeguimiento(p) {
+  // tipoInicial: "Seguimiento" (reporte de avance) o "Sesión" (comité, mesa técnica, reunión: acta y compromisos, sin avance).
+  function formSeguimiento(p, tipoInicial = "Seguimiento") {
     S.pidForm = p.ID_Proyecto;
     const e = R.estadoSeguimiento(p, S.datos.Seguimientos);
     const ult = e.ultimo;
     const abiertos = S.datos.Compromisos.filter((c) => c.ID_Proyecto === p.ID_Proyecto && !R.cerrado(c))
       .sort((a, b) => (a.Fecha_Compromiso < b.Fecha_Compromiso ? -1 : 1));
     const campos = [
+      { k: "Tipo_Sesion", label: "¿Qué vas a registrar?", tipo: "select", def: tipoInicial, opciones: [["Seguimiento", "Seguimiento de avance (reporta avance, semáforo y presupuesto)"], ["Sesión", "Sesión / reunión (comité, mesa técnica…): acta y compromisos, sin avance"]], ancho: true },
+      { k: "Nombre_Sesion", label: "Nombre de la sesión", placeholder: "Ej.: Comité de cambios, Mesa técnica con Sonda, Revisión con el área" },
       { seccion: "1. Avance" },
-      { k: "Fecha_Corte", label: "Fecha de corte", tipo: "date", def: R.hoyISO() },
+      { k: "Fecha_Corte", label: "Fecha de corte / de la sesión", tipo: "date", def: R.hoyISO() },
       { k: "Avance_Real", label: "Avance real (%)", tipo: "number", min: 0, max: 100, def: p.Avance_Real },
       { k: "Avance_Planeado", label: "Avance planeado a la fecha (%)", tipo: "number", min: 0, max: 100, def: p.Avance_Planeado, ayuda: "Lo que debería llevar según el plan." },
       { k: "Semaforo", label: "Semáforo", tipo: "select", opciones: S.cat.Semaforo, def: p.Semaforo },
@@ -5309,6 +5322,22 @@ ${x.h}</section>`).join("")}
       <div id="comp-nuevos">${filaComp()}</div>
       <button type="button" class="btn chico" id="b-add-comp">+ Agregar otro compromiso</button>`;
     const init = (m) => {
+      // Seguimiento vs. sesión: en una sesión no se reporta avance, semáforo ni presupuesto.
+      const secs = [...m.querySelectorAll(".form-seccion")];
+      const lbl = (k) => { const x = m.querySelector(`[name=${k}]`); return x && x.closest("label"); };
+      const tipo = () => m.querySelector("[name=Tipo_Sesion]").value;
+      const aplicarTipo = () => {
+        const ses = tipo() === "Sesión";
+        ["Avance_Real", "Avance_Planeado", "Semaforo", "Ejecutado"].forEach((k) => { const l = lbl(k); if (l) l.hidden = ses; });
+        const ln = lbl("Nombre_Sesion"); if (ln) ln.hidden = !ses;
+        if (secs[0]) secs[0].firstChild.textContent = ses ? "1. Fecha de la sesión" : "1. Avance";
+        if (secs[1]) secs[1].firstChild.textContent = ses ? "2. Qué se trató" : "2. Qué pasó en el periodo";
+        const lg = lbl("Logros"); if (lg) lg.querySelector(".etq").textContent = ses ? "Temas tratados / conclusiones" : "Logros del periodo";
+        ["#sug-sem", "#crono-seg", ".contexto"].forEach((q) => { const x = m.querySelector(q); if (x) x.hidden = ses; });
+        m.querySelector(".modal-caja h2").textContent = `${ses ? "Sesión" : "Seguimiento"} · ${p.Nombre}`;
+      };
+      m.querySelector("[name=Tipo_Sesion]").addEventListener("change", aplicarTipo);
+      aplicarTipo();
       const caja = $("#sug-sem");
       let sugerido = "";
       const sug = () => {
@@ -5417,23 +5446,26 @@ ${x.h}</section>`).join("")}
       const cambiosEstado = [...m.querySelectorAll(".cp-estado")].map((sel) => ({ c: abiertos.find((x) => x.ID_Compromiso === sel.dataset.cp), estado: sel.value })).filter((x) => x.c && x.estado !== R.estadoBase(x.c));
       return { datos: { nuevos, cambiosEstado } };
     };
-    modal(`Seguimiento · ${p.Nombre}`, campos, {}, (fd, extra) => {
+    modal(`Seguimiento o sesión · ${p.Nombre}`, campos, {}, (fd, extra) => {
       if (!fd.Fecha_Corte) fd.Fecha_Corte = R.hoyISO();
+      const esSes = fd.Tipo_Sesion === "Sesión";
+      if (esSes) { fd.Avance_Real = ""; fd.Avance_Planeado = ""; fd.Semaforo = ""; fd.Ejecutado = ""; }
       const idSeg = R.siguienteIdHijo("SEG", S.datos.Seguimientos, "ID_Seguimiento", p.ID_Proyecto);
       const fila = {
         ID_Seguimiento: idSeg, ID_Proyecto: p.ID_Proyecto, Fecha_Corte: fd.Fecha_Corte, Semana: R.semanaISO(fd.Fecha_Corte),
         Avance_Real: fd.Avance_Real, Avance_Planeado: fd.Avance_Planeado, Semaforo: fd.Semaforo, Ejecutado: fd.Ejecutado, Logros: fd.Logros, Proximos_Pasos: fd.Proximos_Pasos,
         Bloqueos: fd.Bloqueos, Reportado_Por: S.usuario.Correo, Fecha_Acta: fd.Fecha_Acta, URL_Acta: fd.URL_Acta,
         Acta_Archivo: "",   // se marca solo cuando el PDF quedó completo en Excel
+        Tipo_Sesion: esSes ? "Sesión" : "Seguimiento", Nombre_Sesion: fd.Nombre_Sesion || "",
       };
-      const actaElegida = acta, cronoElegido = cronoNuevo;
+      const actaElegida = acta, cronoElegido = esSes ? null : cronoNuevo;
       const comps = extra.nuevos.map((c, i) => ({
         ID_Compromiso: R.siguienteIdHijo("CMP", S.datos.Compromisos, "ID_Compromiso", p.ID_Proyecto, i),
         ID_Proyecto: p.ID_Proyecto, ID_Seguimiento: idSeg, ...c, Correo_Responsable: "", ID_Recurso: "", Estado: c.Estado || "Pendiente", Fecha_Cierre: c.Estado === "Cerrado" ? fd.Fecha_Corte : "", Registrado_Por: S.usuario.Correo,
       }));
       guardar(async () => {
         await S.api.agregarFila("Seguimientos", fila);
-        await S.api.actualizarPorId("Proyectos", "ID_Proyecto", p.ID_Proyecto, {
+        if (!esSes) await S.api.actualizarPorId("Proyectos", "ID_Proyecto", p.ID_Proyecto, {
           ...(fd.Avance_Real !== "" ? { Avance_Real: fd.Avance_Real } : {}),
           ...(fd.Avance_Planeado !== "" ? { Avance_Planeado: fd.Avance_Planeado } : {}),
           ...(fd.Ejecutado !== "" ? { Ejecutado: fd.Ejecutado } : {}),
@@ -5455,7 +5487,7 @@ ${x.h}</section>`).join("")}
           try { await subirActa(idSeg, actaElegida.bytes, actaElegida.nombre); await S.api.actualizarPorId("Seguimientos", "ID_Seguimiento", idSeg, { Acta_Archivo: actaElegida.nombre }); }
           catch (e) { toast("La sesión quedó registrada, pero el acta no se pudo guardar: " + e.message + " Usa «Adjuntar acta» en la sesión.", true); }
         }
-      }, `Seguimiento registrado${comps.length ? ` con ${comps.length} compromiso(s)` : ""}${actaElegida ? " y acta guardada" : ""}${cronoElegido ? " · cronograma versionado" : ""}`);
+      }, `${esSes ? "Sesión registrada" : "Seguimiento registrado"}${comps.length ? ` con ${comps.length} compromiso(s)` : ""}${actaElegida ? " y acta guardada" : ""}${cronoElegido ? " · cronograma versionado" : ""}`);
     }, (fd) => (fd.Fecha_Corte && fd.Fecha_Corte > R.hoyISO() ? "La fecha de corte no puede ser futura." : ""), { antes: cargaActa + contexto, despues, init, recoger });
   }
 
@@ -5777,12 +5809,14 @@ ${x.h}</section>`).join("")}
   function formEditarSeguimiento(s) {
     S.pidForm = s.ID_Proyecto;
     const p = proyecto(s.ID_Proyecto);
-    const segs = R.seguimientosDe(s.ID_Proyecto, S.datos.Seguimientos);
+    const segs = R.avancesDe(s.ID_Proyecto, S.datos.Seguimientos);
     const esUltimo = segs.length && segs[segs.length - 1].ID_Seguimiento === s.ID_Seguimiento;
     const comps = S.datos.Compromisos.filter((c) => c.ID_Seguimiento === s.ID_Seguimiento).sort(porCreacion);
     const campos = [
+      { k: "Tipo_Sesion", label: "Tipo", tipo: "select", opciones: [["Seguimiento", "Seguimiento de avance"], ["Sesión", "Sesión / reunión (sin avance)"]], def: "Seguimiento" },
+      { k: "Nombre_Sesion", label: "Nombre de la sesión", placeholder: "Ej.: Comité de cambios" },
       { seccion: "1. Avance" },
-      { k: "Fecha_Corte", label: "Fecha de corte", tipo: "date" },
+      { k: "Fecha_Corte", label: "Fecha de corte / de la sesión", tipo: "date" },
       { k: "Avance_Real", label: "Avance real (%)", tipo: "number", min: 0, max: 100 },
       { k: "Avance_Planeado", label: "Avance planeado a la fecha (%)", tipo: "number", min: 0, max: 100 },
       { k: "Semaforo", label: "Semáforo", tipo: "select", opciones: S.cat.Semaforo },
@@ -5811,6 +5845,9 @@ ${x.h}</section>`).join("")}
     const despues = esUltimo ? `<p class="sub">Es la última sesión: al guardar también se actualiza el avance y el semáforo del proyecto.</p>` : "";
     let accionActa = null;   // null = sin cambio · { tipo: "subir", bytes, nombre } · { tipo: "quitar" }
     const init = (m) => {
+      const lblE = (k) => { const x = m.querySelector(`[name=${k}]`); return x && x.closest("label"); };
+      const aplicar = () => { const ses = m.querySelector("[name=Tipo_Sesion]").value === "Sesión"; ["Avance_Real", "Avance_Planeado", "Semaforo", "Ejecutado"].forEach((k) => { const l = lblE(k); if (l) l.hidden = ses; }); const n = lblE("Nombre_Sesion"); if (n) n.hidden = !ses; };
+      m.querySelector("[name=Tipo_Sesion]").addEventListener("change", aplicar); aplicar();
       const est = $("#acta-estado");
       // Compromisos de la sesión: abrir uno y agregar nuevos.
       m.querySelectorAll("[data-sc-abrir]").forEach((b) => b.addEventListener("click", () => detalleCompromiso(b.dataset.scAbrir)));
@@ -5854,8 +5891,9 @@ ${x.h}</section>`).join("")}
       }
       return { datos: { cambiosC, nuevosC } };
     };
-    modal(`Editar sesión del ${fecha(s.Fecha_Corte)} · ${p ? p.Nombre : ""}`, campos, s, (fd, extra) => {
+    modal(`Editar sesión del ${fecha(s.Fecha_Corte)} · ${p ? p.Nombre : ""}`, campos, { ...s, Tipo_Sesion: s.Tipo_Sesion || "Seguimiento" }, (fd, extra) => {
       if (!fd.Fecha_Corte) fd.Fecha_Corte = s.Fecha_Corte || R.hoyISO();
+      if (fd.Tipo_Sesion === "Sesión") { fd.Avance_Real = ""; fd.Avance_Planeado = ""; fd.Semaforo = ""; fd.Ejecutado = ""; }
       fd.Semana = R.semanaISO(fd.Fecha_Corte);
       const accion = accionActa;
       guardar(async () => {
@@ -5885,7 +5923,7 @@ ${x.h}</section>`).join("")}
         if (accion && accion.compromisos && accion.compromisos.length) await S.api.agregarFilas("Compromisos", accion.compromisos.map((c, i) => ({
           ID_Compromiso: R.siguienteIdHijo("CMP", S.datos.Compromisos, "ID_Compromiso", s.ID_Proyecto, i), ID_Proyecto: s.ID_Proyecto, ID_Seguimiento: s.ID_Seguimiento,
           Compromiso: c.Compromiso, Responsable: c.Responsable, Fecha_Compromiso: c.Fecha_Compromiso, Estado: "Pendiente", Fecha_Cierre: "", Registrado_Por: S.usuario.Correo })));
-        if (esUltimo && p) await S.api.actualizarPorId("Proyectos", "ID_Proyecto", p.ID_Proyecto, {
+        if (esUltimo && p && fd.Tipo_Sesion !== "Sesión") await S.api.actualizarPorId("Proyectos", "ID_Proyecto", p.ID_Proyecto, {
           ...(fd.Avance_Real !== "" ? { Avance_Real: fd.Avance_Real } : {}), ...(fd.Avance_Planeado !== "" && fd.Avance_Planeado !== undefined ? { Avance_Planeado: fd.Avance_Planeado } : {}), ...(fd.Semaforo ? { Semaforo: fd.Semaforo } : {}), ...(fd.Ejecutado !== "" ? { Ejecutado: fd.Ejecutado } : {}), ...sello() });
       }, "Sesión actualizada");
     }, (fd) => (fd.Fecha_Corte && fd.Fecha_Corte > R.hoyISO() ? "La fecha de corte no puede ser futura." : ""), {
