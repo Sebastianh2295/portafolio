@@ -1324,6 +1324,11 @@
         ${dato("Repositorio", enlace(p.URL_Repositorio, "Abrir") || `<span class="sub">Sin registrar</span>`)}${dato("Documentos", enlace(p.URL_Documentos, "Abrir") || `<span class="sub">Sin registrar</span>`)}
         <div class="dato ancho"><div class="dato-k">Comentario de estado</div><div class="dato-v">${esc(p.Comentario_Estado || "—")}</div></div>
       </div>
+      ${(() => { const cc = cambiosDe(p.ID_Proyecto); const ap = cc.filter((c) => c.Estado === "Aprobado"), pe = cc.filter((c) => c.Estado === "Solicitado");
+        return `<div class="card"><div class="titulo-fila"><h2>Control de cambios <span class="contador">${cc.length}</span></h2><div class="acciones">${puedeP("editarProyecto") ? `<button class="btn chico primario" id="b-cambio-res">+ Control de cambios</button>` : ""}<button class="btn chico" data-ir-tab="cambios">Ver todos</button></div></div>
+          ${cc.length ? `<div class="cc-resumen">${ap.length ? `<span class="pill aprobado">${ap.length} aprobado(s)</span>` : ""}${pe.length ? `<span class="pill solicitado">${pe.length} por decidir</span>` : ""}${IMPACTOS_CC.map((i) => { const n = ap.filter((c) => impactosDe(c).includes(i)).length; return n ? `<span class="pill cc-imp">${esc(i)}: ${n}</span>` : ""; }).join("")}</div>
+            <ul class="lista cc-ult">${cc.slice(0, 3).map((c) => `<li>${c.Numero_CC ? `<b>${esc(c.Numero_CC)}</b> · ` : ""}${fecha(c.Fecha)} · ${impactosDe(c).map((i) => `<span class="pill cc-imp">${esc(i)}</span>`).join(" ")} ${esc(c.Descripcion)} ${pill(c.Estado || "Solicitado")}${c.URL_Documento && esURL(c.URL_Documento) ? ` <a class="cc-doc" href="${esc(c.URL_Documento)}" target="_blank" rel="noopener">📄 Documento ↗</a>` : ""}</li>`).join("")}</ul>`
+          : `<p class="sub">Sin controles de cambio registrados. Registra aquí los cambios de tiempo, costo o alcance con el enlace a su documento.</p>`}</div>`; })()}
       ${cardStakeholders(p, puedeP("editarProyecto"))}
       ${cardDependencias(p, puedeP("editarProyecto"))}
       <div class="card"><h2>Curva S del presupuesto</h2>${(() => { S._curvaP = datosCurvaS([p]); return S._curvaP ? `<div class="grafico-alto"><canvas id="g-curvas-p"></canvas></div><p class="sub">Planeado: ${num0(p.Presupuesto_Base) !== null ? "presupuesto de la línea base" : "presupuesto"} repartido entre inicio y fin. Real: ejecutado reportado en cada seguimiento.</p>` : vacio("Registra presupuesto y fechas para ver la curva S."); })()}</div>
@@ -1385,6 +1390,8 @@
     $("#b-hv").addEventListener("click", () => hojaDeVida(p));
     if ($("#g-curvas-p") && S._curvaP) graficoCurvaS($("#g-curvas-p"), S._curvaP);
     if ($("#b-cambio")) $("#b-cambio").addEventListener("click", () => formCambio(p));
+    if ($("#b-cambio-res")) $("#b-cambio-res").addEventListener("click", () => formCambio(p));
+    el.querySelectorAll("[data-ir-tab]").forEach((b) => b.addEventListener("click", () => { S.fichaTab = b.dataset.irTab; render(); }));
     if ($("#b-lb")) $("#b-lb").addEventListener("click", () => fijarLineaBase(p));
     el.querySelectorAll("[data-cambio]").forEach((b) => b.addEventListener("click", () => formCambio(p, cambiosDe(p.ID_Proyecto).find((c) => c.ID_Cambio === b.dataset.cambio))));
     el.querySelectorAll("[data-decidir]").forEach((b) => b.addEventListener("click", () => decidirCambio(p, cambiosDe(p.ID_Proyecto).find((c) => c.ID_Cambio === b.dataset.decidir))));
