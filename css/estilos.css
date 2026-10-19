@@ -1192,3 +1192,11 @@ table.gt-izq thead th { position: sticky; top: 0; z-index: 3; height: 48px; back
 .rp-cab { margin-bottom: 6px; }
 .rp-tabla { font-size: 12.5px; background: #fff; }
 .rp-tabla td, .rp-tabla th { padding: 5px 8px; vertical-align: middle; }
+/* v72 — Cronograma de portafolio agrupado por PM */
+.g-fila.g-grupo { background: var(--fondo-suave, #f4f6fa); cursor: pointer; border-top: 2px solid var(--borde); }
+.g-fila.g-grupo:hover { filter: brightness(.98); }
+.g-grupo .g-nombre { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-weight: 600; }
+.g-grupo .g-nombre .sub { flex-basis: 100%; font-weight: 400; padding-left: 20px; }
+.g-tog { width: 14px; color: var(--texto-2, #667); }
+.g-rango { position: absolute; top: 50%; height: 6px; margin-top: -3px; border-radius: 3px; background: rgba(60, 90, 160, .25); border: 1px dashed rgba(60, 90, 160, .55); }
+.g-grupo + .g-fila.clic .g-nombre, .g-grupo ~ .g-fila.clic .g-nombre { padding-left: 18px; }

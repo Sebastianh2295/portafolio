@@ -1486,7 +1486,8 @@
       fin = todos.reduce((m, p) => (p.Fecha_Fin_Plan > m ? p.Fecha_Fin_Plan : m), todos[0].Fecha_Fin_Plan);
     }
     const ps = todos.filter((p) => p.Fecha_Fin_Plan >= ini && p.Fecha_Inicio <= fin).sort((a, b) => (a.Fecha_Inicio < b.Fecha_Inicio ? -1 : 1));
-    const selRango = `<div class="filtros"><label class="filtro"><span>Periodo</span><select id="crono-rango">${Object.entries(RANGOS).map(([k, t]) => `<option value="${k}" ${k === rango ? "selected" : ""}>${t}</option>`).join("")}</select></label></div>`;
+    const agrupar = S.cronoAgrupar ?? "pm";
+    const selRango = `<div class="filtros"><label class="filtro"><span>Agrupar</span><select id="crono-agrupar"><option value="pm" ${agrupar === "pm" ? "selected" : ""}>Por PM</option><option value="" ${agrupar ? "" : "selected"}>Sin agrupar</option></select></label><label class="filtro"><span>Periodo</span><select id="crono-rango">${Object.entries(RANGOS).map(([k, t]) => `<option value="${k}" ${k === rango ? "selected" : ""}>${t}</option>`).join("")}</select></label></div>`;
     if (!ps.length) {
       el.innerHTML = `<h1>Cronograma</h1>${barraFiltros()}${selRango}${vacio("No hay proyectos activos o en pausa con fechas en este periodo.")}`;
       enlazarFiltros(); $("#crono-rango").addEventListener("change", (e) => { S.cronoRango = e.target.value; render(); }); return;
@@ -1518,7 +1519,7 @@
           <div class="g-anios">${anios.map((a) => `<span class="g-anio" style="left:${a.a}%;width:${a.w}%">${a.y}</span>`).join("")}</div>
           <div class="g-meses">${meses.map((m, i) => `<span class="g-tick ${m.m === 0 ? "enero" : ""}" style="left:${x(m.iso)}%"></span>${i % paso === 0 ? `<span class="g-mes" style="left:${x(m.iso)}%">${MES[m.m]}</span>` : ""}`).join("")}</div>
         </div></div>
-        ${ps.map((p) => {
+        ${(() => { const filaP = (p) => {
           const hs = S.datos.Hitos.filter((h) => h.ID_Proyecto === p.ID_Proyecto && h.Fecha_Plan >= ini && h.Fecha_Plan <= fin);
           return `<div class="g-fila clic" data-pid="${esc(p.ID_Proyecto)}"><div class="g-nombre"><b>${esc(p.Nombre)}</b><div class="sub">${esc(p.Estado)} · ${pct(p.Avance_Real)} · ${fecha(p.Fecha_Inicio)} → ${fecha(p.Fecha_Fin_Plan)}</div>${(() => {
             const ds = depsDe(p.ID_Proyecto); if (!ds.length) return "";
@@ -1531,11 +1532,30 @@
               ${hs.map((h) => `<span class="g-hito" title="${esc(h.Hito)} · ${fecha(h.Fecha_Plan)} · ${esc(h.Estado)}" style="left:${x(h.Fecha_Plan)}%;background:${colorHito(h)}"></span>`).join("")}
               ${hoy >= ini && hoy <= fin ? `<span class="g-hoy" style="left:${x(hoy)}%"></span>` : ""}
             </div></div>`;
-        }).join("")}
+        };
+        if (!agrupar) return ps.map(filaP).join("");
+        // Agrupado por PM: encabezado con sus proyectos, avance promedio y el rango que cubren.
+        const cerr = S.cronoCerr = S.cronoCerr || new Set();
+        const grupos = [...new Set(ps.map((p) => lc(p.PM)))].map((k) => ({ k, nombre: nombreUsuario(ps.find((p) => lc(p.PM) === k).PM) || "Sin PM", lista: ps.filter((p) => lc(p.PM) === k) }))
+          .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre), "es"));
+        return grupos.map((g) => {
+          const a = g.lista.reduce((m, p) => (p.Fecha_Inicio < m ? p.Fecha_Inicio : m), g.lista[0].Fecha_Inicio), b = g.lista.reduce((m, p) => (p.Fecha_Fin_Plan > m ? p.Fecha_Fin_Plan : m), g.lista[0].Fecha_Fin_Plan);
+          const prom = Math.round(g.lista.reduce((t, p) => t + (Number(p.Avance_Real) || 0), 0) / g.lista.length);
+          const rojos = g.lista.filter((p) => p.Semaforo === "Rojo").length, abierto = !cerr.has(g.k);
+          return `<div class="g-fila g-grupo" data-gpm="${esc(g.k)}" role="button" tabindex="0" aria-expanded="${abierto}"><div class="g-nombre"><span class="g-tog">${abierto ? "▾" : "▸"}</span>${persona(g.nombre)}
+              <div class="sub">${g.lista.length} proyecto(s) · avance prom. ${prom}%${rojos ? ` <span class="baja" style="white-space:nowrap">· ${rojos} en rojo</span>` : ""}</div></div>
+            <div class="g-pista">${meses.map((m) => `<span class="g-rejilla ${m.m === 0 ? "enero" : ""}" style="left:${x(m.iso)}%"></span>`).join("")}
+              <div class="g-rango" style="left:${x(a)}%;width:${Math.max(1, x(b) - x(a))}%" title="${esc(g.nombre)}: ${fecha(a)} → ${fecha(b)}"></div>
+              ${hoy >= ini && hoy <= fin ? `<span class="g-hoy" style="left:${x(hoy)}%"></span>` : ""}</div></div>
+            ${abierto ? g.lista.map(filaP).join("") : ""}`;
+        }).join("");
+        })()}
       </div>
       ${rango !== "todo" && ps.some((p) => recorte(p)) ? `<p class="sub">Las barras con borde punteado siguen antes o después del periodo mostrado. Elige «Todo el portafolio» para verlas completas.</p>` : ""}`;
     enlazarFiltros();
     $("#crono-rango").addEventListener("change", (e) => { S.cronoRango = e.target.value; render(); });
+    $("#crono-agrupar").addEventListener("change", (e) => { S.cronoAgrupar = e.target.value; render(); });
+    el.querySelectorAll("[data-gpm]").forEach((g) => { const t = () => { const c = S.cronoCerr = S.cronoCerr || new Set(); c.has(g.dataset.gpm) ? c.delete(g.dataset.gpm) : c.add(g.dataset.gpm); render(); }; g.addEventListener("click", t); g.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); t(); } }); });
   }
 
   // ---------- Riesgos ----------
