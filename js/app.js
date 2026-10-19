@@ -3497,7 +3497,7 @@ ${x.h}</section>`).join("")}
       if (!fd.Nombre) return "Escribe el nombre.";
       const d = dupRecurso(fd, r && r.ID_Recurso);
       return d ? `Ya existe «${d.Nombre}»${d.Correo ? ` (${d.Correo})` : ""} en Recursos. Usa ese registro para no duplicar.` : "";
-    }, nuevo ? {} : { eliminar: { texto: "Eliminar recurso",
+    }, nuevo ? {} : { antes: proyectosRecursoHTML(r), init: (m) => m.querySelectorAll("[data-rp-ir]").forEach((b) => b.addEventListener("click", () => { cerrarModal(); ir("ficha", b.dataset.rpIr); })), eliminar: { texto: "Eliminar recurso",
       mensaje: usos.stk.length || usos.cmp.length ? `Aparece en ${usos.stk.length} proyecto(s) como stakeholder y en ${usos.cmp.length} compromiso(s); esos registros se conservan con su nombre. Si ya no trabaja con ustedes, mejor márcalo como inactivo.` : `Se eliminará «${r.Nombre}» del directorio.`,
       accion: () => guardar(async () => {
         if (usos.stk.length) await S.api.actualizarVarios("Stakeholders", "ID_Stakeholder", usos.stk.map((x) => ({ id: x.ID_Stakeholder, cambios: { ID_Recurso: "" } })));
@@ -3573,6 +3573,16 @@ ${x.h}</section>`).join("")}
     });
   }
   // En qué proyectos (visibles para el usuario) está cada persona y con qué papel.
+  // Proyectos del recurso dentro de su ficha: rol, dedicación, estado, avance y compromisos abiertos.
+  function proyectosRecursoHTML(r) {
+    const l = proyectosDeRecurso(r);
+    const ded = (pid) => { const x = (S.datos.Stakeholders || []).find((y) => y.ID_Proyecto === pid && ((y.ID_Recurso && y.ID_Recurso === r.ID_Recurso) || (r.Correo && y.Correo && lc(y.Correo) === lc(r.Correo)))); const pr = proyecto(pid); return x && num0(x.Dedicacion) !== null ? `${num0(x.Dedicacion)}%` : pr && r.Correo && lc(pr.PM) === lc(r.Correo) && num0(pr.Dedicacion_PM) !== null ? `${num0(pr.Dedicacion_PM)}%` : "—"; };
+    const activos = l.filter((x) => x.p.Estado === "Activo").length;
+    return `<div class="rp-caja"><div class="rp-cab"><b>Proyectos asociados</b> <span class="sub">${l.length ? `${l.length} proyecto(s) · ${activos} activo(s)` : "Aún no está en ningún proyecto"}</span></div>
+      ${l.length ? `<div class="tabla-scroll"><table class="no-orden no-recortar rp-tabla"><thead><tr><th>Proyecto</th><th>Rol</th><th>Dedicación</th><th>Estado</th><th>Avance</th></tr></thead><tbody>
+        ${l.map(({ p, roles }) => `<tr><td><button type="button" class="btn enlace" data-rp-ir="${esc(p.ID_Proyecto)}" title="Abrir el proyecto">${esc(p.Nombre)}</button><div class="sub">${esc(p.ID_Proyecto)}</div></td>
+          <td>${roles.map((x) => `<span class="pill rol">${esc(x)}</span>`).join(" ")}</td><td>${ded(p.ID_Proyecto)}</td><td>${chipEstadoP(p.Estado)}</td><td>${p.Estado === "Activo" ? barraAvance(p.Avance_Real, p.Avance_Planeado) : pct(p.Avance_Real)}</td></tr>`).join("")}</tbody></table></div>` : ""}</div>`;
+  }
   function proyectosDeRecurso(r) {
     const mapa = new Map();
     const add = (pid, rol) => { const p = proyecto(pid); if (!p || !R.esMio(S.usuario, p)) return; const x = mapa.get(pid) || { p, roles: [] }; if (!x.roles.includes(rol)) x.roles.push(rol); mapa.set(pid, x); };

@@ -1188,3 +1188,7 @@ table.gt-izq thead th { position: sticky; top: 0; z-index: 3; height: 48px; back
 /* v70: seguimiento vs. sesión */
 .modal-caja [hidden], .contexto[hidden], .crono-seg[hidden], .sugerencia[hidden] { display: none !important; }
 .pill.sesion { background: #ede7f6; color: #4a2a8a; }
+.rp-caja { border: 1px solid var(--linea); border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; background: var(--suave, #f6f9fd); }
+.rp-cab { margin-bottom: 6px; }
+.rp-tabla { font-size: 12.5px; background: #fff; }
+.rp-tabla td, .rp-tabla th { padding: 5px 8px; vertical-align: middle; }
