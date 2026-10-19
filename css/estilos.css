@@ -1200,3 +1200,13 @@ table.gt-izq thead th { position: sticky; top: 0; z-index: 3; height: 48px; back
 .g-tog { width: 14px; color: var(--texto-2, #667); }
 .g-rango { position: absolute; top: 50%; height: 6px; margin-top: -3px; border-radius: 3px; background: rgba(60, 90, 160, .25); border: 1px dashed rgba(60, 90, 160, .55); }
 .g-grupo + .g-fila.clic .g-nombre, .g-grupo ~ .g-fila.clic .g-nombre { padding-left: 18px; }
+/* v73 — Otras actividades en capacidad */
+.cap-otras { position: absolute; right: 0; top: 0; bottom: 0; border-radius: 0 5px 5px 0; background-image: repeating-linear-gradient(45deg, rgba(255,255,255,.55) 0 3px, transparent 3px 6px); }
+.chip-act { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; background: #eef1f7; color: #34405a; border: 1px dashed #b8c2d8; white-space: nowrap; }
+.chip-act.aus { background: #f4eefc; color: #5b3a8c; border-color: #cdb8ea; }
+.pill.vigente { background: #e3f3ea; color: #1e5e3a; }
+.pill.programada { background: #e6effc; color: #1f4f8f; }
+.pill.finalizada { background: #eee; color: #666; }
+.cap-corte-ay { align-self: flex-end; padding-bottom: 8px; }
+:root[data-tema="oscuro"] .chip-act { background: #24304a; color: #cfd8ea; border-color: #45557a; }
+:root[data-tema="oscuro"] .chip-act.aus { background: #34284a; color: #dccdf3; }

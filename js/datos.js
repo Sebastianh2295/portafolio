@@ -40,6 +40,8 @@
     Tareas: ["ID_Tarea", "ID_Proyecto", "Orden", "EDT", "Nivel", "Nombre", "Grupo", "Inicio", "Fin", "Duracion_Dias", "Pct_Completado", "Hito", "Resumen", "Responsable", "Inicio_Base", "Fin_Base", "Predecesoras", "Origen", "Fecha_Importacion"],
     // Versiones del cronograma (una por cada carga), con su corte, sesión asociada y avance de ese momento.
     Cronogramas: ["ID_Version", "ID_Proyecto", "Numero", "Fecha_Corte", "Fecha_Importacion", "Origen", "Archivo", "ID_Seguimiento", "Tareas", "Avance_Real", "Avance_Plan", "Inicio", "Fin", "Atrasadas", "Hitos", "Nota", "Registrado_Por"],
+    // Otras actividades (no de proyecto) que consumen capacidad: operación, comités, demanda, ausencias…
+    Actividades: ["ID_Actividad", "Correo", "Nombre", "ID_Recurso", "Tipo", "Descripcion", "Dedicacion", "Fecha_Inicio", "Fecha_Fin", "Registrado_Por", "Fecha_Registro"],
     // Sugerencias de mejora de la app (cualquier usuario las registra; Admin/PMO las gestionan).
     Sugerencias: ["ID_Sugerencia", "Fecha_Hora", "Usuario", "Modulo", "Contexto", "ID_Proyecto", "Tipo", "Prioridad", "Descripcion", "URL_Referencia", "Adjuntos", "Estado", "Respuesta", "Version_App", "Version_Implementada", "Actualizado_Por", "Actualizado_El"],
     // Registro de auditoría: quién cambió qué y cuándo.

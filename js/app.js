@@ -53,9 +53,10 @@
     catalogos: ["Valores de los desplegables de los formularios.",
       "Agrega o quita valores; los proyectos que ya usan un valor lo conservan.",
       "Aquí también configuras los roles de stakeholder (Sponsor, Líder funcional, Product Owner…) y el maestro de proveedores."],
-    capacidad: ["Cuánto está dedicada cada persona sumando todos sus proyectos activos o en pausa.",
+    capacidad: ["Cuánto está dedicada cada persona sumando sus proyectos activos o en pausa y sus otras actividades (operación, comités, demanda, ausencias…).",
       "La dedicación del PM se pone en «Editar proyecto»; la de cada stakeholder, en su ficha o en la sección Equipo del formulario.",
-      "Más de 100% = sobreasignado. Haz clic en un proyecto para ir a su ficha."],
+      "Las otras actividades se registran abajo en «Otras actividades»; las ausencias bajan la capacidad mientras duran.",
+      "Más de 100% = sobreasignado. Cambia la fecha de corte para ver la carga de otro momento."],
     backlog: ["Iniciativas que asigna Gestión de la Demanda en Almera, antes de ser proyectos. El código Almera es la llave.",
       "Flujo: Recibida → En análisis → Priorizada → En comité → (Aprobada / Aplazada / Rechazada) → Convertida en proyecto.",
       "Ranking: obligatorias primero y luego por puntaje. En el tablero arrastras las tarjetas entre estados; la decisión la registra el comité."],
@@ -141,7 +142,8 @@
   const CATALOGOS_BASE = { Rol_Stakeholder: ["Sponsor", "Líder funcional", "Product Owner"], Estado_Ticket: ["Abierto", "En curso", "Resuelto", "Cerrado"],
     Tipo_Cambio: ["Alcance", "Tiempo", "Costo", "Recursos", "Calidad"], Tipo_Demanda: ["Proyecto nuevo", "Mejora / evolutivo", "Regulatorio / obligatorio", "Mantenimiento", "Innovación"], Categoria_Demanda: ["Estratégico", "Operativo", "Cumplimiento"],
     Tipo_Documento: ["Acta", "Cronograma", "Contrato / orden de compra", "Especificación / requerimientos", "Diseño / arquitectura", "Presentación", "Informe", "Manual", "Carpeta", "Otro"],
-    Categoria_Leccion: ["Planeación", "Técnica", "Proveedores", "Comunicación", "Equipo", "Calidad", "Gestión del cambio"] };
+    Categoria_Leccion: ["Planeación", "Técnica", "Proveedores", "Comunicación", "Equipo", "Calidad", "Gestión del cambio"],
+    Tipo_Actividad: ["Operación / soporte", "Comités y reuniones recurrentes", "Gestión de demanda", "Administrativo / informes", "Capacitación", "Ausencia (vacaciones, incapacidad, permiso)", "Otro"] };
   let sembrado = false;
   // La primera vez, deja en el Excel los roles de stakeholder base para poder editarlos desde Catálogos.
   async function sembrarCatalogos() {
@@ -1579,6 +1581,7 @@
     { lista: "Estado_Ticket", t: "Estado del ticket (helpdesk)", campo: "Estado", tabla: "Tickets", idCol: "ID_Ticket" },
     { lista: "Tipo_Cambio", t: "Tipo de cambio", campo: "Tipo", tabla: "Cambios", idCol: "ID_Cambio" },
     { lista: "Categoria_Leccion", t: "Categoría de lección aprendida", campo: "Categoria", tabla: "Lecciones", idCol: "ID_Leccion" },
+    { lista: "Tipo_Actividad", t: "Tipo de otra actividad (capacidad)", campo: "Tipo", tabla: "Actividades", idCol: "ID_Actividad" },
     { lista: "Tipo_Demanda", t: "Tipo de demanda", campo: "Tipo", tabla: "Demandas", idCol: "ID_Demanda" },
     { lista: "Categoria_Demanda", t: "Categoría de demanda", campo: "Categoria", tabla: "Demandas", idCol: "ID_Demanda" },
     { lista: "Copia_Recordatorios", t: "Copia fija de recordatorios (correos)", campo: "", tabla: "__ninguna", correo: true },
@@ -3601,7 +3604,19 @@ ${x.h}</section>`).join("")}
     return `<div class="rp-caja"><div class="rp-cab"><b>Proyectos asociados</b> <span class="sub">${l.length ? `${l.length} proyecto(s) · ${activos} activo(s)` : "Aún no está en ningún proyecto"}</span></div>
       ${l.length ? `<div class="tabla-scroll"><table class="no-orden no-recortar rp-tabla"><thead><tr><th>Proyecto</th><th>Rol</th><th>Dedicación</th><th>Estado</th><th>Avance</th></tr></thead><tbody>
         ${l.map(({ p, roles }) => `<tr><td><button type="button" class="btn enlace" data-rp-ir="${esc(p.ID_Proyecto)}" title="Abrir el proyecto">${esc(p.Nombre)}</button><div class="sub">${esc(p.ID_Proyecto)}</div></td>
-          <td>${roles.map((x) => `<span class="pill rol">${esc(x)}</span>`).join(" ")}</td><td>${ded(p.ID_Proyecto)}</td><td>${chipEstadoP(p.Estado)}</td><td>${p.Estado === "Activo" ? barraAvance(p.Avance_Real, p.Avance_Planeado) : pct(p.Avance_Real)}</td></tr>`).join("")}</tbody></table></div>` : ""}</div>`;
+          <td>${roles.map((x) => `<span class="pill rol">${esc(x)}</span>`).join(" ")}</td><td>${ded(p.ID_Proyecto)}</td><td>${chipEstadoP(p.Estado)}</td><td>${p.Estado === "Activo" ? barraAvance(p.Avance_Real, p.Avance_Planeado) : pct(p.Avance_Real)}</td></tr>`).join("")}</tbody></table></div>` : ""}</div>
+      ${actividadesRecursoHTML(r)}`;
+  }
+  // Otras actividades del recurso (vigentes y programadas) con su carga total a hoy.
+  function actividadesRecursoHTML(r) {
+    const hoy = R.hoyISO();
+    const l = actividades().filter((a) => (a.ID_Recurso && a.ID_Recurso === r.ID_Recurso) || (r.Correo && a.Correo && lc(a.Correo) === lc(r.Correo)) || (!a.Correo && normTxt(a.Nombre) === normTxt(r.Nombre)))
+      .filter((a) => estadoAct(a, hoy) !== "Finalizada").sort((a, b) => String(a.Fecha_Inicio).localeCompare(String(b.Fecha_Inicio)));
+    const c = capacidad(hoy).find((x) => x.k === clavePersona(r.Correo, r.Nombre));
+    return `<div class="rp-caja"><div class="rp-cab"><b>Otras actividades</b> <span class="sub">${l.length ? `${l.length} registrada(s)` : "Ninguna registrada"}${c ? ` · carga hoy ${c.tProy}% proyectos + ${c.tOtras}% otras = <b>${c.total}%</b> de ${c.cap}%` : ""}</span></div>
+      ${l.length ? `<div class="tabla-scroll"><table class="no-orden no-recortar rp-tabla"><thead><tr><th>Tipo</th><th>Descripción</th><th>Dedicación</th><th>Vigencia</th><th>Estado</th></tr></thead><tbody>
+        ${l.map((a) => `<tr><td><span class="chip-act ${esAusencia(a) ? "aus" : ""}">${esc(a.Tipo || "—")}</span></td><td>${esc(a.Descripcion || "—")}</td><td>${num0(a.Dedicacion) ?? "—"}%</td><td class="nowrap">${fecha(a.Fecha_Inicio)} → ${a.Fecha_Fin ? fecha(a.Fecha_Fin) : "Permanente"}</td><td>${pill(estadoAct(a, hoy))}</td></tr>`).join("")}</tbody></table></div>` : ""}
+      <p class="sub">Se registran en «Capacidad del equipo» → Otras actividades.</p></div>`;
   }
   function proyectosDeRecurso(r) {
     const mapa = new Map();
@@ -4513,13 +4528,17 @@ ${x.h}</section>`).join("")}
     },
     capacidad: () => {
       const idsF = new Set(filtrados().map((p) => p.ID_Proyecto));
-      let lista = capacidad().filter((x) => x.asign.some((a) => idsF.has(a.p.ID_Proyecto)));
+      let lista = capacidad().filter((x) => x.asign.some((a) => idsF.has(a.p.ID_Proyecto)) || (!x.asign.length && x.otras.length && R.puede(S.usuario, "verTodo")));
       if (S.capVer && S.capVer !== "todos") lista = lista.filter((x) => nivelCap(x.total, x.cap) === S.capVer);
       const det = lista.flatMap((x) => x.asign.map((a) => ({ x, a })));
       return exportarExcel("Capacidad del equipo", [
         { nombre: "Por persona", columnas: [{ t: "Persona", v: (x) => x.nombre, ancho: 30 }, { t: "Correo", v: (x) => x.correo, ancho: 28 }, { t: "Asignado", v: (x) => x.total, tipo: "pct" },
+          { t: "Proyectos (%)", v: (x) => x.tProy, tipo: "pct" }, { t: "Otras actividades (%)", v: (x) => x.tOtras, tipo: "pct" },
           { t: "Capacidad", v: (x) => x.cap, tipo: "pct" }, { t: "Estado", v: (x) => nivelCap(x.total, x.cap), ancho: 14, color: true }, { t: "Proyectos", v: (x) => x.asign.length, tipo: "num" }], filas: lista },
-        { nombre: "Detalle por proyecto", columnas: [{ t: "Persona", v: (d) => d.x.nombre, ancho: 30 }, { t: "Proyecto", v: (d) => d.a.p.Nombre, ancho: 32 }, { t: "Rol", v: (d) => d.a.rol }, { t: "Dedicación", v: (d) => d.a.ded, tipo: "pct" }], filas: det }],
+        { nombre: "Detalle por proyecto", columnas: [{ t: "Persona", v: (d) => d.x.nombre, ancho: 30 }, { t: "Proyecto", v: (d) => d.a.p.Nombre, ancho: 32 }, { t: "Rol", v: (d) => d.a.rol }, { t: "Dedicación", v: (d) => d.a.ded, tipo: "pct" }], filas: det },
+        { nombre: "Otras actividades", columnas: [{ t: "Persona", v: (a) => a.Nombre || a.Correo, ancho: 30 }, { t: "Tipo", v: (a) => a.Tipo, ancho: 24 }, { t: "Descripción", v: (a) => a.Descripcion, ancho: 40 },
+          { t: "Dedicación", v: (a) => num0(a.Dedicacion) || 0, tipo: "pct" }, { t: "Desde", v: (a) => a.Fecha_Inicio, tipo: "fecha" }, { t: "Hasta", v: (a) => a.Fecha_Fin || "Permanente", ancho: 12 }, { t: "Estado", v: (a) => estadoAct(a, corteCap()), ancho: 12 }],
+          filas: actividades().filter((a) => R.puede(S.usuario, "verTodo") || lista.some((x) => x.k === clavePersona(a.Correo, a.Nombre))) }],
         [...filtrosGenerales(), S.capVer && S.capVer !== "todos" ? `Estado: ${S.capVer}` : ""].filter(Boolean));
     },
     lecciones: () => {
@@ -4725,7 +4744,7 @@ ${x.h}</section>`).join("")}
       };
       m.querySelectorAll("select").forEach((s) => s.addEventListener("change", calc)); calc();
       const pmSel = m.querySelector('[name="PM_Asignado"]'), pmAy = pmSel.parentElement.querySelector(".sub");
-      const cap = () => { const c = capacidad().find((x) => lc(x.correo) === lc(pmSel.value)); pmAy.innerHTML = pmSel.value ? `Hoy tiene asignado <b class="${c && c.total > c.cap ? "baja" : ""}">${c ? c.total : 0}%</b> de ${c ? c.cap : 100}% en proyectos activos.` : "Quien hace el análisis de la demanda."; };
+      const cap = () => { const c = capacidad().find((x) => lc(x.correo) === lc(pmSel.value)); pmAy.innerHTML = pmSel.value ? `Hoy tiene asignado <b class="${c && c.total > c.cap ? "baja" : ""}">${c ? c.total : 0}%</b> de ${c ? c.cap : 100}% entre proyectos y otras actividades.` : "Quien hace el análisis de la demanda."; };
       pmSel.addEventListener("change", cap); cap();
       if (!nuevo) {
         if (m.querySelector("#dem-decidir")) m.querySelector("#dem-decidir").addEventListener("click", () => decidirDemanda(d));
@@ -4953,7 +4972,18 @@ ${x.h}</section>`).join("")}
   const CUENTAN = (p) => p.Estado === "Activo" || p.Estado === "En pausa";
   const clavePersona = (correo, nombre) => (correo ? lc(correo) : "n:" + lc(nombre));
   const num0 = (v) => (v === "" || v === null || v === undefined || Number.isNaN(Number(v)) ? null : Number(v));
-  function capacidad() {
+  // ---------- Otras actividades (fuera de proyectos) ----------
+  const actividades = () => S.datos.Actividades || [];
+  const esAusencia = (a) => /ausencia|vacaci|incapacid|permiso|licencia/i.test(String(a.Tipo || ""));
+  const vigenteAct = (a, corte) => (!a.Fecha_Inicio || String(a.Fecha_Inicio) <= corte) && (!a.Fecha_Fin || String(a.Fecha_Fin) >= corte);
+  const estadoAct = (a, corte = R.hoyISO()) => (a.Fecha_Inicio && String(a.Fecha_Inicio) > corte ? "Programada" : a.Fecha_Fin && String(a.Fecha_Fin) < corte ? "Finalizada" : "Vigente");
+  const nuevoIdAct = () => `ACT-${String(actividades().reduce((m, a) => Math.max(m, parseInt(String(a.ID_Actividad).slice(4), 10) || 0), 0) + 1).padStart(4, "0")}`;
+  const JORNADA_SEMANAL = 42;   // horas/semana para convertir horas → %
+  const corteCap = () => S.capCorte || R.hoyISO();
+
+  // Carga de cada persona a la fecha de corte: proyectos activos o en pausa + otras actividades vigentes.
+  // Las ausencias no suman carga: restan capacidad disponible en su periodo.
+  function capacidad(corte = corteCap()) {
     const personas = {};
     const sumar = (correo, nombre, p, rol, ded, idStk) => {
       if (ded === null || !(correo || nombre)) return;
@@ -4966,42 +4996,138 @@ ${x.h}</section>`).join("")}
       sumar(p.PM, nombreUsuario(p.PM), p, "PM", num0(p.Dedicacion_PM));
       stakeholdersDe(p.ID_Proyecto).forEach((x) => sumar(x.Correo, x.Nombre, p, x.Rol, num0(x.Dedicacion), x.ID_Stakeholder));
     });
-    Object.values(personas).forEach((x) => { const r = recursoPor({ correo: x.correo, nombre: x.nombre }); x.cap = (r && num0(r.Capacidad)) ?? 100; if (r) x.nombre = r.Nombre; });
+    actividades().filter((a) => vigenteAct(a, corte) && num0(a.Dedicacion) !== null && (a.Correo || a.Nombre)).forEach((a) => {
+      const k = clavePersona(a.Correo, a.Nombre);
+      const x = (personas[k] = personas[k] || { k, nombre: a.Nombre || nombreUsuario(a.Correo), correo: a.Correo || "", total: 0, asign: [] });
+      (x.otras = x.otras || []).push(a);
+    });
+    Object.values(personas).forEach((x) => {
+      const r = recursoPor({ correo: x.correo, nombre: x.nombre });
+      x.otras = x.otras || [];
+      x.tProy = x.total;
+      x.tOtras = x.otras.filter((a) => !esAusencia(a)).reduce((t, a) => t + num0(a.Dedicacion), 0);
+      x.aus = Math.min(100, x.otras.filter(esAusencia).reduce((t, a) => t + num0(a.Dedicacion), 0));
+      x.total = x.tProy + x.tOtras;
+      x.capBase = (r && num0(r.Capacidad)) ?? 100;
+      x.cap = Math.max(0, Math.round(x.capBase * (1 - x.aus / 100)));
+      if (r) x.nombre = r.Nombre;
+    });
     return Object.values(personas).sort((a, b) => b.total / b.cap - a.total / a.cap || String(a.nombre).localeCompare(String(b.nombre), "es"));
   }
   const nivelCap = (t, cap = 100) => (t > cap ? "Sobreasignado" : t >= cap * 0.85 ? "Al límite" : "Disponible");
   const totalDe = (correo, nombre) => (capacidad().find((x) => x.k === clavePersona(correo, nombre)) || { total: 0, asign: [] });
-  const barraCap = (t, cap = 100) => `<span class="cap-barra" title="${t}% de ${cap}%"><span class="cap-lleno ${t > cap ? "rojo" : t >= cap * 0.85 ? "ambar" : ""}" style="width:${Math.min(100, (t / 150) * 100)}%"></span><span class="cap-100" style="left:${(cap / 150) * 100}%"></span></span> <b>${t}%</b>${cap !== 100 ? ` <span class="sub">de ${cap}%</span>` : ""}`;
+  const barraCap = (t, cap = 100, otras = 0) => `<span class="cap-barra" title="${otras ? `${t - otras}% proyectos + ${otras}% otras actividades = ${t}%` : `${t}%`} de ${cap}%"><span class="cap-lleno ${t > cap ? "rojo" : t >= cap * 0.85 ? "ambar" : ""}" style="width:${Math.min(100, (t / 150) * 100)}%">${otras && t ? `<span class="cap-otras" style="width:${Math.min(100, (otras / t) * 100)}%"></span>` : ""}</span><span class="cap-100" style="left:${(cap / 150) * 100}%"></span></span> <b>${t}%</b>${cap !== 100 ? ` <span class="sub">de ${cap}%</span>` : ""}`;
 
   function vCapacidad(el) {
+    const u = S.usuario, todo = R.puede(u, "verTodo");
     const ids = new Set(visibles().map((p) => p.ID_Proyecto));
     const idsF = new Set(filtrados().map((p) => p.ID_Proyecto));
-    const ver = S.capVer || "todos";
-    // Se muestran las personas de los proyectos filtrados; su total cuenta todos sus proyectos.
-    let lista = capacidad().filter((x) => x.asign.some((a) => idsF.has(a.p.ID_Proyecto)));
+    const ver = S.capVer || "todos", corte = corteCap(), hoy = R.hoyISO();
+    const filtroProy = S.filtros.pm || S.filtros.proyecto;
+    const yo = (x) => u && x.correo && lc(x.correo) === lc(u.Correo);
+    // Personas de los proyectos filtrados (su total cuenta todo). Quien solo tiene otras actividades aparece para PMO/Admin, o si es uno mismo.
+    const base = capacidad(corte).filter((x) => x.asign.some((a) => idsF.has(a.p.ID_Proyecto)) || (!x.asign.length && x.otras.length && ((todo && !filtroProy) || yo(x))));
+    let lista = base;
     const n = (nv) => lista.filter((x) => nivelCap(x.total, x.cap) === nv).length;
     if (ver !== "todos") lista = lista.filter((x) => nivelCap(x.total, x.cap) === ver);
+    const capT = base.reduce((t, x) => t + x.capBase, 0), otrasT = base.reduce((t, x) => t + x.tOtras, 0), proyT = base.reduce((t, x) => t + x.tProy, 0);
+    const pctOtras = capT ? Math.round((otrasT / capT) * 100) : 0;
+    // Otras actividades que puede ver: PMO/Admin todas; el PM las de las personas de sus proyectos y las suyas.
+    const llaves = new Set(base.map((x) => x.k));
+    const AF = S.actF || { tipo: "", estado: "Vigente" };
+    const acts = actividades().filter((a) => todo || llaves.has(clavePersona(a.Correo, a.Nombre)) || (u && lc(a.Correo) === lc(u.Correo)))
+      .filter((a) => (!AF.tipo || a.Tipo === AF.tipo) && (!AF.estado || estadoAct(a, corte) === AF.estado))
+      .sort((a, b) => String(a.Nombre).localeCompare(String(b.Nombre), "es") || String(a.Fecha_Inicio).localeCompare(String(b.Fecha_Inicio)));
+    const puedeAct = R.puede(u, "editarProyecto");
+    const editable = (a) => todo || (u && (lc(a.Correo) === lc(u.Correo) || lc(a.Registrado_Por) === lc(u.Correo)));
+    const tipos = [...new Set([...(S.cat.Tipo_Actividad || []), ...actividades().map((a) => a.Tipo).filter(Boolean)])];
     el.innerHTML = `
       <h1>Capacidad del equipo</h1>
       ${barraFiltros()}
+      <div class="filtros"><label class="filtro"><span>Fecha de corte</span><input type="date" id="cap-corte" value="${esc(corte)}"></label>
+        ${corte !== hoy ? `<button class="btn chico" id="cap-hoy">Volver a hoy</button>` : ""}<span class="sub cap-corte-ay">Las otras actividades y ausencias cuentan si están vigentes en esta fecha.</span></div>
       <div class="kpis kpis-3">
         <div class="kpi estatico ${n("Sobreasignado") ? "alerta" : ""}"><span class="kpi-t">Sobreasignados (sobre su capacidad)</span><span class="kpi-v">${n("Sobreasignado")}</span></div>
         <div class="kpi estatico"><span class="kpi-t">Al límite (85% a 100% de su capacidad)</span><span class="kpi-v">${n("Al límite")}</span></div>
         <div class="kpi estatico"><span class="kpi-t">Con capacidad disponible</span><span class="kpi-v">${n("Disponible")}</span></div>
+        <div class="kpi estatico"><span class="kpi-t">Capacidad del equipo en otras actividades</span><span class="kpi-v">${pctOtras}%</span><span class="sub">${proyT ? `Proyectos: ${capT ? Math.round((proyT / capT) * 100) : 0}%` : ""}</span></div>
       </div>
       <div class="card"><div class="titulo-fila"><h2>Dedicación por persona</h2>
         <div class="seg">${["todos", "Sobreasignado", "Al límite", "Disponible"].map((v) => `<button class="btn chico ${ver === v ? "primario" : ""}" data-capver="${v}">${v === "todos" ? "Todos" : v}</button>`).join("")}</div></div>
-        <p class="sub">Suma el % de dedicación de cada persona en los proyectos activos o en pausa (PM y stakeholders). Se registra en «Editar proyecto» o al agregar un stakeholder. La línea marca la capacidad de cada persona (100% salvo que en Recursos tenga otra).</p>
-        ${lista.length ? `<div class="tabla-scroll"><table><thead><tr><th>Persona</th><th>Total</th><th>Estado</th><th>Proyectos</th></tr></thead><tbody>
-          ${lista.map((x) => `<tr><td>${persona(x.nombre, x.correo)}</td><td class="nowrap">${barraCap(x.total, x.cap)}</td><td>${pill(nivelCap(x.total, x.cap))}</td>
+        <p class="sub">Suma el % de dedicación en proyectos activos o en pausa (PM y stakeholders) y en <b>otras actividades</b> vigentes (parte rayada de la barra). Las ausencias reducen la capacidad de la persona mientras duran. La línea marca su capacidad.</p>
+        ${lista.length ? `<div class="tabla-scroll"><table><thead><tr><th>Persona</th><th>Total</th><th>Estado</th><th>Proyectos</th><th>Otras actividades</th></tr></thead><tbody>
+          ${lista.map((x) => `<tr><td>${persona(x.nombre, x.correo)}</td><td class="nowrap">${barraCap(x.total, x.cap, x.tOtras)}${x.aus ? `<div class="sub">Ausencia ${x.aus}% · capacidad ${x.cap}% de ${x.capBase}%</div>` : ""}</td><td>${pill(nivelCap(x.total, x.cap))}</td>
             <td><div class="cap-asign">${x.asign.sort((a, b) => b.ded - a.ded).map((a) => ids.has(a.p.ID_Proyecto)
               ? `<button class="chip-proy" data-pid="${esc(a.p.ID_Proyecto)}">${esc(a.p.Nombre)} · ${esc(a.rol)} · <b>${a.ded}%</b></button>`
-              : `<span class="chip-proy">Otro proyecto · <b>${a.ded}%</b></span>`).join("")}</div></td></tr>`).join("")}</tbody></table></div>`
-        : vacio("Aún no hay dedicaciones registradas. Pon el % de dedicación del PM en «Editar proyecto» y el de cada stakeholder en su ficha.")}
+              : `<span class="chip-proy">Otro proyecto · <b>${a.ded}%</b></span>`).join("") || `<span class="sub">—</span>`}</div></td>
+            <td><div class="cap-asign">${x.otras.map((a) => `<span class="chip-act ${esAusencia(a) ? "aus" : ""}" title="${esc([a.Descripcion, a.Fecha_Fin ? `hasta ${fecha(a.Fecha_Fin)}` : "permanente"].filter(Boolean).join(" · "))}">${esc(a.Tipo || "Actividad")} · <b>${num0(a.Dedicacion)}%</b></span>`).join("") || `<span class="sub">—</span>`}</div></td></tr>`).join("")}</tbody></table></div>`
+        : vacio("Aún no hay dedicaciones registradas. Pon el % de dedicación del PM en «Editar proyecto», el de cada stakeholder en su ficha y las otras actividades abajo.")}
+      </div>
+      <div class="card" id="otras-actividades"><div class="titulo-fila"><h2>Otras actividades <span class="sub">${acts.length}</span></h2>${puedeAct ? `<button class="btn primario" id="b-act">+ Actividad</button>` : ""}</div>
+        <p class="sub">Lo que no es proyecto pero consume tiempo: operación y soporte, comités, gestión de demanda, informes, capacitación y ausencias. Sin fecha de fin = permanente.</p>
+        <div class="filtros"><label class="filtro"><span>Tipo</span><select id="act-tipo"><option value="">Todos</option>${tipos.map((t) => `<option ${t === AF.tipo ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></label>
+          <label class="filtro"><span>Estado</span><select id="act-estado">${[["Vigente", "Vigentes"], ["Programada", "Programadas"], ["Finalizada", "Finalizadas"], ["", "Todas"]].map(([v, t]) => `<option value="${v}" ${v === AF.estado ? "selected" : ""}>${t}</option>`).join("")}</select></label></div>
+        ${acts.length ? `<div class="tabla-scroll"><table><thead><tr><th>Persona</th><th>Tipo</th><th>Descripción</th><th>Dedicación</th><th>Vigencia</th><th>Estado</th><th></th></tr></thead><tbody>
+          ${acts.map((a) => `<tr><td>${persona(a.Nombre || nombreUsuario(a.Correo), a.Correo)}</td><td><span class="chip-act ${esAusencia(a) ? "aus" : ""}">${esc(a.Tipo || "—")}</span></td><td>${esc(a.Descripcion || "—")}</td>
+            <td class="nowrap"><b>${num0(a.Dedicacion) ?? "—"}%</b></td><td class="nowrap">${fecha(a.Fecha_Inicio)} → ${a.Fecha_Fin ? fecha(a.Fecha_Fin) : "Permanente"}</td><td>${pill(estadoAct(a, corte))}</td>
+            <td class="derecha">${editable(a) ? `<button class="btn chico" data-act="${esc(a.ID_Actividad)}">Editar</button>` : ""}</td></tr>`).join("")}</tbody></table></div>`
+        : vacio(AF.estado || AF.tipo ? "No hay actividades con ese filtro." : "Aún no hay otras actividades registradas.")}
       </div>`;
     enlazarFiltros();
     el.querySelectorAll("[data-capver]").forEach((b) => b.addEventListener("click", () => { S.capVer = b.dataset.capver; render(); }));
     el.querySelectorAll(".chip-proy[data-pid]").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); ir("ficha", b.dataset.pid); }));
+    $("#cap-corte").addEventListener("change", (e) => { S.capCorte = /^\d{4}-\d{2}-\d{2}$/.test(e.target.value) ? e.target.value : ""; render(); });
+    if ($("#cap-hoy")) $("#cap-hoy").addEventListener("click", () => { S.capCorte = ""; render(); });
+    $("#act-tipo").addEventListener("change", (e) => { S.actF = { ...AF, tipo: e.target.value }; render(); });
+    $("#act-estado").addEventListener("change", (e) => { S.actF = { ...AF, estado: e.target.value }; render(); });
+    if ($("#b-act")) $("#b-act").addEventListener("click", () => formActividad());
+    el.querySelectorAll("[data-act]").forEach((b) => b.addEventListener("click", () => formActividad(actividades().find((a) => a.ID_Actividad === b.dataset.act))));
+  }
+
+  // Formulario de otra actividad. PMO/Admin eligen a cualquiera; el PM, a sí mismo o a las personas de sus proyectos.
+  function formActividad(a, persona0) {
+    const nuevo = !a, u = S.usuario, todo = R.puede(u, "verTodo");
+    const ops = new Map();
+    const add = (correo, nombre, id) => { if (!(correo || nombre)) return; const k = clavePersona(correo, nombre); if (!ops.has(k)) ops.set(k, { k, correo: correo || "", nombre: nombre || nombreUsuario(correo), id: id || "" }); };
+    if (u) { const r = recursoPor({ correo: u.Correo }); add(u.Correo, r ? r.Nombre : u.Nombre, r && r.ID_Recurso); }
+    if (todo) {
+      recursos().filter((r) => r.Activo !== "No").forEach((r) => add(r.Correo, r.Nombre, r.ID_Recurso));
+      S.datos.Usuarios.filter((x) => x.Activo === "Sí" && R.tieneRol(x, "PM")).forEach((x) => add(x.Correo, x.Nombre));
+    } else {
+      capacidad().filter((x) => x.asign.some((y) => R.esMio(u, y.p))).forEach((x) => { const r = recursoPor({ correo: x.correo, nombre: x.nombre }); add(x.correo, x.nombre, r && r.ID_Recurso); });
+    }
+    if (a) add(a.Correo, a.Nombre, a.ID_Recurso);
+    const lista = [...ops.values()].sort((x, y) => String(x.nombre).localeCompare(String(y.nombre), "es"));
+    const actual = a ? clavePersona(a.Correo, a.Nombre) : persona0 ? clavePersona(persona0.Correo, persona0.Nombre) : (u ? clavePersona(u.Correo) : "");
+    const campos = [
+      { k: "_Persona", label: "Persona", tipo: "select", ancho: true, opciones: lista.map((x) => [x.k, `${x.nombre}${x.correo ? ` · ${x.correo}` : ""}`]), def: actual },
+      { k: "Tipo", label: "Tipo de actividad", tipo: "select", opciones: S.cat.Tipo_Actividad || [] },
+      { k: "Dedicacion", label: "Dedicación (%)", tipo: "number", min: 1, max: 100, ayuda: "Del tiempo total de la persona. Ausencia: 100 si está fuera todo el periodo." },
+      { k: "_Horas", label: "…o en horas por semana", tipo: "number", min: 0, max: JORNADA_SEMANAL, placeholder: `de ${JORNADA_SEMANAL} h`, ayuda: `Opcional: calcula el % con una jornada de ${JORNADA_SEMANAL} h.` },
+      { k: "Descripcion", label: "Descripción", tipo: "textarea", placeholder: "Ej.: Soporte de segundo nivel a Kardex; comité de cambios semanal; vacaciones." },
+      { k: "Fecha_Inicio", label: "Desde", tipo: "date", def: R.hoyISO() },
+      { k: "Fecha_Fin", label: "Hasta (opcional)", tipo: "date", ayuda: "Vacío = permanente." },
+    ];
+    modal(nuevo ? "Nueva actividad" : "Editar actividad", campos, a || {}, (fd) => {
+      const x = ops.get(fd._Persona) || {};
+      const fila = { Correo: x.correo || "", Nombre: x.nombre || "", ID_Recurso: x.id || "", Tipo: fd.Tipo, Descripcion: fd.Descripcion, Dedicacion: fd.Dedicacion, Fecha_Inicio: fd.Fecha_Inicio, Fecha_Fin: fd.Fecha_Fin };
+      if (nuevo) guardar(() => S.api.agregarFila("Actividades", { ID_Actividad: nuevoIdAct(), ...fila, Registrado_Por: u.Correo, Fecha_Registro: R.hoyISO() }), "Actividad registrada");
+      else guardar(() => S.api.actualizarPorId("Actividades", "ID_Actividad", a.ID_Actividad, fila), "Actividad actualizada");
+    }, (fd) => {
+      if (!fd._Persona) return "Elige la persona.";
+      if (!fd.Tipo) return "Elige el tipo de actividad.";
+      if (fd.Dedicacion === "") return "Escribe la dedicación en % (o en horas por semana).";
+      if (!fd.Fecha_Inicio) return "Escribe desde cuándo.";
+      if (fd.Fecha_Fin && fd.Fecha_Fin < fd.Fecha_Inicio) return "La fecha «Hasta» no puede ser anterior a «Desde».";
+      return "";
+    }, {
+      init: (m) => {
+        const h = m.querySelector('[name="_Horas"]'), d = m.querySelector('[name="Dedicacion"]');
+        h.addEventListener("input", () => { const v = Number(h.value); if (h.value !== "" && v >= 0) d.value = Math.max(1, Math.min(100, Math.round((v / JORNADA_SEMANAL) * 100))); });
+      },
+      ...(nuevo ? {} : { eliminar: { texto: "Eliminar actividad", mensaje: `Se eliminará «${a.Tipo}${a.Descripcion ? `: ${a.Descripcion}` : ""}» de ${a.Nombre || a.Correo}. Si ya terminó, mejor pon la fecha «Hasta» para conservar el histórico.`,
+        accion: () => guardar(() => S.api.eliminarFilas("Actividades", "ID_Actividad", [a.ID_Actividad]), "Actividad eliminada") } }),
+    });
   }
 
   // ---------- Stakeholders y proveedores ----------
