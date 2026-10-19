@@ -4300,8 +4300,9 @@ ${x.h}</section>`).join("")}
       { k: "Alcance", label: "Alcance", tipo: "select", ancho: true, opciones: [...(yoPM ? [] : [["", "Todo el portafolio (general)"]]), ...pms.map(([c, n]) => [c, `Solo PM: ${n}`])],
         def: yoPM ? lc(S.usuario.Correo) : S.filtros.pm ? lc(S.filtros.pm) : "", textoVacio: yoPM ? "Seleccione…" : "Todo el portafolio (general)" },
       { k: "Corte", label: "Fecha de corte", tipo: "date", def: R.hoyISO(), ayuda: "Seguimientos, compromisos y capacidad se calculan a esta fecha." },
-      { k: "Incluir", label: "Láminas a incluir", tipo: "checks", opciones: [["pm", "Resumen y sección por cada PM"], ["proyectos", "Estado de los proyectos"], ["capacidad", "Capacidad del equipo"], ["seguimientos", "Seguimientos"], ["compromisos", "Compromisos y riesgos"], ["fichas", "Una lámina por proyecto (logros, próximos pasos, hitos)"]],
-        def: "pm, proyectos, capacidad, seguimientos, compromisos" },
+      { k: "Incluir", label: "Láminas a incluir", tipo: "checks", opciones: [["pm", "Resumen y sección por cada PM"], ["proyectos", "Estado de los proyectos"], ["capacidad", "Capacidad del equipo"], ["seguimientos", "Seguimientos"], ["compromisos", "Compromisos y riesgos"], ["gantt", "Cronograma del portafolio (Gantt agrupado por PM)"],
+        ["fichas", "Una lámina por proyecto (logros, próximos pasos, hitos)"], ["edt", "EDT y cronograma de cada proyecto (los que tienen cronograma cargado)"]],
+        def: "pm, proyectos, gantt, capacidad, seguimientos, compromisos, edt" },
     ];
     modal("Informe de estado en PowerPoint", campos, {}, (fd) => { cerrarModal(); generarInformePPT({ pm: fd.Alcance, corte: fd.Corte || R.hoyISO(), incluir: new Set(String(fd.Incluir).split(/,\s*/).filter(Boolean)) }); },
       (fd) => (fd.Corte && !/^\d{4}-\d{2}-\d{2}$/.test(fd.Corte) ? "Fecha de corte no válida." : ""),
@@ -4369,6 +4370,162 @@ ${x.h}</section>`).join("")}
       };
       const M = metricas(ps);
       const cap = capacidad(corte).filter((x) => x.asign.some((a) => M.ids.has(a.p.ID_Proyecto)) || (pm && lc(x.correo) === pm));
+      // ---- Gantt genérico con figuras (portafolio o proyecto) ----
+      const MES3 = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+      const ganttPPT = (s, filas, ini, fin, o = {}) => {
+        const X0 = o.x0 || 4.9, X1 = 12.83, Y0 = o.y0 || 1.85, Yf = 6.55, colTxt = X0 - 0.5 - (o.colPct ? 0.75 : 0);
+        const total = Math.max(1, R.difDias(fin, ini));
+        const xd = (d) => X0 + (Math.min(Math.max(R.difDias(d, ini), 0), total) / total) * (X1 - X0);
+        const rh = Math.min(0.36, (Yf - Y0) / Math.max(1, filas.length));
+        // Meses (o trimestres si el rango es largo)
+        const meses = Math.ceil(total / 30.4), paso = meses > 30 ? 3 : meses > 15 ? 2 : 1;
+        let [y, m] = ini.split("-").map(Number); m -= 1;
+        for (let k = 0; k < 400; k++) {
+          const iso = `${y}-${String(m + 1).padStart(2, "0")}-01`;
+          if (iso > fin) break;
+          if (iso >= ini && k % paso === 0) {
+            const xx = xd(iso);
+            s.addShape(pptx.ShapeType.line, { x: xx, y: Y0 - 0.05, w: 0, h: rh * filas.length + 0.05, line: { color: m === 0 ? "B8C4D6" : "E3E8EF", width: m === 0 ? 1 : 0.5 } });
+            s.addText(`${MES3[m]}${m === 0 || k === 0 ? ` ${String(y).slice(2)}` : ""}`, { x: xx, y: Y0 - 0.33, w: 0.7, h: 0.25, fontFace: F, fontSize: 8, color: m === 0 ? PPT.azul : PPT.sec, bold: m === 0, margin: 0 });
+          }
+          m++; if (m > 11) { m = 0; y++; }
+        }
+        filas.forEach((f, i) => {
+          const yy = Y0 + i * rh;
+          if (f.grupo) {
+            s.addShape(pptx.ShapeType.rect, { x: 0.5, y: yy, w: X1 - 0.5, h: rh, fill: { color: "DCE7F5" }, line: { color: "DCE7F5" } });
+            s.addText([{ text: f.txt, options: { bold: true, color: PPT.azul } }, { text: f.sub ? `   ${f.sub}` : "", options: { color: PPT.sec, fontSize: 8 } }], { x: 0.55, y: yy, w: X1 - 0.6, h: rh, fontFace: F, fontSize: 10, valign: "middle", margin: 0 });
+            return;
+          }
+          if (i % 2) s.addShape(pptx.ShapeType.rect, { x: 0.5, y: yy, w: X1 - 0.5, h: rh, fill: { color: "F6F9FD" }, line: { color: "F6F9FD" } });
+          s.addText([{ text: f.txt, options: { bold: !!f.negrita, color: f.colorTxt || PPT.texto } }, ...(f.sub ? [{ text: `  ${f.sub}`, options: { color: PPT.sec, fontSize: 7.5 } }] : [])],
+            { x: 0.5 + (f.nivel || 0) * 0.18, y: yy, w: colTxt - (f.nivel || 0) * 0.18, h: rh, fontFace: F, fontSize: rh < 0.26 ? 8 : 9, valign: "middle", margin: [0, 2, 0, 2] });
+          if (o.colPct && f.pct !== undefined) s.addText(`${f.pct}%`, { x: X0 - 0.8, y: yy, w: 0.7, h: rh, fontFace: F, fontSize: 8.5, align: "right", valign: "middle", color: f.colorPct || PPT.texto, bold: true, margin: 0 });
+          if (f.base && f.base[0] && f.base[1] && f.base[1] >= ini && f.base[0] <= fin) {
+            const a = xd(f.base[0]), b = xd(f.base[1]);
+            s.addShape(pptx.ShapeType.rect, { x: a, y: yy + rh * 0.72, w: Math.max(0.03, b - a), h: rh * 0.14, fill: { color: "B5BFCC" }, line: { color: "B5BFCC" } });
+          }
+          if (f.a && f.b && f.b >= ini && f.a <= fin && !f.soloHito) {
+            const a = xd(f.a), b = xd(f.b), w = Math.max(0.04, b - a), h = f.resumen ? rh * 0.3 : rh * 0.46, ty = yy + (f.base ? rh * 0.14 : (rh - h) / 2);
+            s.addShape(pptx.ShapeType.rect, { x: a, y: ty, w, h, fill: { color: f.resumen ? "7C93B5" : PPT.claro }, line: { color: f.resumen ? "7C93B5" : PPT.claro } });
+            const pc = Math.min(100, Math.max(0, Number(f.pct) || 0));
+            if (pc > 0 && !f.resumen) s.addShape(pptx.ShapeType.rect, { x: a, y: ty, w: Math.max(0.02, (w * pc) / 100), h, fill: { color: f.colorReal || PPT.azul }, line: { color: f.colorReal || PPT.azul } });
+            if (f.resumen && pc > 0) s.addShape(pptx.ShapeType.rect, { x: a, y: ty, w: Math.max(0.02, (w * pc) / 100), h, fill: { color: PPT.azul }, line: { color: PPT.azul } });
+          }
+          (f.hitos || []).filter((h) => h.f >= ini && h.f <= fin).forEach((h) => {
+            const d = Math.min(0.2, rh * 0.62);
+            s.addShape(pptx.ShapeType.diamond, { x: xd(h.f) - d / 2, y: yy + (rh - d) / 2, w: d, h: d, fill: { color: h.color }, line: { color: PPT.blanco, width: 0.5 } });
+          });
+        });
+        if (corte >= ini && corte <= fin) {
+          const xx = xd(corte);
+          s.addShape(pptx.ShapeType.line, { x: xx, y: Y0 - 0.08, w: 0, h: rh * filas.length + 0.1, line: { color: PPT.dorado, width: 1.5, dashType: "dash" } });
+          s.addText("Hoy", { x: xx - 0.3, y: Y0 + rh * filas.length + 0.02, w: 0.6, h: 0.2, fontFace: F, fontSize: 8, color: PPT.dorado, bold: true, align: "center", margin: 0 });
+        }
+      };
+      const leyenda = (s, items, y = 6.86) => {
+        let x = 0.5;
+        items.forEach(([c, t, forma]) => {
+          s.addShape(forma === "rombo" ? pptx.ShapeType.diamond : pptx.ShapeType.rect, { x, y: y + 0.04, w: 0.16, h: 0.14, fill: { color: c }, line: { color: c } });
+          s.addText(t, { x: x + 0.2, y, w: 2.2, h: 0.22, fontFace: F, fontSize: 8, color: PPT.sec, margin: 0 });
+          x += 0.35 + t.length * 0.065;
+        });
+      };
+      const colorHitoP = (h) => (h.Estado === "Cumplido" ? PPT.Verde : h.Fecha_Plan < corte ? PPT.Rojo : "8A94A3");
+
+      // ---- Cronograma del portafolio (Gantt agrupado por PM) ----
+      const ganttPortafolio = () => {
+        const mesDe = (iso, n) => { const [y, m] = iso.split("-").map(Number); const d = new Date(y, m - 1 + n, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`; };
+        const ini = mesDe(corte, -3), fin = R.sumarDias(mesDe(corte, 10), -1);
+        const conF = ps.filter((p) => p.Fecha_Inicio && p.Fecha_Fin_Plan);
+        const filas = [];
+        const filaP = (p) => {
+          const d = (Number(p.Avance_Real) || 0) - (Number(p.Avance_Planeado) || 0);
+          return { txt: corta(p.Nombre, 34), sub: `${Number(p.Avance_Real) || 0}% / ${Number(p.Avance_Planeado) || 0}%`, a: p.Fecha_Inicio, b: p.Fecha_Fin_Plan, pct: Number(p.Avance_Real) || 0,
+            colorReal: p.Semaforo === "Rojo" || d < -15 ? PPT.Rojo : p.Semaforo === "Amarillo" ? "C98F00" : PPT.azul,
+            hitos: S.datos.Hitos.filter((h) => h.ID_Proyecto === p.ID_Proyecto && h.Fecha_Plan).map((h) => ({ f: h.Fecha_Plan, color: colorHitoP(h) })), nivel: pm ? 0 : 1 };
+        };
+        if (pm) conF.forEach((p) => filas.push(filaP(p)));
+        else gruposPM.forEach((g) => { const l = g.lista.filter((p) => p.Fecha_Inicio && p.Fecha_Fin_Plan); if (!l.length) return; filas.push({ grupo: true, txt: g.n, sub: `${l.length} proyecto(s)` }); l.sort((a, b) => String(a.Fecha_Inicio).localeCompare(String(b.Fecha_Inicio))).forEach((p) => filas.push(filaP(p))); });
+        const pags = paginar(filas, 16);
+        pags.forEach((pag, k) => {
+          const s = lamina(pags.length > 1 ? `Cronograma del portafolio (${k + 1}/${pags.length})` : "Cronograma del portafolio", `${pm ? "" : "Agrupado por PM · "}${fecha(ini)} a ${fecha(fin)} · barra = duración planeada; relleno = avance real (color según semáforo)`);
+          if (!pag.length) return vacioTxt(s, "No hay proyectos con fechas de inicio y fin.");
+          if (k > 0 && !pag[0].grupo && !pm) { const g = [...filas.slice(0, filas.indexOf(pag[0]))].reverse().find((f) => f.grupo); if (g) pag.unshift({ ...g, sub: `${g.sub} (cont.)` }); }
+          ganttPPT(s, pag, ini, fin, { x0: 4.6 });
+          leyenda(s, [[PPT.claro, "Duración planeada"], [PPT.azul, "Avance real"], [PPT.Rojo, "Avance (rojo / atraso > 15 pp)"], [PPT.Verde, "Hito cumplido", "rombo"], [PPT.Rojo, "Hito atrasado", "rombo"], ["8A94A3", "Hito pendiente", "rombo"], [PPT.dorado, "Hoy"]]);
+        });
+      };
+
+      // ---- EDT (árbol con avance real vs. plan por fase) y Gantt del cronograma de un proyecto ----
+      const COL_EDT = { "ed-comp": ["D6E9D2", "4F8A43"], "ed-ok": ["E6F4E3", "7FB873"], "ed-warn": ["FFF3CC", "D9A400"], "ed-bad": ["FDE3E1", "C62828"], "ed-noini": ["F1F3F5", "B9C0C9"] };
+      const laminasCronograma = (p) => {
+        const ts = tareasDe(p.ID_Proyecto);
+        if (!ts.length) return false;
+        const v = versionVigente(p.ID_Proyecto);
+        const niv = (i) => Number(ts[i].Nivel) || 1;
+        const hijosDe = (i) => { const n = niv(i), out = []; for (let j = i + 1; j < ts.length && niv(j) > n; j++) out.push(j); return out; };
+        const avance = (i) => { const desc = hijosDe(i).map((j) => ts[j]); const hojas = desc.length ? desc : [ts[i]]; const c = calcCronograma(hojas.map((t) => ({ ...t, Resumen: desc.length && t.Resumen === "Sí" ? "Sí" : "No" })), corte); return { real: c.real, plan: c.plan }; };
+        const minN = Math.min(...ts.map((t, i) => niv(i)));
+        const raices = ts.map((t, i) => i).filter((i) => niv(i) === minN);
+        let raizTxt, raizAv, fases, edtRaiz = "";
+        if (raices.length === 1 && hijosDe(raices[0]).length) { const r = raices[0]; edtRaiz = String(ts[r].EDT || ""); raizTxt = ts[r].Nombre; raizAv = avance(r); fases = hijosDe(r).filter((j) => niv(j) === minN + 1); }
+        else { raizTxt = p.Nombre; raizAv = calcCronograma(ts, corte); fases = raices; }
+        const nivelFase = fases.length ? niv(fases[0]) : minN;
+        const num = (t) => { const e = String(t.EDT || ""); return edtRaiz && e.startsWith(edtRaiz) ? "1" + e.slice(edtRaiz.length) : e; };
+        const verTxt = v ? `Cronograma V${v.Numero}${v.Origen ? ` (${v.Origen})` : ""}${v.Fecha_Corte ? ` · corte de la versión ${fecha(v.Fecha_Corte)}` : ""}` : "Cronograma importado";
+        const caja = (s, x, y, w, h, t, a, fase) => {
+          const [bg, bd] = COL_EDT[claseAvance(a.real, a.plan)];
+          const d = a.real - a.plan;
+          s.addShape(pptx.ShapeType.roundRect, { x, y, w, h, fill: { color: bg }, line: { color: bd, width: claseAvance(a.real, a.plan) === "ed-bad" ? 1.75 : 1 }, rectRadius: 0.05 });
+          s.addText([{ text: `${num(t) ? num(t) + " " : ""}${t.Hito === "Sí" ? "◆ " : ""}${corta(t.Nombre, fase ? 60 : 70)}`, options: { bold: true, color: PPT.texto, fontSize: fase ? 10 : 8.5, breakLine: true } },
+            { text: `Real ${a.real}% / ${a.plan}%${d ? `  ${d > 0 ? "+" : ""}${d} pp` : ""}`, options: { color: d < -5 ? "B3261E" : PPT.sec, fontSize: fase ? 9 : 8, bold: d < -15 } }],
+            { x: x + 0.04, y, w: w - 0.08, h, fontFace: F, valign: "middle", margin: [1, 3, 1, 3], fit: "shrink" });
+        };
+        // Lámina EDT (hasta 7 fases por lámina)
+        const grupos = paginar(fases, 7);
+        grupos.forEach((gf, k) => {
+          const s = lamina(`EDT · ${corta(p.Nombre, 50)}${grupos.length > 1 ? ` (${k + 1}/${grupos.length})` : ""}`, `Avance real vs. planeado por fase a ${fecha(corte)} · ${verTxt}`);
+          caja(s, 6.67 - 1.75, 1.5, 3.5, 0.62, { EDT: edtRaiz, Nombre: raizTxt }, raizAv, true);
+          const n = Math.max(1, gf.length), gap = 0.14, cw = (12.33 - gap * (n - 1)) / n;
+          const cx = (i) => 0.5 + i * (cw + gap) + cw / 2;
+          s.addShape(pptx.ShapeType.line, { x: 6.67, y: 2.12, w: 0, h: 0.2, line: { color: "9AA8BC", width: 1 } });
+          if (n > 1) s.addShape(pptx.ShapeType.line, { x: cx(0), y: 2.32, w: cx(n - 1) - cx(0), h: 0, line: { color: "9AA8BC", width: 1 } });
+          gf.forEach((i, c) => {
+            const x = 0.5 + c * (cw + gap);
+            s.addShape(pptx.ShapeType.line, { x: cx(c), y: 2.32, w: 0, h: 0.18, line: { color: "9AA8BC", width: 1 } });
+            caja(s, x, 2.5, cw, 0.78, ts[i], avance(i), true);
+            const subs = hijosDe(i).filter((j) => niv(j) === niv(i) + 1);
+            const maxS = 8, vis = subs.length > maxS ? subs.slice(0, maxS - 1) : subs;
+            const hS = Math.min(0.56, (6.7 - 3.42 - 0.07 * Math.max(0, vis.length - 1)) / Math.max(1, vis.length + (subs.length > maxS ? 1 : 0)));
+            vis.forEach((j, r) => caja(s, x + 0.12, 3.42 + r * (hS + 0.07), cw - 0.12, hS, ts[j], avance(j), false));
+            if (subs.length > maxS) s.addText(`y ${subs.length - vis.length} más…`, { x: x + 0.12, y: 3.42 + vis.length * (hS + 0.07), w: cw - 0.12, h: 0.25, fontFace: F, fontSize: 8, color: PPT.sec, italic: true, margin: 0 });
+            if (vis.length) s.addShape(pptx.ShapeType.line, { x: x + 0.06, y: 3.28, w: 0, h: (vis.length - 0.5) * (hS + 0.07) + 0.14, line: { color: "C3CCD8", width: 0.75 } });
+          });
+          leyenda(s, [["D6E9D2", "Completado"], ["E6F4E3", "En plazo (≤ 5 pp)"], ["FFF3CC", "Atraso 6–15 pp"], ["FDE3E1", "Atraso ≥ 16 pp"], ["F1F3F5", "No iniciado"]]);
+        });
+        // Lámina Gantt: fases, subfases e hitos (hasta 2 láminas)
+        const cRes = calcCronograma(ts, corte);
+        let sel = ts.map((t, i) => i).filter((i) => niv(i) <= nivelFase + 1 || ts[i].Hito === "Sí");
+        if (sel.length > 34) sel = ts.map((t, i) => i).filter((i) => niv(i) <= nivelFase || ts[i].Hito === "Sí");
+        const filas = sel.slice(0, 34).map((i) => {
+          const t = ts[i], a = hijosDe(i).length ? avance(i) : { real: Number(t.Pct_Completado) || 0, plan: 0 };
+          const est = estadoTarea(t, corte), hito = t.Hito === "Sí";
+          return { txt: `${num(t) ? num(t) + "  " : ""}${corta(t.Nombre, 46 - (niv(i) - minN) * 3)}`, nivel: Math.max(0, niv(i) - minN - (fases === raices ? 0 : 1)), negrita: hijosDe(i).length > 0 && niv(i) <= nivelFase,
+            a: t.Inicio, b: t.Fin, pct: a.real, resumen: hijosDe(i).length > 0, soloHito: hito, colorReal: est === "atr" ? PPT.Rojo : PPT.azul, colorPct: est === "atr" ? PPT.Rojo : est === "ok" ? PPT.Verde : PPT.texto,
+            base: cRes.conBase && t.Inicio_Base && t.Fin_Base && !hito ? [t.Inicio_Base, t.Fin_Base] : null,
+            hitos: hito ? [{ f: t.Fin || t.Inicio, color: (Number(t.Pct_Completado) || 0) >= 100 ? PPT.Verde : (t.Fin || t.Inicio) < corte ? PPT.Rojo : "8A94A3" }] : [] };
+        });
+        const ini = cRes.inicio, fin = cRes.fin > corte ? cRes.fin : R.sumarDias(corte, 15);
+        if (ini && fin) paginar(filas, 17).forEach((pag, k, arr) => {
+          const s = lamina(`Cronograma · ${corta(p.Nombre, 46)}${arr.length > 1 ? ` (${k + 1}/${arr.length})` : ""}`, `${verTxt} · avance real ${cRes.real}% vs. ${cRes.plan}% planeado · ${cRes.atrasadas.length} tarea(s) atrasada(s)`);
+          s.addText("Fase / tarea", { x: 0.5, y: 1.5, w: 3, h: 0.25, fontFace: F, fontSize: 9, bold: true, color: PPT.azul, margin: 0 });
+          s.addText("Real", { x: 4.1, y: 1.5, w: 0.7, h: 0.25, fontFace: F, fontSize: 9, bold: true, color: PPT.azul, align: "right", margin: 0 });
+          ganttPPT(s, pag, ini, fin, { x0: 4.95, y0: 1.85, colPct: true });
+          leyenda(s, [[PPT.claro, "Planeado"], [PPT.azul, "Avance real"], [PPT.Rojo, "Tarea atrasada"], ...(cRes.conBase ? [["B5BFCC", "Línea base"]] : []), [PPT.Verde, "Hito cumplido", "rombo"], [PPT.Rojo, "Hito atrasado", "rombo"], [PPT.dorado, "Hoy"]]);
+        });
+        return true;
+      };
 
       // 1. Portada
       const port = pptx.addSlide({ masterName: "SECCION" });
@@ -4439,6 +4596,7 @@ ${x.h}</section>`).join("")}
         });
       };
       if (incluir.has("proyectos")) tablaProyectos(ps, "Estado de los proyectos", !pm);
+      if (incluir.has("gantt")) ganttPortafolio();
 
       // 5. Secciones por PM (general)
       if (!pm && incluir.has("pm") && gruposPM.length > 1) gruposPM.forEach((g) => {
@@ -4520,7 +4678,7 @@ ${x.h}</section>`).join("")}
       }
 
       // 9. Una lámina por proyecto
-      if (incluir.has("fichas")) ps.forEach((p) => {
+      const fichaProyecto = (p) => {
         const s = lamina(corta(p.Nombre, 60), `${p.ID_Proyecto} · PM: ${nombreUsuario(p.PM)} · ${p.Metodologia || ""}${p.Fase ? ` · Fase: ${p.Fase}` : ""}`);
         const ult = R.avancesDe(p.ID_Proyecto, segs).filter((x) => x.Fecha_Corte <= corte).pop();
         const e = R.estadoSeguimiento(p, segs, corte);
@@ -4551,7 +4709,9 @@ ${x.h}</section>`).join("")}
         if (hs.length) tabla(s, [[cab("Hito"), cab("Fecha", { align: "center" })], ...hs.map((h, i) => [celda(corta(h.Hito, 34), i), celda(fecha(h.Fecha_Plan), i, { align: "center", bold: h.Fecha_Plan < corte, color: h.Fecha_Plan < corte ? PPT.Rojo : PPT.texto })])], [2.78, 1.1], 4.58, { x: 8.95, rowH: 0.3, fontSize: 9 });
         else s.addText("Sin hitos pendientes.", { x: 8.95, y: 4.58, w: 3.88, h: 0.3, fontFace: F, fontSize: 11, color: PPT.sec, italic: true });
         if (ult) s.addText(`Fuente: seguimiento del ${fecha(ult.Fecha_Corte)}`, { x: 4.9, y: 6.7, w: 6, h: 0.28, fontFace: F, fontSize: 9, color: PPT.sec, margin: 0 });
-      });
+      };
+      // Por proyecto: ficha, luego su EDT y su cronograma (si tiene uno cargado).
+      ps.forEach((p) => { if (incluir.has("fichas")) fichaProyecto(p); if (incluir.has("edt")) laminasCronograma(p); });
 
       const bytes = await pptx.write({ outputType: "uint8array" });
       const nombre = `Estado_Portafolio_${nomPM ? normTxt(nomPM).replace(/[^a-z0-9]+/g, "_") + "_" : ""}${corte}.pptx`;
