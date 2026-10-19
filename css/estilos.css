@@ -1210,3 +1210,6 @@ table.gt-izq thead th { position: sticky; top: 0; z-index: 3; height: 48px; back
 .cap-corte-ay { align-self: flex-end; padding-bottom: 8px; }
 :root[data-tema="oscuro"] .chip-act { background: #24304a; color: #cfd8ea; border-color: #45557a; }
 :root[data-tema="oscuro"] .chip-act.aus { background: #34284a; color: #dccdf3; }
+/* v74 — Informe PPT */
+.btn-sugerir + .btn-ppt, .btn-ppt + .btn-exportar { margin-left: 8px; }
+@media (max-width: 760px) { .btn-ppt span { display: none; } }

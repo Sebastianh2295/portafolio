@@ -322,7 +322,7 @@
           <button class="nav nav-colapsar" id="b-colapsar" title="${S.navMini ? "Expandir menú" : "Contraer menú"}">${ico(S.navMini ? "expandir" : "colapsar")}<span>Contraer menú</span></button>
         </aside>
         <div class="nav-velo" id="nav-velo"></div>
-        <main class="contenido"><div class="barra-migas">${migas()}<button class="btn chico btn-sugerir" id="b-sugerir" title="Proponer un cambio o reportar un error de esta pantalla">💡 <span>Sugerir mejora</span></button>${EXPORTADORES[S.vista] && S.datos ? `<button class="btn chico btn-exportar" id="b-exportar" title="Descarga en Excel lo que ves, con los filtros aplicados">${ico("exportar")}<span>${S.vista === "ficha" ? (S.fichaTab === "riesgos" ? "Exportar riesgos (formato FSFB)" : "Exportar proyecto a Excel") : "Exportar a Excel"}</span></button>` : ""}</div><section id="vista"></section></main>
+        <main class="contenido"><div class="barra-migas">${migas()}<button class="btn chico btn-sugerir" id="b-sugerir" title="Proponer un cambio o reportar un error de esta pantalla">💡 <span>Sugerir mejora</span></button>${S.datos && S.vista !== "ficha" ? `<button class="btn chico btn-ppt" id="b-ppt" title="Informe de estado general o por PM en PowerPoint, con la marca FSFB">📊 <span>Informe PPT</span></button>` : ""}${EXPORTADORES[S.vista] && S.datos ? `<button class="btn chico btn-exportar" id="b-exportar" title="Descarga en Excel lo que ves, con los filtros aplicados">${ico("exportar")}<span>${S.vista === "ficha" ? (S.fichaTab === "riesgos" ? "Exportar riesgos (formato FSFB)" : "Exportar proyecto a Excel") : "Exportar a Excel"}</span></button>` : ""}</div><section id="vista"></section></main>
       </div>`;
     document.querySelectorAll(".nav[data-vista]").forEach((b) => b.addEventListener("click", () => { document.body.classList.remove("nav-abierta"); ir(b.dataset.vista); }));
     document.querySelectorAll("[data-miga]").forEach((b) => b.addEventListener("click", () => ir(b.dataset.miga)));
@@ -352,6 +352,7 @@
     });
     $("#b-conexion").addEventListener("click", reconectar);
     $("#b-reconectar").addEventListener("click", reconectar);
+    if ($("#b-ppt")) $("#b-ppt").addEventListener("click", formInformePPT);
     $("#b-diag").addEventListener("click", () => { $("#menu-usuario").hidden = true; verDiagnostico(); });
     $("#b-recargar").addEventListener("click", async () => {
       cargando(true, "Leyendo Excel…");
@@ -4266,6 +4267,299 @@ ${x.h}</section>`).join("")}
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); abrirBusqueda(); }
   });
   document.addEventListener("click", (e) => { const mu = document.getElementById("menu-usuario"); if (mu && !mu.hidden && !e.target.closest(".ab-usuario")) mu.hidden = true; });
+
+  // ---------- Informe ejecutivo en PowerPoint (marca FSFB) ----------
+  let cargaPptx = null;
+  function libPptx() {
+    if (window.PptxGenJS) return Promise.resolve(window.PptxGenJS);
+    if (!cargaPptx) cargaPptx = new Promise((ok, falla) => {
+      const s = document.createElement("script");
+      s.src = new URL("lib/pptxgen.bundle.js", location.href).href;
+      s.onload = () => ok(window.PptxGenJS); s.onerror = () => { cargaPptx = null; falla(new Error("No se pudo cargar el generador de PowerPoint.")); };
+      document.head.appendChild(s);
+    });
+    return cargaPptx;
+  }
+  async function imagenDataURL(ruta) {
+    const r = await fetch(new URL(ruta, location.href).href, { cache: "force-cache" });
+    if (!r.ok) throw new Error(`No se encontró ${ruta}`);
+    const b = await r.blob();
+    return new Promise((ok) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).replace(/^data:/, "")); fr.readAsDataURL(b); });
+  }
+  const PPT = { azul: "104994", claro: "6BBAEF", dorado: "D6964A", suave: "EAF2FB", texto: "333333", sec: "666666", linea: "CCCCCC", blanco: "FFFFFF",
+    Verde: "2E8B57", Amarillo: "E0A800", Rojo: "C0392B", gris: "9AA5B1", fuente: "Calibri" };
+  const MESES_LARGOS = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+  const fechaLarga = (iso) => { const [y, m, d] = String(iso).split("-").map(Number); return `${d} de ${MESES_LARGOS[m - 1]} de ${y}`; };
+  const corta = (s, n) => { s = String(s ?? "").replace(/\s+/g, " ").trim(); return s.length > n ? s.slice(0, n - 1) + "…" : s; };
+
+  function formInformePPT() {
+    const vis = visibles();
+    const pms = [...new Set(vis.filter(CUENTAN).map((p) => lc(p.PM)).filter(Boolean))].map((c) => [c, nombreUsuario(c)]).sort((a, b) => String(a[1]).localeCompare(String(b[1]), "es"));
+    const yoPM = R.soloPM(S.usuario);
+    const campos = [
+      { k: "Alcance", label: "Alcance", tipo: "select", ancho: true, opciones: [...(yoPM ? [] : [["", "Todo el portafolio (general)"]]), ...pms.map(([c, n]) => [c, `Solo PM: ${n}`])],
+        def: yoPM ? lc(S.usuario.Correo) : S.filtros.pm ? lc(S.filtros.pm) : "", textoVacio: yoPM ? "Seleccione…" : "Todo el portafolio (general)" },
+      { k: "Corte", label: "Fecha de corte", tipo: "date", def: R.hoyISO(), ayuda: "Seguimientos, compromisos y capacidad se calculan a esta fecha." },
+      { k: "Incluir", label: "Láminas a incluir", tipo: "checks", opciones: [["pm", "Resumen y sección por cada PM"], ["proyectos", "Estado de los proyectos"], ["capacidad", "Capacidad del equipo"], ["seguimientos", "Seguimientos"], ["compromisos", "Compromisos y riesgos"], ["fichas", "Una lámina por proyecto (logros, próximos pasos, hitos)"]],
+        def: "pm, proyectos, capacidad, seguimientos, compromisos" },
+    ];
+    modal("Informe de estado en PowerPoint", campos, {}, (fd) => { cerrarModal(); generarInformePPT({ pm: fd.Alcance, corte: fd.Corte || R.hoyISO(), incluir: new Set(String(fd.Incluir).split(/,\s*/).filter(Boolean)) }); },
+      (fd) => (fd.Corte && !/^\d{4}-\d{2}-\d{2}$/.test(fd.Corte) ? "Fecha de corte no válida." : ""),
+      { antes: `<p class="sub">Genera una presentación con la marca FSFB (portada, resumen ejecutivo y las láminas que elijas). Se descarga como .pptx y la puedes editar en PowerPoint.</p>` });
+  }
+
+  async function generarInformePPT({ pm, corte, incluir }) {
+    cargando(true, "Generando PowerPoint…");
+    try {
+      const [Pptx, logo, logoB] = await Promise.all([libPptx(), imagenDataURL("assets/logo_fsfb.png"), imagenDataURL("assets/logo_fsfb_blanco.png")]);
+      const segs = S.datos.Seguimientos;
+      const todos = visibles();
+      const alcance = todos.filter((p) => !pm || lc(p.PM) === pm);
+      const ps = alcance.filter(CUENTAN).sort((a, b) => String(nombreUsuario(a.PM)).localeCompare(String(nombreUsuario(b.PM)), "es") || String(a.Nombre).localeCompare(String(b.Nombre), "es"));
+      const nomPM = pm ? nombreUsuario(pm) : "";
+      const pptx = new Pptx();
+      pptx.layout = "LAYOUT_WIDE";   // 13,33 × 7,5 in
+      pptx.author = S.usuario ? S.usuario.Nombre || S.usuario.Correo : "Oficina de Proyectos";
+      pptx.company = "Fundación Santa Fe de Bogotá"; pptx.title = "Estado del portafolio de proyectos";
+      const F = PPT.fuente, W = 13.333;
+      const pie = `Oficina de Proyectos · Fundación Santa Fe de Bogotá · Corte ${fecha(corte)}${nomPM ? ` · PM: ${nomPM}` : ""}`;
+      pptx.defineSlideMaster({ title: "FSFB", background: { color: PPT.blanco }, margin: [0.5, 0.5, 0.5, 0.5],
+        objects: [
+          { image: { x: W - 2.05, y: 0.28, w: 1.6, h: 0.587, data: logo } },
+          { rect: { x: 0, y: 7.12, w: W, h: 0.38, fill: { color: PPT.suave } } },
+          { rect: { x: 0, y: 7.12, w: 0.35, h: 0.38, fill: { color: PPT.dorado } } },
+          { text: { text: pie, options: { x: 0.5, y: 7.14, w: 10, h: 0.34, fontFace: F, fontSize: 9, color: PPT.sec, valign: "middle" } } },
+        ],
+        slideNumber: { x: W - 1, y: 7.16, w: 0.6, h: 0.3, fontFace: F, fontSize: 9, color: PPT.sec, align: "right" } });
+      pptx.defineSlideMaster({ title: "SECCION", background: { color: PPT.azul },
+        objects: [{ image: { x: 0.6, y: 0.5, w: 2.2, h: 0.807, data: logoB } }, { rect: { x: 0.6, y: 3.05, w: 1.2, h: 0.08, fill: { color: PPT.dorado } } }] });
+      const lamina = (titulo, sub) => {
+        const s = pptx.addSlide({ masterName: "FSFB" });
+        s.addText(titulo, { x: 0.5, y: 0.3, w: W - 3, h: 0.6, fontFace: F, fontSize: 26, bold: true, color: PPT.azul, valign: "middle", margin: 0 });
+        s.addShape(pptx.ShapeType.rect, { x: 0.5, y: 0.95, w: 1.1, h: 0.06, fill: { color: PPT.dorado }, line: { color: PPT.dorado } });
+        if (sub) s.addText(sub, { x: 0.5, y: 1.05, w: W - 3, h: 0.35, fontFace: F, fontSize: 12, color: PPT.sec, margin: 0 });
+        return s;
+      };
+      const vacioTxt = (s, msg, y = 2.6) => s.addText(msg, { x: 0.5, y, w: W - 1, h: 0.6, fontFace: F, fontSize: 14, color: PPT.sec, italic: true, align: "center" });
+      const tile = (s, x, y, w, h, titulo, valor, nota, color = PPT.azul) => {
+        s.addShape(pptx.ShapeType.roundRect, { x, y, w, h, fill: { color: PPT.suave }, line: { color: PPT.suave }, rectRadius: 0.08 });
+        s.addShape(pptx.ShapeType.rect, { x, y: y + 0.12, w: 0.07, h: h - 0.24, fill: { color }, line: { color } });
+        s.addText(titulo, { x: x + 0.2, y: y + 0.08, w: w - 0.3, h: 0.36, fontFace: F, fontSize: 11, color: PPT.sec, margin: 0 });
+        s.addText(String(valor), { x: x + 0.2, y: y + 0.4, w: w - 0.3, h: 0.52, fontFace: F, fontSize: 28, bold: true, color, margin: 0, valign: "middle" });
+        if (nota) s.addText(nota, { x: x + 0.2, y: y + h - 0.36, w: w - 0.3, h: 0.28, fontFace: F, fontSize: 10, color: PPT.sec, margin: 0 });
+      };
+      const cab = (t, extra = {}) => ({ text: t, options: { bold: true, color: PPT.blanco, fill: { color: PPT.azul }, fontSize: 11, valign: "middle", ...extra } });
+      const celda = (t, i, extra = {}) => ({ text: String(t ?? ""), options: { fill: { color: i % 2 ? PPT.suave : PPT.blanco }, color: PPT.texto, fontSize: 10, valign: "middle", ...extra } });
+      const semCelda = (sem, i) => { const c = PPT[sem]; return c ? { text: sem, options: { fill: { color: c }, color: sem === "Amarillo" ? PPT.texto : PPT.blanco, bold: true, fontSize: 10, align: "center", valign: "middle" } } : celda(sem || "—", i, { align: "center" }); };
+      const tabla = (s, filas, colW, y = 1.55, extra = {}) => s.addTable(filas, { x: 0.5, y, w: colW.reduce((a, b) => a + b, 0), colW, fontFace: F, border: { type: "solid", pt: 0.5, color: PPT.linea }, rowH: 0.36, margin: [2, 5, 2, 5], ...extra });
+      const paginar = (lista, n) => { const out = []; for (let i = 0; i < lista.length; i += n) out.push(lista.slice(i, i + n)); return out.length ? out : [[]]; };
+
+      // Métricas comunes
+      const metricas = (lista) => {
+        const act = lista.filter((p) => p.Estado === "Activo");
+        const prom = (f) => (act.length ? Math.round(act.reduce((t, p) => t + (Number(p[f]) || 0), 0) / act.length) : 0);
+        const ids = new Set(lista.map((p) => p.ID_Proyecto));
+        const est = act.map((p) => R.estadoSeguimiento(p, segs, corte).estado);
+        const comp = S.datos.Compromisos.filter((c) => ids.has(c.ID_Proyecto)).map((c) => ({ c, e: R.estadoCompromiso(c, corte) }));
+        const pres = act.reduce((t, p) => t + (Number(p.Presupuesto) || 0), 0), ejec = act.reduce((t, p) => t + (Number(p.Ejecutado) || 0), 0);
+        return { act, ids, pausa: lista.filter((p) => p.Estado === "En pausa").length, real: prom("Avance_Real"), plan: prom("Avance_Planeado"),
+          sem: ["Verde", "Amarillo", "Rojo"].map((s) => act.filter((p) => p.Semaforo === s).length),
+          alDia: act.length ? Math.round((est.filter((e) => e !== "Vencido").length / act.length) * 100) : 100, vencSeg: est.filter((e) => e === "Vencido").length,
+          compV: comp.filter((x) => x.e === "Vencido").length, compPV: comp.filter((x) => x.e === "Por vencer").length, compAb: comp.filter((x) => x.e !== "Cerrado").length, pres, ejec };
+      };
+      const M = metricas(ps);
+      const cap = capacidad(corte).filter((x) => x.asign.some((a) => M.ids.has(a.p.ID_Proyecto)) || (pm && lc(x.correo) === pm));
+
+      // 1. Portada
+      const port = pptx.addSlide({ masterName: "SECCION" });
+      port.addText("Estado del portafolio de proyectos", { x: 0.6, y: 3.3, w: 11.5, h: 1, fontFace: F, fontSize: 40, bold: true, color: PPT.blanco, margin: 0 });
+      port.addText(nomPM ? `Informe del PM: ${nomPM}` : "Informe general · Oficina de Proyectos", { x: 0.6, y: 4.35, w: 11.5, h: 0.6, fontFace: F, fontSize: 22, color: PPT.claro, margin: 0 });
+      port.addText(`Corte: ${fechaLarga(corte)}`, { x: 0.6, y: 5.0, w: 11.5, h: 0.5, fontFace: F, fontSize: 16, color: PPT.blanco, margin: 0 });
+      port.addText(`Proyectos activos y en pausa: ${ps.length}`, { x: 0.6, y: 6.6, w: 11.5, h: 0.4, fontFace: F, fontSize: 12, color: PPT.claro, margin: 0 });
+
+      // 2. Resumen ejecutivo
+      const resumen = (lista, m, titulo, sub) => {
+        const s = lamina(titulo, sub);
+        const desv = m.real - m.plan;
+        tile(s, 0.5, 1.55, 2.95, 1.45, "Proyectos activos", m.act.length, m.pausa ? `${m.pausa} en pausa` : "Ninguno en pausa");
+        tile(s, 3.6, 1.55, 2.95, 1.45, "Avance real vs. planeado", `${m.real}% / ${m.plan}%`, desv < -5 ? `${-desv} pp por debajo del plan` : desv > 5 ? `${desv} pp por encima del plan` : "En línea con el plan", desv < -15 ? PPT.Rojo : desv < -5 ? PPT.Amarillo : PPT.Verde);
+        tile(s, 6.7, 1.55, 2.95, 1.45, "Seguimientos al día", `${m.alDia}%`, m.vencSeg ? `${m.vencSeg} proyecto(s) con seguimiento vencido` : "Todos al día", m.vencSeg ? PPT.Rojo : PPT.Verde);
+        tile(s, 9.8, 1.55, 3.03, 1.45, "Compromisos vencidos", m.compV, `${m.compPV} por vencer · ${m.compAb} abiertos`, m.compV ? PPT.Rojo : PPT.Verde);
+        if (!m.act.length) return vacioTxt(s, "No hay proyectos activos en este alcance.", 3.8);
+        s.addText("Salud de los proyectos activos (semáforo)", { x: 0.5, y: 3.2, w: 4.2, h: 0.35, fontFace: F, fontSize: 13, bold: true, color: PPT.azul, margin: 0 });
+        s.addChart(pptx.ChartType.doughnut, [{ name: "Semáforo", labels: ["Verde", "Amarillo", "Rojo"], values: m.sem }], { x: 0.5, y: 3.55, w: 4.2, h: 3.4, holeSize: 55,
+          chartColors: [PPT.Verde, PPT.Amarillo, PPT.Rojo], showLegend: true, legendPos: "b", legendFontSize: 11, legendFontFace: F, showPercent: false, showValue: true, dataLabelColor: PPT.blanco, dataLabelFontSize: 12, dataLabelFontBold: true });
+        const top = m.act.slice().sort((a, b) => ((Number(b.Avance_Planeado) || 0) - (Number(b.Avance_Real) || 0)) - ((Number(a.Avance_Planeado) || 0) - (Number(a.Avance_Real) || 0))).slice(0, 10);
+        s.addText(`Avance real vs. planeado${m.act.length > 10 ? " (10 con mayor desviación)" : ""}`, { x: 5.0, y: 3.2, w: 7.8, h: 0.35, fontFace: F, fontSize: 13, bold: true, color: PPT.azul, margin: 0 });
+        s.addChart(pptx.ChartType.bar, [{ name: "Planeado", labels: top.map((p) => corta(p.Nombre, 28)), values: top.map((p) => Number(p.Avance_Planeado) || 0) }, { name: "Real", labels: top.map((p) => corta(p.Nombre, 28)), values: top.map((p) => Number(p.Avance_Real) || 0) }],
+          { x: 5.0, y: 3.55, w: 7.83, h: 3.45, barDir: "bar", barGrouping: "clustered", chartColors: [PPT.claro, PPT.azul], valAxisMaxVal: 100, valAxisMinVal: 0, valAxisLabelFontSize: 9, catAxisLabelFontSize: 9, catAxisLabelFontFace: F, catAxisOrientation: "maxMin",
+            showLegend: true, legendPos: "t", legendFontSize: 10, showValue: true, dataLabelFontSize: 8, dataLabelPosition: "outEnd", valGridLine: { color: "E5E5E5", size: 0.5 } });
+        if (m.pres) s.addText(`Presupuesto de proyectos activos: ${cop(m.pres)} · ejecutado ${cop(m.ejec)} (${Math.round((m.ejec / m.pres) * 100)}%)`, { x: 0.5, y: 6.85, w: 4.5, h: 0.25, fontFace: F, fontSize: 8, color: PPT.sec, margin: 0 });
+        return s;
+      };
+      resumen(ps, M, "Resumen ejecutivo", nomPM ? `Proyectos de ${nomPM} activos o en pausa` : "Todos los proyectos activos o en pausa del portafolio");
+
+      // 3. Resumen por PM (general)
+      const gruposPM = [...new Set(ps.map((p) => lc(p.PM)))].map((c) => ({ c, n: nombreUsuario(c), lista: ps.filter((p) => lc(p.PM) === c) })).sort((a, b) => String(a.n).localeCompare(String(b.n), "es"));
+      if (!pm && incluir.has("pm") && gruposPM.length) {
+        const s = lamina("Resumen por PM", "Proyectos, avance, salud, seguimiento y carga de cada PM");
+        const filas = [[cab("PM"), cab("Activos", { align: "center" }), cab("En pausa", { align: "center" }), cab("Avance real / plan", { align: "center" }), cab("Amarillo / Rojo", { align: "center" }), cab("Seguimientos al día", { align: "center" }), cab("Compromisos vencidos", { align: "center" }), cab("Carga del PM", { align: "center" })]];
+        gruposPM.forEach((g, i) => {
+          const m = metricas(g.lista), c = cap.find((x) => lc(x.correo) === g.c);
+          filas.push([celda(g.n, i, { bold: true }), celda(m.act.length, i, { align: "center" }), celda(m.pausa, i, { align: "center" }), celda(`${m.real}% / ${m.plan}%`, i, { align: "center" }),
+            celda(`${m.sem[1]} / ${m.sem[2]}`, i, { align: "center", color: m.sem[2] ? PPT.Rojo : PPT.texto, bold: !!m.sem[2] }), celda(`${m.alDia}%`, i, { align: "center", color: m.alDia < 80 ? PPT.Rojo : PPT.texto }),
+            celda(m.compV, i, { align: "center", color: m.compV ? PPT.Rojo : PPT.texto, bold: !!m.compV }),
+            celda(c ? `${c.total}% de ${c.cap}%${c.tOtras ? ` (${c.tOtras}% otras)` : ""}` : "—", i, { align: "center", color: c && c.total > c.cap ? PPT.Rojo : PPT.texto, bold: !!(c && c.total > c.cap) })]);
+        });
+        tabla(s, filas.slice(0, 13), [2.9, 1.0, 1.0, 1.6, 1.4, 1.5, 1.5, 1.43]);
+        const n = Math.min(gruposPM.length, 12), yC = 1.55 + 0.36 * (n + 1) + 0.25;
+        if (yC < 5.2) {
+          const cs = gruposPM.map((g) => cap.find((x) => lc(x.correo) === g.c) || { tProy: 0, tOtras: 0 });
+          s.addChart(pptx.ChartType.bar, [{ name: "Proyectos", labels: gruposPM.map((g) => g.n), values: cs.map((c) => c.tProy) }, { name: "Otras actividades", labels: gruposPM.map((g) => g.n), values: cs.map((c) => c.tOtras) }],
+            { x: 0.5, y: yC, w: 12.33, h: 7.0 - yC, barDir: "col", barGrouping: "stacked", chartColors: [PPT.azul, PPT.dorado], showLegend: true, legendPos: "r", legendFontSize: 10, catAxisLabelFontSize: 10, valAxisLabelFontSize: 9,
+              showValue: true, dataLabelFontSize: 9, dataLabelColor: PPT.blanco, dataLabelFormatCode: "0;;;", valAxisTitle: "% de dedicación", showValAxisTitle: true, valAxisTitleFontSize: 9, valGridLine: { color: "E5E5E5", size: 0.5 } });
+        }
+      }
+
+      // 4. Estado de los proyectos (tabla paginada)
+      const tablaProyectos = (lista, titulo, conPM) => {
+        const pags = paginar(lista, 11);
+        pags.forEach((pag, k) => {
+          const s = lamina(pags.length > 1 ? `${titulo} (${k + 1}/${pags.length})` : titulo, `${lista.length} proyecto(s) activos o en pausa · semáforo y avance del último seguimiento`);
+          if (!pag.length) return vacioTxt(s, "No hay proyectos activos o en pausa.");
+          const filas = [[cab("Proyecto"), ...(conPM ? [cab("PM")] : []), cab("Fase"), cab("Estado", { align: "center" }), cab("Semáforo", { align: "center" }), cab("Avance real / plan", { align: "center" }), cab("Fin planeado", { align: "center" }), cab("Último seguimiento", { align: "center" }), cab("Seguimiento", { align: "center" })]];
+          pag.forEach((p, i) => {
+            const e = R.estadoSeguimiento(p, segs, corte), d = (Number(p.Avance_Real) || 0) - (Number(p.Avance_Planeado) || 0);
+            filas.push([celda(corta(p.Nombre, 42), i, { bold: true }), ...(conPM ? [celda(corta(nombreUsuario(p.PM), 22), i)] : []), celda(p.Fase || "—", i), celda(p.Estado, i, { align: "center" }), semCelda(p.Semaforo, i),
+              celda(`${Number(p.Avance_Real) || 0}% / ${Number(p.Avance_Planeado) || 0}%`, i, { align: "center", color: d < -15 ? PPT.Rojo : PPT.texto, bold: d < -15 }), celda(fecha(p.Fecha_Fin_Plan), i, { align: "center" }),
+              celda(e.ultimaFecha ? fecha(e.ultimaFecha) : "Sin registro", i, { align: "center" }),
+              celda(e.estado, i, { align: "center", bold: e.estado !== "Al día", color: e.estado === "Vencido" ? PPT.Rojo : e.estado === "Por vencer" ? "9A6B00" : PPT.texto })]);
+          });
+          tabla(s, filas, conPM ? [2.95, 1.75, 1.2, 0.95, 1.0, 1.25, 1.03, 1.1, 1.1] : [3.95, 1.45, 1.0, 1.05, 1.4, 1.1, 1.18, 1.2]);
+        });
+      };
+      if (incluir.has("proyectos")) tablaProyectos(ps, "Estado de los proyectos", !pm);
+
+      // 5. Secciones por PM (general)
+      if (!pm && incluir.has("pm") && gruposPM.length > 1) gruposPM.forEach((g) => {
+        const sec = pptx.addSlide({ masterName: "SECCION" });
+        const m = metricas(g.lista), c = cap.find((x) => lc(x.correo) === g.c);
+        sec.addText(g.n, { x: 0.6, y: 3.3, w: 11.5, h: 0.9, fontFace: F, fontSize: 36, bold: true, color: PPT.blanco, margin: 0 });
+        sec.addText(`${m.act.length} activo(s)${m.pausa ? ` · ${m.pausa} en pausa` : ""} · avance ${m.real}% vs. ${m.plan}% plan · seguimientos al día ${m.alDia}%${c ? ` · carga ${c.total}% de ${c.cap}%` : ""}`, { x: 0.6, y: 4.25, w: 12, h: 0.5, fontFace: F, fontSize: 16, color: PPT.claro, margin: 0 });
+        tablaProyectos(g.lista, `Proyectos de ${g.n}`, false);
+      });
+
+      // 6. Capacidad
+      if (incluir.has("capacidad")) {
+        const s = lamina("Capacidad del equipo", `Dedicación a ${fecha(corte)}: proyectos activos o en pausa + otras actividades (operación, comités, demanda…). Las ausencias reducen la capacidad.`);
+        const l = cap.slice().sort((a, b) => b.total / Math.max(1, b.cap) - a.total / Math.max(1, a.cap)).slice(0, 14);
+        const capT = cap.reduce((t, x) => t + x.capBase, 0), otrasT = cap.reduce((t, x) => t + x.tOtras, 0);
+        const sobre = cap.filter((x) => x.total > x.cap), limite = cap.filter((x) => x.total <= x.cap && x.total >= x.cap * 0.85);
+        tile(s, 9.3, 1.5, 3.53, 1.3, "Sobreasignados", sobre.length, `${limite.length} al límite (85–100%)`, sobre.length ? PPT.Rojo : PPT.Verde);
+        tile(s, 9.3, 2.95, 3.53, 1.3, "Capacidad en otras actividades", `${capT ? Math.round((otrasT / capT) * 100) : 0}%`, `${cap.length} persona(s) en el alcance`, PPT.dorado);
+        if (!l.length) vacioTxt(s, "Aún no hay dedicaciones registradas.");
+        else {
+          s.addChart(pptx.ChartType.bar, [{ name: "Proyectos", labels: l.map((x) => corta(x.nombre, 26)), values: l.map((x) => x.tProy) }, { name: "Otras actividades", labels: l.map((x) => corta(x.nombre, 26)), values: l.map((x) => x.tOtras) }],
+            { x: 0.5, y: 1.5, w: 8.6, h: 5.5, barDir: "bar", barGrouping: "stacked", chartColors: [PPT.azul, PPT.dorado], catAxisOrientation: "maxMin", catAxisLabelFontSize: 10, catAxisLabelFontFace: F, valAxisLabelFontSize: 9,
+              showLegend: true, legendPos: "t", legendFontSize: 10, showValue: true, dataLabelFontSize: 8, dataLabelColor: PPT.blanco, dataLabelFormatCode: "0;;;", valGridLine: { color: "E5E5E5", size: 0.5 } });
+          const filas = [[cab("Sobre su capacidad"), cab("Carga", { align: "center" })]];
+          sobre.slice(0, 6).forEach((x, i) => filas.push([celda(corta(x.nombre, 26), i), celda(`${x.total}% de ${x.cap}%`, i, { align: "center", color: PPT.Rojo, bold: true })]));
+          if (sobre.length) tabla(s, filas, [2.3, 1.23], 4.45, { x: 9.3, rowH: 0.32 });
+          else s.addText("Nadie está sobre su capacidad.", { x: 9.3, y: 4.4, w: 3.5, h: 0.4, fontFace: F, fontSize: 12, color: PPT.Verde, bold: true });
+        }
+      }
+
+      // 7. Seguimientos
+      if (incluir.has("seguimientos")) {
+        const s = lamina("Seguimientos", "Seguimientos de avance y sesiones registradas · estado frente a la frecuencia definida de cada proyecto");
+        const sg = segs.filter((x) => M.ids.has(x.ID_Proyecto) && x.Fecha_Corte && x.Fecha_Corte <= corte);
+        const hace30 = R.sumarDias(corte, -30), ult30 = sg.filter((x) => x.Fecha_Corte > hace30);
+        tile(s, 0.5, 1.55, 2.95, 1.3, "Seguimientos (últimos 30 días)", ult30.filter((x) => !R.esSesion(x)).length, "Reportes de avance");
+        tile(s, 3.6, 1.55, 2.95, 1.3, "Sesiones (últimos 30 días)", ult30.filter(R.esSesion).length, "Comités, mesas técnicas, reuniones", PPT.dorado);
+        tile(s, 6.7, 1.55, 2.95, 1.3, "Proyectos al día", `${M.alDia}%`, `${M.vencSeg} con seguimiento vencido`, M.vencSeg ? PPT.Rojo : PPT.Verde);
+        const sems = []; for (let i = 7; i >= 0; i--) sems.push(R.semanaISO(R.sumarDias(corte, -7 * i)));
+        s.addText("Registros por semana (últimas 8)", { x: 0.5, y: 3.05, w: 6, h: 0.35, fontFace: F, fontSize: 13, bold: true, color: PPT.azul, margin: 0 });
+        s.addChart(pptx.ChartType.bar, [{ name: "Seguimientos", labels: sems.map((w) => w.slice(5)), values: sems.map((w) => sg.filter((x) => !R.esSesion(x) && R.semanaISO(x.Fecha_Corte) === w).length) },
+          { name: "Sesiones", labels: sems.map((w) => w.slice(5)), values: sems.map((w) => sg.filter((x) => R.esSesion(x) && R.semanaISO(x.Fecha_Corte) === w).length) }],
+          { x: 0.5, y: 3.4, w: 6.0, h: 3.6, barDir: "col", barGrouping: "stacked", chartColors: [PPT.azul, PPT.dorado], showLegend: true, legendPos: "t", legendFontSize: 10, catAxisLabelFontSize: 9, valAxisLabelFontSize: 9, valGridLine: { color: "E5E5E5", size: 0.5 }, showValue: true, dataLabelFontSize: 8, dataLabelColor: PPT.blanco, dataLabelFormatCode: "0;;;" });
+        const pend = M.act.map((p) => ({ p, e: R.estadoSeguimiento(p, segs, corte) })).filter((x) => x.e.estado !== "Al día").sort((a, b) => a.e.faltan - b.e.faltan);
+        s.addText("Seguimientos vencidos o por vencer", { x: 6.8, y: 3.05, w: 6, h: 0.35, fontFace: F, fontSize: 13, bold: true, color: PPT.azul, margin: 0 });
+        if (!pend.length) s.addText("Todos los proyectos activos tienen su seguimiento al día.", { x: 6.8, y: 3.5, w: 6, h: 0.5, fontFace: F, fontSize: 12, color: PPT.Verde, bold: true });
+        else {
+          const filas = [[cab("Proyecto"), cab("Último", { align: "center" }), cab("Debía", { align: "center" }), cab("Estado", { align: "center" })]];
+          pend.slice(0, 8).forEach(({ p, e }, i) => filas.push([celda(corta(p.Nombre, 30), i), celda(e.ultimaFecha ? fecha(e.ultimaFecha) : "—", i, { align: "center" }), celda(fecha(e.proximo), i, { align: "center" }),
+            celda(e.estado === "Vencido" ? `Vencido ${-e.faltan} d` : e.estado, i, { align: "center", bold: true, color: e.estado === "Vencido" ? PPT.Rojo : "9A6B00" })]));
+          tabla(s, filas, [2.65, 1.1, 1.1, 1.18], 3.45, { x: 6.8, rowH: 0.33 });
+          if (pend.length > 8) s.addText(`y ${pend.length - 8} más`, { x: 6.8, y: 6.75, w: 6, h: 0.3, fontFace: F, fontSize: 9, color: PPT.sec });
+        }
+      }
+
+      // 8. Compromisos y riesgos
+      if (incluir.has("compromisos")) {
+        const s = lamina("Compromisos y riesgos", "Compromisos vencidos o por vencer y riesgos altos abiertos");
+        const comp = S.datos.Compromisos.filter((c) => M.ids.has(c.ID_Proyecto)).map((c) => ({ c, e: R.estadoCompromiso(c, corte) })).filter((x) => x.e === "Vencido" || x.e === "Por vencer")
+          .sort((a, b) => (a.e === b.e ? String(a.c.Fecha_Compromiso).localeCompare(String(b.c.Fecha_Compromiso)) : a.e === "Vencido" ? -1 : 1));
+        s.addText(`Compromisos (${comp.length})`, { x: 0.5, y: 1.5, w: 6, h: 0.35, fontFace: F, fontSize: 13, bold: true, color: PPT.azul, margin: 0 });
+        if (!comp.length) s.addText("Sin compromisos vencidos ni por vencer.", { x: 0.5, y: 1.95, w: 6, h: 0.4, fontFace: F, fontSize: 12, color: PPT.Verde, bold: true });
+        else {
+          const filas = [[cab("Compromiso"), cab("Proyecto"), cab("Responsable"), cab("Fecha", { align: "center" })]];
+          comp.slice(0, 10).forEach(({ c, e }, i) => filas.push([celda(corta(c.Compromiso, 48), i), celda(corta((proyecto(c.ID_Proyecto) || {}).Nombre, 20), i), celda(corta(responsablesDe(c, false).map((x) => x.Nombre).join(", ") || "—", 18), i),
+            celda(fecha(c.Fecha_Compromiso), i, { align: "center", bold: true, color: e === "Vencido" ? PPT.Rojo : "9A6B00" })]));
+          tabla(s, filas, [2.6, 1.55, 1.25, 0.9], 1.9, { rowH: 0.42, fontSize: 9 });
+          if (comp.length > 10) s.addText(`y ${comp.length - 10} más`, { x: 0.5, y: 6.75, w: 6, h: 0.3, fontFace: F, fontSize: 9, color: PPT.sec });
+        }
+        const rg = S.datos.Riesgos.filter((r) => M.ids.has(r.ID_Proyecto) && riesgoActivo(r) && R.nivelRiesgo(califActual(r)) === "Alto").sort((a, b) => califActual(b) - califActual(a));
+        s.addText(`Riesgos altos abiertos (${rg.length})`, { x: 6.95, y: 1.5, w: 6, h: 0.35, fontFace: F, fontSize: 13, bold: true, color: PPT.azul, margin: 0 });
+        if (!rg.length) s.addText("Sin riesgos altos abiertos.", { x: 6.95, y: 1.95, w: 6, h: 0.4, fontFace: F, fontSize: 12, color: PPT.Verde, bold: true });
+        else {
+          const filas = [[cab("Riesgo"), cab("Proyecto"), cab("Calif.", { align: "center" }), cab("Mitigación")]];
+          rg.slice(0, 8).forEach((r, i) => filas.push([celda(corta(r.Descripcion, 60), i), celda(corta((proyecto(r.ID_Proyecto) || {}).Nombre, 18), i), celda(califActual(r), i, { align: "center", bold: true, color: PPT.Rojo }), celda(corta(r.Plan_Mitigacion || "Sin plan", 50), i, { color: r.Plan_Mitigacion ? PPT.texto : PPT.Rojo })]));
+          tabla(s, filas, [2.3, 1.3, 0.6, 1.68], 1.9, { x: 6.95, rowH: 0.5, fontSize: 9 });
+          if (rg.length > 8) s.addText(`y ${rg.length - 8} más`, { x: 6.95, y: 6.75, w: 6, h: 0.3, fontFace: F, fontSize: 9, color: PPT.sec });
+        }
+      }
+
+      // 9. Una lámina por proyecto
+      if (incluir.has("fichas")) ps.forEach((p) => {
+        const s = lamina(corta(p.Nombre, 60), `${p.ID_Proyecto} · PM: ${nombreUsuario(p.PM)} · ${p.Metodologia || ""}${p.Fase ? ` · Fase: ${p.Fase}` : ""}`);
+        const ult = R.avancesDe(p.ID_Proyecto, segs).filter((x) => x.Fecha_Corte <= corte).pop();
+        const e = R.estadoSeguimiento(p, segs, corte);
+        const real = Number(p.Avance_Real) || 0, plan = Number(p.Avance_Planeado) || 0;
+        s.addShape(pptx.ShapeType.roundRect, { x: 0.5, y: 1.55, w: 4.1, h: 5.4, fill: { color: PPT.suave }, line: { color: PPT.suave }, rectRadius: 0.08 });
+        const dato = (y, t, v, col) => { s.addText(t, { x: 0.75, y, w: 3.6, h: 0.28, fontFace: F, fontSize: 10, color: PPT.sec, margin: 0 }); s.addText(String(v), { x: 0.75, y: y + 0.27, w: 3.6, h: 0.36, fontFace: F, fontSize: 14, bold: true, color: col || PPT.texto, margin: 0 }); };
+        dato(1.7, "Estado · semáforo", `${p.Estado} · ${p.Semaforo || "—"}`, PPT[p.Semaforo] || PPT.texto);
+        s.addText("Avance real vs. planeado", { x: 0.75, y: 2.4, w: 3.6, h: 0.28, fontFace: F, fontSize: 10, color: PPT.sec, margin: 0 });
+        s.addShape(pptx.ShapeType.rect, { x: 0.75, y: 2.75, w: 3.6, h: 0.22, fill: { color: "D9E2EF" }, line: { color: "D9E2EF" } });
+        if (real) s.addShape(pptx.ShapeType.rect, { x: 0.75, y: 2.75, w: 3.6 * Math.min(1, real / 100), h: 0.22, fill: { color: PPT.azul }, line: { color: PPT.azul } });
+        s.addShape(pptx.ShapeType.rect, { x: 0.75 + 3.6 * Math.min(1, plan / 100) - 0.015, y: 2.68, w: 0.03, h: 0.36, fill: { color: PPT.dorado }, line: { color: PPT.dorado } });
+        s.addText(`${real}% real · ${plan}% plan`, { x: 0.75, y: 3.0, w: 3.6, h: 0.3, fontFace: F, fontSize: 12, bold: true, color: real - plan < -15 ? PPT.Rojo : PPT.texto, margin: 0 });
+        dato(3.45, "Fechas", `${fecha(p.Fecha_Inicio)} → ${fecha(p.Fecha_Fin_Plan)}`);
+        dato(4.15, "Último seguimiento", e.ultimaFecha ? `${fecha(e.ultimaFecha)} (${e.estado})` : "Sin registro", e.estado === "Vencido" ? PPT.Rojo : PPT.texto);
+        const nComp = S.datos.Compromisos.filter((c) => c.ID_Proyecto === p.ID_Proyecto && !R.cerrado(c)).length, nVenc = S.datos.Compromisos.filter((c) => c.ID_Proyecto === p.ID_Proyecto && R.estadoCompromiso(c, corte) === "Vencido").length;
+        dato(4.85, "Compromisos abiertos", `${nComp}${nVenc ? ` (${nVenc} vencidos)` : ""}`, nVenc ? PPT.Rojo : PPT.texto);
+        const nR = S.datos.Riesgos.filter((r) => r.ID_Proyecto === p.ID_Proyecto && riesgoActivo(r) && R.nivelRiesgo(califActual(r)) === "Alto").length;
+        dato(5.55, "Riesgos altos abiertos", nR, nR ? PPT.Rojo : PPT.texto);
+        const bloque = (x, y, w, h, titulo, txt, color) => {
+          s.addText(titulo, { x, y, w, h: 0.32, fontFace: F, fontSize: 13, bold: true, color, margin: 0 });
+          s.addText(corta(txt || "Sin registrar en el último seguimiento.", 520), { x, y: y + 0.34, w, h: h - 0.34, fontFace: F, fontSize: 11, color: txt ? PPT.texto : PPT.sec, italic: !txt, valign: "top", margin: 2, fit: "shrink" });
+        };
+        bloque(4.9, 1.55, 3.85, 2.55, "Logros", ult && ult.Logros, PPT.Verde);
+        bloque(8.95, 1.55, 3.88, 2.55, "Próximos pasos", ult && ult.Proximos_Pasos, PPT.azul);
+        bloque(4.9, 4.2, 3.85, 1.1, "Bloqueos", ult && ult.Bloqueos, PPT.Rojo);
+        const hs = S.datos.Hitos.filter((h) => h.ID_Proyecto === p.ID_Proyecto && h.Estado !== "Cumplido").sort((a, b) => String(a.Fecha_Plan).localeCompare(String(b.Fecha_Plan))).slice(0, 4);
+        s.addText("Próximos hitos", { x: 8.95, y: 4.2, w: 3.88, h: 0.32, fontFace: F, fontSize: 13, bold: true, color: PPT.azul, margin: 0 });
+        if (hs.length) tabla(s, [[cab("Hito"), cab("Fecha", { align: "center" })], ...hs.map((h, i) => [celda(corta(h.Hito, 34), i), celda(fecha(h.Fecha_Plan), i, { align: "center", bold: h.Fecha_Plan < corte, color: h.Fecha_Plan < corte ? PPT.Rojo : PPT.texto })])], [2.78, 1.1], 4.58, { x: 8.95, rowH: 0.3, fontSize: 9 });
+        else s.addText("Sin hitos pendientes.", { x: 8.95, y: 4.58, w: 3.88, h: 0.3, fontFace: F, fontSize: 11, color: PPT.sec, italic: true });
+        if (ult) s.addText(`Fuente: seguimiento del ${fecha(ult.Fecha_Corte)}`, { x: 4.9, y: 6.7, w: 6, h: 0.28, fontFace: F, fontSize: 9, color: PPT.sec, margin: 0 });
+      });
+
+      const bytes = await pptx.write({ outputType: "uint8array" });
+      const nombre = `Estado_Portafolio_${nomPM ? normTxt(nomPM).replace(/[^a-z0-9]+/g, "_") + "_" : ""}${corte}.pptx`;
+      descargar(bytes, nombre, "application/vnd.openxmlformats-officedocument.presentationml.presentation");
+      toast(`Presentación generada: ${nombre}`);
+    } catch (e) { toast("No se pudo generar la presentación: " + e.message + (S.modo === "panel" ? " Si el panel bloquea la descarga, abre la app en ventana grande." : ""), true); }
+    finally { cargando(false); }
+  }
 
   // ---------- Exportar a Excel (con formato) por módulo, respetando filtros ----------
   let cargaExcelJS = null;
