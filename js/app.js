@@ -13,6 +13,7 @@
     { id: "dashboard", t: "Dashboard" },
     { id: "avances", t: "Avances de la semana" },
     { id: "seguimiento", t: "Seguimiento y compromisos" },
+    { id: "agenda", t: "Agenda semanal" },
     { id: "backlog", t: "Backlog de demanda" },
     { id: "proyectos", t: "Proyectos" },
     { id: "cronograma", t: "Cronograma" },
@@ -64,6 +65,9 @@
     recursos: ["Directorio único de personas: internas y de proveedores, sin duplicados.",
       "Al agregar stakeholders, equipo o responsables de compromisos eliges a la persona de aquí y sus datos se llenan solos.",
       "Si aparecen «Posibles duplicados», usa «Fusionar» para dejar un solo registro."],
+    agenda: ["Las sesiones de seguimiento de todos los proyectos en la semana: daily, seguimientos, comités y mesas técnicas, por día y hora.",
+      "Se programan en la pestaña «Seguimientos» de cada proyecto (Agenda de seguimiento). Rojo = cruce de horario del mismo PM o sesión sin registro.",
+      "Clic en una sesión pasada o de hoy para registrarla con la fecha puesta. Los daily no exigen registro."],
     valor: ["Qué valor le deja cada proyecto a la FSFB: no solo financiero, también seguridad del paciente, eficiencia operacional, experiencia, cumplimiento y lo estratégico.",
       "Cada proyecto tiene un nivel de valor (crítico, alto, medio, bajo) y beneficios con indicador, línea base y meta; el PM registra las mediciones en la pestaña «Valor» del proyecto.",
       "Los proyectos cerrados siguen aquí mientras sus beneficios se sigan midiendo."],
@@ -147,6 +151,7 @@
     Tipo_Cambio: ["Alcance", "Tiempo", "Costo", "Recursos", "Calidad"], Tipo_Demanda: ["Proyecto nuevo", "Mejora / evolutivo", "Regulatorio / obligatorio", "Mantenimiento", "Innovación"], Categoria_Demanda: ["Estratégico", "Operativo", "Cumplimiento"],
     Tipo_Documento: ["Acta", "Cronograma", "Contrato / orden de compra", "Especificación / requerimientos", "Diseño / arquitectura", "Presentación", "Informe", "Manual", "Carpeta", "Otro"],
     Categoria_Leccion: ["Planeación", "Técnica", "Proveedores", "Comunicación", "Equipo", "Calidad", "Gestión del cambio"],
+    Tipo_Sesion_Agenda: ["Daily", "Seguimiento", "Comité", "Mesa técnica"],
     Dimension_Valor: ["Seguridad del paciente", "Eficiencia operacional", "Experiencia del paciente", "Cumplimiento / acreditación", "Estratégico", "Financiero"],
     Tipo_Actividad: ["Operación / soporte", "Comités y reuniones recurrentes", "Gestión de demanda", "Administrativo / informes", "Capacitación", "Ausencia (vacaciones, incapacidad, permiso)", "Otro"] };
   let sembrado = false;
@@ -364,7 +369,7 @@
       cargando(true, "Leyendo Excel…");
       try { await recargar(); render(); toast("Datos actualizados"); } catch (e) { toast(e.message, true); } finally { cargando(false); }
     });
-    const vistas = { dashboard: vDashboard, avances: vAvances, seguimiento: vSeguimiento, proyectos: vProyectos, ficha: vFicha, backlog: vBacklog, recursos: vRecursos, capacidad: vCapacidad, priorizacion: vPriorizacion, valor: vValor, lecciones: vLecciones, sugerencias: vSugerencias, auditoria: vAuditoria, cronograma: vCronograma, riesgos: vRiesgos, catalogos: vCatalogos, usuarios: vUsuarios };
+    const vistas = { dashboard: vDashboard, avances: vAvances, seguimiento: vSeguimiento, proyectos: vProyectos, ficha: vFicha, backlog: vBacklog, recursos: vRecursos, capacidad: vCapacidad, priorizacion: vPriorizacion, valor: vValor, agenda: vAgenda, lecciones: vLecciones, sugerencias: vSugerencias, auditoria: vAuditoria, cronograma: vCronograma, riesgos: vRiesgos, catalogos: vCatalogos, usuarios: vUsuarios };
     const el = $("#vista");
     (vistas[S.vista] || vDashboard)(el);
     el.insertAdjacentHTML("afterbegin", ayuda(S.vista));
@@ -1375,7 +1380,7 @@
         ${dato("Inicio", fecha(p.Fecha_Inicio))}${dato("Fin planeado", fecha(p.Fecha_Fin_Plan))}
         ${dato("Presupuesto", cop(p.Presupuesto))}${dato("Ejecutado", cop(p.Ejecutado))}
         ${dato("Metodología", esc(p.Metodologia))}${dato("Prioridad", esc(p.Prioridad))}
-        ${dato("Frecuencia", esc(p.Frecuencia_Seguimiento))}${dato("Seguimiento", `${pill(e.estado)} <span class="sub">próximo ${fecha(e.proximo)}</span>`)}
+        ${dato("Frecuencia", agendaDe(p.ID_Proyecto).filter((a) => a.Activa !== "No").length ? agendaDe(p.ID_Proyecto).filter((a) => a.Activa !== "No").map((a) => `<div>${esc(resumenAgenda(a))}</div>`).join("") : esc(p.Frecuencia_Seguimiento))}${dato("Seguimiento", `${pill(e.estado)} <span class="sub">próximo ${fecha(e.proximo)}</span>`)}
         ${dato("Repositorio", enlace(p.URL_Repositorio, "Abrir") || `<span class="sub">Sin registrar</span>`)}${dato("Documentos", enlace(p.URL_Documentos, "Abrir") || `<span class="sub">Sin registrar</span>`)}
         <div class="dato ancho"><div class="dato-k">Comentario de estado</div><div class="dato-v">${esc(p.Comentario_Estado || "—")}</div></div>
       </div>
@@ -1399,7 +1404,7 @@
       valor: () => seccionValor(p, puedeP("seguimiento")),
       lecciones: () => seccionLecciones(p, puedeP("editarProyecto")),
       auditoria: () => seccionAuditoria(p),
-      seguimientos: () => `      <div class="card"><div class="titulo-fila"><h2>Historial de seguimientos y sesiones</h2><div class="acciones"><button class="btn chico" id="b-expandir">Expandir compromisos</button><button class="btn chico" id="b-contraer">Contraer</button>${puedeP("seguimiento") && p.Estado !== "Cancelado" ? `<button class="btn" id="b-ses2">+ Registrar sesión</button>` : ""}${puedeP("seguimiento") && p.Estado === "Activo" ? `<button class="btn" id="b-seg2">+ Registrar seguimiento</button>` : ""}</div></div>
+      seguimientos: () => `${seccionAgenda(p, puedeP("seguimiento"))}      <div class="card"><div class="titulo-fila"><h2>Historial de seguimientos y sesiones</h2><div class="acciones"><button class="btn chico" id="b-expandir">Expandir compromisos</button><button class="btn chico" id="b-contraer">Contraer</button>${puedeP("seguimiento") && p.Estado !== "Cancelado" ? `<button class="btn" id="b-ses2">+ Registrar sesión</button>` : ""}${puedeP("seguimiento") && p.Estado === "Activo" ? `<button class="btn" id="b-seg2">+ Registrar seguimiento</button>` : ""}</div></div>
         <p class="sub">Cada fila es una sesión: su avance, lo que pasó, los compromisos que se acordaron y el acta.</p><div class="tabla-scroll"><table class="historial">
         <thead><tr><th>Sesión</th><th>Avance</th><th>Logros y próximos pasos</th><th>Bloqueos</th><th>Compromisos acordados</th><th>Acta</th></tr></thead>
         <tbody>${segs.slice().reverse().map((s) => {
@@ -1474,6 +1479,7 @@
     el.querySelectorAll("[data-dep]").forEach((b) => b.addEventListener("click", () => formDependencia(p, (S.datos.Dependencias || []).find((d) => d.ID_Dependencia === b.dataset.dep))));
     if (tab === "raci") enlazarRACI(el, p);
     if (tab === "valor") enlazarValor(el, p);
+    if (tab === "seguimientos") enlazarAgenda(el, p);
     if (tab === "auditoria") {
       const fa = (a) => a.ID_Proyecto === p.ID_Proyecto;
       llenarAuditoria(el, fa, false);
@@ -1614,6 +1620,7 @@
     { lista: "Tipo_Cambio", t: "Tipo de cambio", campo: "Tipo", tabla: "Cambios", idCol: "ID_Cambio" },
     { lista: "Categoria_Leccion", t: "Categoría de lección aprendida", campo: "Categoria", tabla: "Lecciones", idCol: "ID_Leccion" },
     { lista: "Tipo_Actividad", t: "Tipo de otra actividad (capacidad)", campo: "Tipo", tabla: "Actividades", idCol: "ID_Actividad" },
+    { lista: "Tipo_Sesion_Agenda", t: "Tipo de sesión (agenda de seguimiento)", campo: "Tipo", tabla: "Agenda", idCol: "ID_Sesion" },
     { lista: "Dimension_Valor", t: "Dimensión de valor (beneficios)", campo: "Dimension", tabla: "Beneficios", idCol: "ID_Beneficio" },
     { lista: "Tipo_Demanda", t: "Tipo de demanda", campo: "Tipo", tabla: "Demandas", idCol: "ID_Demanda" },
     { lista: "Categoria_Demanda", t: "Categoría de demanda", campo: "Categoria", tabla: "Demandas", idCol: "ID_Demanda" },
@@ -2646,7 +2653,7 @@
     const secciones = [
       { t: "Datos generales", d: `PM ${nombreUsuario(p.PM)} · ${fecha(p.Fecha_Inicio)} → ${fecha(p.Fecha_Fin_Plan)}`, h: `      <table class="hv-ficha">${[
         fila("PM responsable", t(nombreUsuario(p.PM))), fila("Metodología", t(p.Metodologia)), fila("Prioridad", t(p.Prioridad)),
-        fila("Fecha de inicio", fecha(p.Fecha_Inicio)), fila("Fin planeado", fecha(p.Fecha_Fin_Plan)), fila("Frecuencia de seguimiento", t(p.Frecuencia_Seguimiento)),
+        fila("Fecha de inicio", fecha(p.Fecha_Inicio)), fila("Fin planeado", fecha(p.Fecha_Fin_Plan)), fila("Frecuencia de seguimiento", agendaDe(pid).filter((a) => a.Activa !== "No").length ? agendaDe(pid).filter((a) => a.Activa !== "No").map((a) => esc(resumenAgenda(a))).join("<br>") : t(p.Frecuencia_Seguimiento)),
         fila("Estado del seguimiento", `${t(e.estado)} · próximo ${fecha(e.proximo)}`), fila("Presupuesto", cop(p.Presupuesto)), fila("Ejecutado", cop(p.Ejecutado)),
         fila("Repositorio", enlaceHV(p.URL_Repositorio)), fila("Documentos", enlaceHV(p.URL_Documentos)), fila("Comentario de estado", t(p.Comentario_Estado)),
       ].join("")}</table>` },
@@ -4024,6 +4031,7 @@ ${x.h}</section>`).join("")}
   const ICONOS = {
     dashboard: '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>',
     avances: '<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>',
+    agenda: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/>',
     seguimiento: '<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/>',
     proyectos: '<path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
     cronograma: '<path d="M3 3v18h18"/><rect x="7" y="6" width="9" height="3" rx="1"/><rect x="10" y="11" width="8" height="3" rx="1"/><rect x="6" y="16" width="6" height="3" rx="1"/>',
@@ -4073,7 +4081,7 @@ ${x.h}</section>`).join("")}
 
   // Menú agrupado como en las suites empresariales.
   const GRUPOS_NAV = [
-    ["Inicio", ["dashboard", "avances", "seguimiento"]],
+    ["Inicio", ["dashboard", "avances", "seguimiento", "agenda"]],
     ["Portafolio", ["backlog", "proyectos", "cronograma", "riesgos", "priorizacion", "valor"]],
     ["Personas", ["recursos", "capacidad"]],
     ["Conocimiento", ["lecciones", "sugerencias"]],
@@ -4403,6 +4411,175 @@ ${x.h}</section>`).join("")}
   }
 
   enlazarEdicionTablas();
+
+  // ---------- Agenda de seguimiento (sesiones recurrentes por proyecto) ----------
+  // Cada proyecto puede tener sesiones recurrentes (daily, seguimiento, comité…) con días, hora y duración.
+  // Con agenda, «al día / vencido» se mide contra las sesiones programadas (los daily no cuentan para eso).
+  const DIAS_AG = [["L", "Lun", 1, "MO"], ["M", "Mar", 2, "TU"], ["X", "Mié", 3, "WE"], ["J", "Jue", 4, "TH"], ["V", "Vie", 5, "FR"]];
+  const FREC_AG = ["Semanal", "Quincenal", "Mensual"];
+  const VECES_SEMANA = { Semanal: 1, Quincenal: 0.5, Mensual: 12 / 52 };
+  const esDaily = (a) => /daily/i.test(String(a.Tipo || ""));
+  const diasDe = (a) => String(a.Dias || "").split(/[,;\s]+/).map((x) => x.trim().toUpperCase()).filter((x) => DIAS_AG.some((d) => d[0] === x));
+  const agendaDe = (pid) => (S.datos.Agenda || []).filter((a) => a.ID_Proyecto === pid).sort((a, b) => String(a.Hora).localeCompare(String(b.Hora)));
+  const agendaActiva = (a, d) => a.Activa !== "No" && (!a.Desde || String(a.Desde) <= d) && (!a.Hasta || String(a.Hasta) >= d);
+  const lunesDe = (iso) => { const d = R.aFecha ? R.aFecha(iso) : new Date(iso + "T00:00:00"); const w = (d.getDay() + 6) % 7; return R.sumarDias(iso, -w); };
+  const diaSemana = (iso) => { const [y, m, dd] = iso.split("-").map(Number); return new Date(y, m - 1, dd).getDay(); };
+  const hhmm = (h) => { const m = String(h || "").match(/^(\d{1,2}):(\d{2})/); return m ? `${m[1].padStart(2, "0")}:${m[2]}` : ""; };
+  const horaTxt = (h) => { const v = hhmm(h); if (!v) return "—"; let [H, M] = v.split(":").map(Number); const pmx = H >= 12; H = H % 12 || 12; return `${H}:${String(M).padStart(2, "0")} ${pmx ? "p. m." : "a. m."}`; };
+  const minDe = (h) => { const v = hhmm(h); if (!v) return 0; const [H, M] = v.split(":").map(Number); return H * 60 + M; };
+  // ¿Hay sesión de esta recurrencia en la fecha d?
+  function tocaEn(a, d) {
+    if (!agendaActiva(a, d)) return false;
+    const dw = diaSemana(d);
+    if (!diasDe(a).some((x) => DIAS_AG.find((z) => z[0] === x)[2] === dw)) return false;
+    const base = a.Desde || a.Fecha_Registro || d;
+    if (a.Frecuencia === "Quincenal") return Math.round(R.difDias(lunesDe(d), lunesDe(base)) / 7) % 2 === 0;
+    if (a.Frecuencia === "Mensual") { const nth = Math.ceil(Number(String(base).slice(8, 10)) / 7); return Math.ceil(Number(d.slice(8, 10)) / 7) === Math.min(nth, 4); }
+    return true;
+  }
+  const ocurrencias = (a, ini, fin) => { const out = []; for (let d = ini; d <= fin; d = R.sumarDias(d, 1)) if (tocaEn(a, d)) out.push(d); return out; };
+  const resumenAgenda = (a) => `${a.Tipo || "Sesión"}: ${diasDe(a).length === 5 ? "L a V" : diasDe(a).join(", ")}${a.Frecuencia && a.Frecuencia !== "Semanal" ? ` (${a.Frecuencia.toLowerCase()})` : ""} ${horaTxt(a.Hora)}`;
+  const minutosSemana = (a) => (Number(a.Duracion_Min) || 0) * diasDe(a).length * (VECES_SEMANA[a.Frecuencia] || 1);
+  const durTxt = (min) => { const h = Math.floor(min / 60), m = Math.round(min % 60); return h ? `${h} h${m ? ` ${m} min` : ""}` : `${m} min`; };
+
+  // Estado de seguimiento con agenda: vencido si una sesión programada (no daily) pasó sin registro.
+  const estadoSegBase = R.estadoSeguimiento;
+  R.estadoSeguimiento = (p, segs, hoy = R.hoyISO()) => {
+    const base = estadoSegBase(p, segs, hoy);
+    const ag = agendaDe(p.ID_Proyecto).filter((a) => !esDaily(a) && diasDe(a).length && a.Activa !== "No");
+    if (!ag.length || base.estado === "No aplica") return base;
+    const regs = R.seguimientosDe(p.ID_Proyecto, segs);
+    const pasadas = ag.flatMap((a) => ocurrencias(a, R.sumarDias(hoy, -45), R.sumarDias(hoy, -1))).sort();
+    const sinRegistro = pasadas.filter((d) => !regs.some((s) => s.Fecha_Corte >= R.sumarDias(d, -1)));
+    const proximas = ag.flatMap((a) => ocurrencias(a, hoy, R.sumarDias(hoy, 70))).sort();
+    if (sinRegistro.length) { const d = sinRegistro[sinRegistro.length - 1]; return { ...base, proximo: d, faltan: R.difDias(d, hoy), estado: "Vencido", conAgenda: true }; }
+    const prox = proximas[0];
+    if (!prox) return { ...base, conAgenda: true };
+    const faltan = R.difDias(prox, hoy);
+    return { ...base, proximo: prox, faltan, estado: faltan <= 2 ? "Por vencer" : "Al día", conAgenda: true };
+  };
+  const kpisBase = R.kpis;
+  R.kpis = (proyectos, segs) => { const k = kpisBase(proyectos, segs); const act = proyectos.filter((p) => p.Estado === "Activo"); k.pctAlDia = act.length ? (act.filter((p) => R.estadoSeguimiento(p, segs).estado !== "Vencido").length / act.length) * 100 : 100; return k; };
+
+  function seccionAgenda(p, puede) {
+    const ag = agendaDe(p.ID_Proyecto), hoy = R.hoyISO();
+    const regs = R.seguimientosDe(p.ID_Proyecto, S.datos.Seguimientos);
+    const minT = ag.filter((a) => agendaActiva(a, hoy)).reduce((t, a) => t + minutosSemana(a), 0);
+    const fila = (a) => {
+      const prox = ocurrencias(a, hoy, R.sumarDias(hoy, 70))[0];
+      const ult = ocurrencias(a, R.sumarDias(hoy, -45), R.sumarDias(hoy, -1)).pop();
+      const falta = ult && !esDaily(a) && !regs.some((s) => s.Fecha_Corte >= R.sumarDias(ult, -1));
+      return `<div class="ag-fila ${a.Activa === "No" ? "inactiva" : ""}">
+        <div><span class="pill ag-${normTxt(a.Tipo || "sesion").replace(/[^a-z]/g, "")}">${esc(a.Tipo || "Sesión")}</span>${a.Participantes ? `<div class="sub">${esc(a.Participantes)}</div>` : ""}</div>
+        <div class="ag-dias">${DIAS_AG.map(([k]) => `<span class="ag-dia ${diasDe(a).includes(k) ? "on" : ""}">${k}</span>`).join("")}${a.Frecuencia && a.Frecuencia !== "Semanal" ? ` <span class="sub">${esc(a.Frecuencia.toLowerCase())}</span>` : ""}</div>
+        <div><b>${horaTxt(a.Hora)}</b><div class="sub">${a.Duracion_Min ? `${a.Duracion_Min} min` : ""}${a.Lugar ? ` · ${esc(a.Lugar)}` : ""}</div></div>
+        <div>${a.Activa === "No" ? pill("Inactiva") : esDaily(a) ? `<span class="sub">No exige registro</span>` : falta ? `<span class="pill vencido">Sin registro del ${fecha(ult)}</span>` : `<span class="pill aldía">Al día</span>`}<div class="sub">${prox ? `Próxima: ${fecha(prox)}` : ""}</div></div>
+        <div class="derecha nowrap"><button class="btn chico" data-ag-ics="${esc(a.ID_Sesion)}" title="Descargar para Outlook (.ics)">📅 Outlook</button>${puede ? ` <button class="btn chico" data-ag-edit="${esc(a.ID_Sesion)}">Editar</button>` : ""}</div></div>`;
+    };
+    return `<div class="card ag-card"><div class="titulo-fila"><h2>Agenda de seguimiento</h2>${puede ? `<button class="btn chico primario" id="b-ag">+ Sesión recurrente</button>` : ""}</div>
+      ${ag.length ? ag.map(fila).join("") : `<p class="sub">Sin agenda: el seguimiento se controla por la frecuencia «${esc(p.Frecuencia_Seguimiento || "Semanal")}». Agrega las sesiones recurrentes (daily, seguimiento, comité) con sus días y hora.</p>`}
+      ${minT ? `<p class="sub">Tiempo en sesiones de este proyecto: <b>${durTxt(minT)} por semana</b> para el PM (se suma a su carga en Capacidad del equipo). Los daily no exigen registro; los demás sí.</p>` : ""}</div>`;
+  }
+  function enlazarAgenda(el, p) {
+    if ($("#b-ag")) $("#b-ag").addEventListener("click", () => formAgenda(p));
+    el.querySelectorAll("[data-ag-edit]").forEach((b) => b.addEventListener("click", () => formAgenda(p, agendaDe(p.ID_Proyecto).find((a) => a.ID_Sesion === b.dataset.agEdit))));
+    el.querySelectorAll("[data-ag-ics]").forEach((b) => b.addEventListener("click", () => descargarICS(p, agendaDe(p.ID_Proyecto).find((a) => a.ID_Sesion === b.dataset.agIcs))));
+  }
+  function formAgenda(p, a) {
+    const nuevo = !a;
+    const campos = [
+      { k: "Tipo", label: "Tipo de sesión", tipo: "select", opciones: S.cat.Tipo_Sesion_Agenda || CATALOGOS_BASE.Tipo_Sesion_Agenda, def: "Seguimiento" },
+      { k: "Frecuencia", label: "Frecuencia", tipo: "select", opciones: FREC_AG, def: "Semanal", ayuda: "Quincenal: semana de por medio desde «Desde». Mensual: la misma semana del mes que «Desde»." },
+      { k: "Dias", label: "Días", tipo: "checks", opciones: DIAS_AG.map(([k, t]) => [k, t]), def: "" },
+      { k: "Hora", label: "Hora", tipo: "time", def: "08:00" },
+      { k: "Duracion_Min", label: "Duración (minutos)", tipo: "number", min: 5, max: 480, def: 30 },
+      { k: "Lugar", label: "Lugar o enlace", placeholder: "Teams, Sala 3…" },
+      { k: "Participantes", label: "Participantes", ancho: true, placeholder: "Equipo técnico, proveedor, sponsor…" },
+      { k: "Desde", label: "Desde", tipo: "date", def: R.hoyISO() },
+      { k: "Hasta", label: "Hasta (opcional)", tipo: "date", ayuda: "Vacío = mientras dure el proyecto." },
+      { k: "Activa", label: "¿Activa?", tipo: "select", opciones: ["Sí", "No"], def: "Sí" },
+    ];
+    modal(nuevo ? "Nueva sesión recurrente" : "Editar sesión recurrente", campos, a || {}, (fd) => {
+      fd.Dias = String(fd.Dias).split(/,\s*/).filter(Boolean).join(",");
+      if (nuevo) guardar(() => S.api.agregarFila("Agenda", { ID_Sesion: R.siguienteIdHijo("AGD", S.datos.Agenda || [], "ID_Sesion", p.ID_Proyecto), ID_Proyecto: p.ID_Proyecto, ...fd, Registrado_Por: S.usuario.Correo }), "Sesión agendada");
+      else guardar(() => S.api.actualizarPorId("Agenda", "ID_Sesion", a.ID_Sesion, fd), "Agenda actualizada");
+    }, (fd) => (!fd.Dias ? "Marca al menos un día." : !hhmm(fd.Hora) ? "Escribe la hora." : fd.Hasta && fd.Desde && fd.Hasta < fd.Desde ? "«Hasta» no puede ser anterior a «Desde»." : ""),
+    { init: (m) => {
+        const t = m.querySelector('[name="Tipo"]');
+        t.addEventListener("change", () => { if (/daily/i.test(t.value)) { m.querySelectorAll('[data-checks="Dias"] input').forEach((i) => { i.checked = true; }); const d = m.querySelector('[name="Duracion_Min"]'); if (d && (!d.value || d.value === "30")) d.value = 15; } });
+      },
+      ...(nuevo ? {} : { eliminar: { texto: "Eliminar sesión", mensaje: "Se quitará esta sesión recurrente de la agenda. Los seguimientos ya registrados no se tocan.", accion: () => guardar(() => S.api.eliminarFilas("Agenda", "ID_Sesion", [a.ID_Sesion]), "Sesión eliminada") } }) });
+  }
+  // Archivo de calendario (.ics) con la recurrencia, para agregarla a Outlook.
+  function descargarICS(p, a) {
+    if (!a) return;
+    const d0 = ocurrencias(a, a.Desde && a.Desde > R.hoyISO() ? a.Desde : R.hoyISO(), R.sumarDias(R.hoyISO(), 70))[0] || a.Desde || R.hoyISO();
+    const hm = hhmm(a.Hora) || "08:00";
+    const ini = `${d0.replace(/-/g, "")}T${hm.replace(":", "")}00`;
+    const finMin = minDe(hm) + (Number(a.Duracion_Min) || 30);
+    const fin = `${d0.replace(/-/g, "")}T${String(Math.floor(finMin / 60) % 24).padStart(2, "0")}${String(finMin % 60).padStart(2, "0")}00`;
+    const byday = diasDe(a).map((k) => DIAS_AG.find((z) => z[0] === k)[3]);
+    const nth = Math.min(4, Math.ceil(Number(String(a.Desde || d0).slice(8, 10)) / 7));
+    const rrule = a.Frecuencia === "Mensual" ? `FREQ=MONTHLY;BYDAY=${byday.map((x) => nth + x).join(",")}` : `FREQ=WEEKLY;INTERVAL=${a.Frecuencia === "Quincenal" ? 2 : 1};BYDAY=${byday.join(",")}`;
+    const hasta = a.Hasta || p.Fecha_Fin_Plan;
+    const escI = (t) => String(t || "").replace(/\\/g, "\\\\").replace(/[,;]/g, (c) => "\\" + c).replace(/\n/g, "\\n");
+    const ics = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//FSFB//Portafolio PMO//ES", "CALSCALE:GREGORIAN", "METHOD:PUBLISH",
+      "BEGIN:VTIMEZONE", "TZID:America/Bogota", "BEGIN:STANDARD", "DTSTART:19700101T000000", "TZOFFSETFROM:-0500", "TZOFFSETTO:-0500", "TZNAME:COT", "END:STANDARD", "END:VTIMEZONE",
+      "BEGIN:VEVENT", `UID:${a.ID_Sesion}@portafolio-fsfb`, `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, "").slice(0, 15)}Z`,
+      `DTSTART;TZID=America/Bogota:${ini}`, `DTEND;TZID=America/Bogota:${fin}`, `RRULE:${rrule}${hasta ? `;UNTIL=${String(hasta).replace(/-/g, "")}T235959Z` : ""}`,
+      `SUMMARY:${escI(`${a.Tipo || "Sesión"} · ${p.Nombre}`)}`, a.Lugar ? `LOCATION:${escI(a.Lugar)}` : "",
+      `DESCRIPTION:${escI(`Proyecto ${p.ID_Proyecto} · ${p.Nombre}\nPM: ${nombreUsuario(p.PM)}${a.Participantes ? `\nParticipantes: ${a.Participantes}` : ""}`)}`,
+      "END:VEVENT", "END:VCALENDAR"].filter(Boolean).join("\r\n");
+    descargar(new TextEncoder().encode(ics), `${normTxt(`${a.Tipo || "sesion"} ${p.Nombre}`).replace(/[^a-z0-9]+/g, "_").slice(0, 50)}.ics`, "text/calendar");
+    toast("Archivo de calendario descargado: ábrelo para agregarlo a Outlook.");
+  }
+
+  // Vista «Agenda semanal»: sesiones de todos los proyectos filtrados, por día y hora.
+  function vAgenda(el) {
+    const hoy = R.hoyISO();
+    const lun = S.agLunes || lunesDe(hoy);
+    const dias = DIAS_AG.map((d, i) => ({ k: d[0], t: d[1], f: R.sumarDias(lun, i) }));
+    const ps = filtrados().filter(CUENTAN);
+    const ev = [];
+    ps.forEach((p) => agendaDe(p.ID_Proyecto).forEach((a) => dias.forEach((d) => { if (tocaEn(a, d.f)) ev.push({ p, a, f: d.f, ini: minDe(a.Hora), fin: minDe(a.Hora) + (Number(a.Duracion_Min) || 30) }); })));
+    const regs = (pid) => R.seguimientosDe(pid, S.datos.Seguimientos);
+    ev.forEach((e) => {
+      e.reg = regs(e.p.ID_Proyecto).some((s) => s.Fecha_Corte === e.f || (s.Fecha_Corte >= R.sumarDias(e.f, -1) && s.Fecha_Corte <= R.sumarDias(e.f, 1)));
+      e.falta = !esDaily(e.a) && e.f < hoy && !e.reg;
+      e.choque = ev.some((o) => o !== e && o.f === e.f && lc(o.p.PM) === lc(e.p.PM) && o.ini < e.fin && e.ini < o.fin);
+    });
+    const horas = [...new Set(ev.map((e) => hhmm(e.a.Hora)))].sort();
+    const porPM = {};
+    ev.forEach((e) => { const k = lc(e.p.PM); porPM[k] = (porPM[k] || 0) + (e.fin - e.ini); });
+    const nCh = ev.filter((e) => e.choque).length, nFal = ev.filter((e) => e.falta).length;
+    const evHTML = (e) => `<button type="button" class="ag-ev ag-${normTxt(e.a.Tipo || "sesion").replace(/[^a-z]/g, "")} ${e.choque ? "choque" : ""} ${e.falta ? "falta" : ""} ${e.reg ? "hecho" : ""}" data-ag-ev="${esc(e.p.ID_Proyecto)}|${esc(e.a.ID_Sesion)}|${e.f}"
+        title="${esc(`${e.p.Nombre} · ${e.a.Tipo} · ${horaTxt(e.a.Hora)} · ${e.a.Duracion_Min || 30} min · PM ${nombreUsuario(e.p.PM)}${e.choque ? " · cruce de horario del PM" : ""}${e.falta ? " · sin registro" : ""}`)}">
+        <b>${esc(corta(e.p.Nombre, 26))}</b><span>${esc(e.a.Tipo || "Sesión")}${e.reg ? " ✓" : ""}${e.choque ? " · cruce" : ""}${e.falta ? " · sin registro" : ""}</span></button>`;
+    el.innerHTML = `<h1>Agenda semanal</h1>${barraFiltros()}
+      <div class="filtros ag-nav"><button class="btn chico" id="ag-ant">← Semana anterior</button><b>Semana del ${fecha(dias[0].f)} al ${fecha(dias[4].f)}</b><button class="btn chico" id="ag-sig">Semana siguiente →</button>${lun !== lunesDe(hoy) ? `<button class="btn chico" id="ag-hoy">Esta semana</button>` : ""}</div>
+      <div class="kpis kpis-3">
+        <div class="kpi estatico"><span class="kpi-t">Sesiones esta semana</span><span class="kpi-v">${ev.length}</span><span class="sub">${ev.filter((e) => esDaily(e.a)).length} daily</span></div>
+        <div class="kpi estatico ${nFal ? "alerta" : ""}"><span class="kpi-t">Sin registro</span><span class="kpi-v">${nFal}</span><span class="sub">seguimientos y comités ya pasados</span></div>
+        <div class="kpi estatico ${nCh ? "alerta" : ""}"><span class="kpi-t">Cruces de horario</span><span class="kpi-v">${nCh}</span><span class="sub">mismo PM, misma hora</span></div>
+        <div class="kpi estatico"><span class="kpi-t">Horas en sesiones por PM</span><span class="kpi-v kpi-chico">${Object.entries(porPM).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([k, m]) => `${esc(corta(nombreUsuario(k), 22))} ${durTxt(m)}`).join(" · ") || "—"}</span></div>
+      </div>
+      <div class="card">${ev.length ? `<div class="ag-grid"><div class="ag-h"></div>${dias.map((d) => `<div class="ag-h ${d.f === hoy ? "hoy" : ""}">${d.t} ${d.f.slice(8, 10)}</div>`).join("")}
+        ${horas.map((h) => `<div class="ag-hora">${horaTxt(h)}</div>${dias.map((d) => `<div class="ag-celda ${d.f === hoy ? "hoy" : ""}">${ev.filter((e) => e.f === d.f && hhmm(e.a.Hora) === h).sort((a, b) => String(a.p.Nombre).localeCompare(String(b.p.Nombre), "es")).map(evHTML).join("")}</div>`).join("")}`).join("")}</div>
+        <div class="ag-leyenda"><span class="ag-ev ag-daily">Daily</span><span class="ag-ev ag-seguimiento">Seguimiento</span><span class="ag-ev ag-comite">Comité</span><span class="ag-ev ag-mesatecnica">Mesa técnica</span><span class="ag-ev choque">Cruce de horario</span><span class="ag-ev falta">Sin registro</span><span class="sub">✓ = registrado. Clic en una sesión para registrarla.</span></div>`
+        : vacio("No hay sesiones programadas esta semana. Agrégalas en la pestaña «Seguimientos» de cada proyecto (Agenda de seguimiento).")}</div>`;
+    enlazarFiltros();
+    $("#ag-ant").addEventListener("click", () => { S.agLunes = R.sumarDias(lun, -7); render(); });
+    $("#ag-sig").addEventListener("click", () => { S.agLunes = R.sumarDias(lun, 7); render(); });
+    if ($("#ag-hoy")) $("#ag-hoy").addEventListener("click", () => { S.agLunes = ""; render(); });
+    el.querySelectorAll("[data-ag-ev]").forEach((b) => b.addEventListener("click", () => {
+      const [pid, , f] = b.dataset.agEv.split("|"), p = proyecto(pid), a = agendaDe(pid).find((x) => x.ID_Sesion === b.dataset.agEv.split("|")[1]);
+      if (!p) return;
+      if (f > hoy || !R.puedeEditar(S.usuario, p, "seguimiento")) { S.fichaTab = "seguimientos"; S.fichaPid = pid; return ir("ficha", pid); }
+      formSeguimiento(p, a && /seguimiento/i.test(a.Tipo) && p.Estado === "Activo" ? "Seguimiento" : "Sesión");
+      const fc = document.querySelector('#m-form [name="Fecha_Corte"]'); if (fc) fc.value = f;
+      const nm = document.querySelector('#m-form [name="Nombre_Sesion"]'); if (nm && a && !nm.value) nm.value = a.Tipo;
+    }));
+  }
 
   // ---------- Valor y beneficios para la FSFB ----------
   // Cada proyecto declara su propuesta de valor (beneficio esperado, valor para la FSFB, impacto por dimensión)
@@ -5954,6 +6131,16 @@ ${x.h}</section>`).join("")}
       sumar(p.PM, nombreUsuario(p.PM), p, "PM", num0(p.Dedicacion_PM));
       stakeholdersDe(p.ID_Proyecto).forEach((x) => sumar(x.Correo, x.Nombre, p, x.Rol, num0(x.Dedicacion), x.ID_Stakeholder));
     });
+    // Tiempo del PM en las sesiones de su agenda (calculado): cuenta como otra actividad.
+    const minPM = {};
+    S.datos.Proyectos.filter(CUENTAN).forEach((p) => agendaDe(p.ID_Proyecto).filter((a) => agendaActiva(a, corte)).forEach((a) => { if (p.PM) minPM[lc(p.PM)] = (minPM[lc(p.PM)] || 0) + minutosSemana(a); }));
+    Object.entries(minPM).forEach(([correo, min]) => {
+      const ded = Math.round((min / 60 / JORNADA_SEMANAL) * 100);
+      if (!ded) return;
+      const k = clavePersona(correo, "");
+      const x = (personas[k] = personas[k] || { k, nombre: nombreUsuario(correo), correo, total: 0, asign: [] });
+      (x.otras = x.otras || []).push({ ID_Actividad: "", Tipo: "Sesiones de seguimiento (agenda)", Descripcion: `${durTxt(min)} por semana en sesiones programadas`, Dedicacion: ded, Fecha_Inicio: "", Fecha_Fin: "", auto: true });
+    });
     actividades().filter((a) => vigenteAct(a, corte) && num0(a.Dedicacion) !== null && (a.Correo || a.Nombre)).forEach((a) => {
       const k = clavePersona(a.Correo, a.Nombre);
       const x = (personas[k] = personas[k] || { k, nombre: a.Nombre || nombreUsuario(a.Correo), correo: a.Correo || "", total: 0, asign: [] });
@@ -6720,6 +6907,7 @@ ${x.h}</section>`).join("")}
     await borrar("LineasBase", "ID_LB", (S.datos.LineasBase || []).filter((x) => x.ID_Proyecto === pid));
     await borrar("Tareas", "ID_Tarea", (S.datos.Tareas || []).filter((x) => x.ID_Proyecto === pid));
     await borrar("Cronogramas", "ID_Version", (S.datos.Cronogramas || []).filter((x) => x.ID_Proyecto === pid));
+    await borrar("Agenda", "ID_Sesion", (S.datos.Agenda || []).filter((x) => x.ID_Proyecto === pid));
     await borrar("Mediciones", "ID_Medicion", (S.datos.Mediciones || []).filter((x) => x.ID_Proyecto === pid));
     await borrar("Beneficios", "ID_Beneficio", (S.datos.Beneficios || []).filter((x) => x.ID_Proyecto === pid));
     await S.api.eliminarFilas("Proyectos", "ID_Proyecto", [pid]);

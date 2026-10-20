@@ -48,3 +48,13 @@ window.DEMO_DATA.Actividades = [
     m("MED-0006-4", "BEN-0006-3", "PRY-0006", "2026-08-15", 19, "Sin cambio aún"),
   ];
 })();
+// Agenda de seguimiento de ejemplo.
+window.DEMO_DATA.Agenda = [
+  { ID_Sesion: "AGD-0006-1", ID_Proyecto: "PRY-0006", Tipo: "Daily", Dias: "L,M,X,J,V", Frecuencia: "Semanal", Hora: "08:00", Duracion_Min: 15, Lugar: "Teams", Participantes: "Equipo técnico y proveedor", Desde: "2026-09-01", Hasta: "", Activa: "Sí" },
+  { ID_Sesion: "AGD-0006-2", ID_Proyecto: "PRY-0006", Tipo: "Seguimiento", Dias: "X", Frecuencia: "Semanal", Hora: "10:00", Duracion_Min: 60, Lugar: "Sala 3", Participantes: "PM, líder funcional", Desde: "2026-09-01", Hasta: "", Activa: "Sí" },
+  { ID_Sesion: "AGD-0006-3", ID_Proyecto: "PRY-0006", Tipo: "Comité", Dias: "V", Frecuencia: "Quincenal", Hora: "15:00", Duracion_Min: 45, Lugar: "Teams", Participantes: "Sponsor y PMO", Desde: "2026-09-04", Hasta: "", Activa: "Sí" },
+  { ID_Sesion: "AGD-0009-1", ID_Proyecto: "PRY-0009", Tipo: "Seguimiento", Dias: "X", Frecuencia: "Semanal", Hora: "10:00", Duracion_Min: 45, Lugar: "Teams", Participantes: "", Desde: "2026-09-01", Hasta: "", Activa: "Sí" },
+  { ID_Sesion: "AGD-0001-1", ID_Proyecto: "PRY-0001", Tipo: "Daily", Dias: "L,M,X,J,V", Frecuencia: "Semanal", Hora: "08:30", Duracion_Min: 15, Lugar: "Teams", Participantes: "Equipo ERP", Desde: "2026-09-01", Hasta: "", Activa: "Sí" },
+  { ID_Sesion: "AGD-0001-2", ID_Proyecto: "PRY-0001", Tipo: "Seguimiento", Dias: "M", Frecuencia: "Semanal", Hora: "14:00", Duracion_Min: 60, Lugar: "Sala 2", Participantes: "", Desde: "2026-09-01", Hasta: "", Activa: "Sí" },
+  { ID_Sesion: "AGD-0002-1", ID_Proyecto: "PRY-0002", Tipo: "Mesa técnica", Dias: "J", Frecuencia: "Semanal", Hora: "11:00", Duracion_Min: 60, Lugar: "Teams", Participantes: "Proveedor", Desde: "2026-09-01", Hasta: "", Activa: "Sí" },
+];

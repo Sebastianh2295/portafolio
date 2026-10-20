@@ -45,6 +45,8 @@
     // Beneficios de cada proyecto (valor para la FSFB) y sus mediciones en el tiempo.
     Beneficios: ["ID_Beneficio", "ID_Proyecto", "Dimension", "Importancia", "Beneficio_Esperado", "Valor_FSFB", "Indicador", "Unidad", "Tipo_Medida", "Linea_Base", "Meta", "Medir_Desde", "Fecha_Meta", "Frecuencia_Medicion", "Dueno", "Registrado_Por", "Fecha_Registro"],
     Mediciones: ["ID_Medicion", "ID_Beneficio", "ID_Proyecto", "Fecha", "Valor", "Comentario", "Registrado_Por"],
+    // Agenda de seguimiento: sesiones recurrentes de cada proyecto (días L-V, hora, duración).
+    Agenda: ["ID_Sesion", "ID_Proyecto", "Tipo", "Dias", "Frecuencia", "Hora", "Duracion_Min", "Lugar", "Participantes", "Desde", "Hasta", "Activa", "Registrado_Por"],
     // Sugerencias de mejora de la app (cualquier usuario las registra; Admin/PMO las gestionan).
     Sugerencias: ["ID_Sugerencia", "Fecha_Hora", "Usuario", "Modulo", "Contexto", "ID_Proyecto", "Tipo", "Prioridad", "Descripcion", "URL_Referencia", "Adjuntos", "Estado", "Respuesta", "Version_App", "Version_Implementada", "Actualizado_Por", "Actualizado_El"],
     // Registro de auditoría: quién cambió qué y cuándo.
