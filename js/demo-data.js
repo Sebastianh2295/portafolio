@@ -26,3 +26,25 @@ window.DEMO_DATA.Actividades = [
   { ID_Actividad: "ACT-0003", Correo: "pm2@empresa.com", Nombre: "", ID_Recurso: "", Tipo: "Gestión de demanda", Descripcion: "Levantamiento de iniciativas Q4", Dedicacion: 20, Fecha_Inicio: "2026-09-15", Fecha_Fin: "2026-12-15", Registrado_Por: "pm2@empresa.com", Fecha_Registro: "2026-09-15" },
   { ID_Actividad: "ACT-0004", Correo: "pm3@empresa.com", Nombre: "", ID_Recurso: "", Tipo: "Ausencia (vacaciones, incapacidad, permiso)", Descripcion: "Vacaciones", Dedicacion: 100, Fecha_Inicio: "2026-12-14", Fecha_Fin: "2026-12-31", Registrado_Por: "pm3@empresa.com", Fecha_Registro: "2026-10-01" },
 ];
+// Valor para la FSFB de ejemplo: propuesta de valor, beneficios y mediciones.
+(function () {
+  const D = window.DEMO_DATA, P = (id) => D.Proyectos.find((p) => p.ID_Proyecto === id) || {};
+  Object.assign(P("PRY-0006"), { Beneficio_Esperado: "Resultados de patología en menos de 48 h y sin errores de rotulado de muestras.", Valor_FSFB: "Oportunidad diagnóstica y seguridad del paciente; soporta la acreditación y libera capacidad del laboratorio.", Nivel_Valor: "", Impacto_Valor: JSON.stringify({ "Seguridad del paciente": "Alto", "Eficiencia operacional": "Alto", "Experiencia del paciente": "Medio", "Cumplimiento / acreditación": "Medio" }) });
+  Object.assign(P("PRY-0001"), { Beneficio_Esperado: "Un solo ERP integrado para compras, inventarios y facturación.", Valor_FSFB: "Menos reprocesos administrativos y cierre contable más rápido.", Nivel_Valor: "Alto", Impacto_Valor: JSON.stringify({ "Eficiencia operacional": "Alto", "Financiero": "Medio", "Estratégico": "Medio" }) });
+  Object.assign(P("PRY-0002"), { Beneficio_Esperado: "Pacientes que consultan resultados y agendan en línea.", Valor_FSFB: "Mejor experiencia y menos llamadas al call center.", Impacto_Valor: JSON.stringify({ "Experiencia del paciente": "Alto", "Eficiencia operacional": "Medio" }) });
+  const r = (id, pid, o) => ({ ID_Beneficio: id, ID_Proyecto: pid, Registrado_Por: "pmo@empresa.com", Fecha_Registro: "2026-07-01", Frecuencia_Medicion: "Mensual", Tipo_Medida: "Numérico", ...o });
+  D.Beneficios = [
+    r("BEN-0006-1", "PRY-0006", { Dimension: "Seguridad del paciente", Importancia: "Crítico", Beneficio_Esperado: "Eliminar muestras mal rotuladas con código de barras en la toma.", Valor_FSFB: "Evita repetir biopsias y eventos adversos; requisito de acreditación.", Indicador: "Muestras mal rotuladas por mes", Unidad: "casos/mes", Linea_Base: 12, Meta: 2, Medir_Desde: "2026-07-01", Fecha_Meta: "2027-06-30", Dueno: "Patología" }),
+    r("BEN-0006-2", "PRY-0006", { Dimension: "Eficiencia operacional", Importancia: "Alto", Beneficio_Esperado: "Entregar resultados más rápido.", Valor_FSFB: "Oportunidad diagnóstica y capacidad del laboratorio.", Indicador: "Tiempo de entrega de resultados", Unidad: "horas", Linea_Base: 72, Meta: 48, Medir_Desde: "2026-07-01", Fecha_Meta: "2027-03-31", Dueno: "Patología" }),
+    r("BEN-0006-3", "PRY-0006", { Dimension: "Experiencia del paciente", Importancia: "Medio", Beneficio_Esperado: "Menos quejas por demora en resultados.", Valor_FSFB: "Mejor percepción del servicio.", Indicador: "Quejas por resultados al mes", Unidad: "quejas/mes", Linea_Base: 20, Meta: 8, Medir_Desde: "2026-07-01", Fecha_Meta: "2026-12-31", Dueno: "Experiencia del paciente" }),
+    r("BEN-0006-4", "PRY-0006", { Dimension: "Cumplimiento / acreditación", Importancia: "Alto", Beneficio_Esperado: "Cumplir el estándar de trazabilidad de muestras.", Valor_FSFB: "Mantener la acreditación.", Indicador: "Estándar de trazabilidad", Tipo_Medida: "Cualitativo", Linea_Base: "", Meta: "", Medir_Desde: "2026-09-01", Fecha_Meta: "2027-01-31", Frecuencia_Medicion: "Trimestral", Dueno: "Calidad" }),
+    r("BEN-0001-1", "PRY-0001", { Dimension: "Financiero", Importancia: "Alto", Beneficio_Esperado: "Ahorro por menos reprocesos y licencias.", Valor_FSFB: "Libera presupuesto para otras iniciativas.", Indicador: "Ahorro anual", Unidad: "COP", Linea_Base: 0, Meta: 320000000, Medir_Desde: "2027-01-15", Fecha_Meta: "2027-12-31", Frecuencia_Medicion: "Trimestral", Dueno: "Finanzas" }),
+    r("BEN-0001-2", "PRY-0001", { Dimension: "Eficiencia operacional", Importancia: "Medio", Beneficio_Esperado: "Cierre contable más rápido.", Valor_FSFB: "Información financiera oportuna.", Indicador: "Días de cierre contable", Unidad: "días", Linea_Base: 10, Meta: 5, Medir_Desde: "2027-01-15", Fecha_Meta: "2027-06-30", Dueno: "Contabilidad" }),
+  ];
+  const m = (id, bid, pid, f, v, c) => ({ ID_Medicion: id, ID_Beneficio: bid, ID_Proyecto: pid, Fecha: f, Valor: v, Comentario: c || "", Registrado_Por: "pm3@empresa.com" });
+  D.Mediciones = [
+    m("MED-0006-1", "BEN-0006-1", "PRY-0006", "2026-08-01", 9), m("MED-0006-2", "BEN-0006-1", "PRY-0006", "2026-09-01", 5, "Piloto en toma de muestras"),
+    m("MED-0006-3", "BEN-0006-2", "PRY-0006", "2026-09-01", 50),
+    m("MED-0006-4", "BEN-0006-3", "PRY-0006", "2026-08-15", 19, "Sin cambio aún"),
+  ];
+})();

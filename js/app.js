@@ -20,6 +20,7 @@
     { id: "recursos", t: "Recursos" },
     { id: "capacidad", t: "Capacidad del equipo" },
     { id: "priorizacion", t: "Priorización" },
+    { id: "valor", t: "Valor del portafolio" },
     { id: "lecciones", t: "Lecciones aprendidas" },
     { id: "sugerencias", t: "Sugerencias de mejora" },
     { id: "catalogos", t: "Catálogos", permiso: "catalogos" },
@@ -63,6 +64,9 @@
     recursos: ["Directorio único de personas: internas y de proveedores, sin duplicados.",
       "Al agregar stakeholders, equipo o responsables de compromisos eliges a la persona de aquí y sus datos se llenan solos.",
       "Si aparecen «Posibles duplicados», usa «Fusionar» para dejar un solo registro."],
+    valor: ["Qué valor le deja cada proyecto a la FSFB: no solo financiero, también seguridad del paciente, eficiencia operacional, experiencia, cumplimiento y lo estratégico.",
+      "Cada proyecto tiene un nivel de valor (crítico, alto, medio, bajo) y beneficios con indicador, línea base y meta; el PM registra las mediciones en la pestaña «Valor» del proyecto.",
+      "Los proyectos cerrados siguen aquí mientras sus beneficios se sigan midiendo."],
     priorizacion: ["Ordena el portafolio por un puntaje de 0 a 100 según valor, urgencia, complejidad y esfuerzo.",
       "La calificación de cada proyecto se hace en «Editar proyecto» → Priorización.",
       "La matriz valor vs. esfuerzo ayuda a ver ganancias rápidas y proyectos a reconsiderar."],
@@ -143,6 +147,7 @@
     Tipo_Cambio: ["Alcance", "Tiempo", "Costo", "Recursos", "Calidad"], Tipo_Demanda: ["Proyecto nuevo", "Mejora / evolutivo", "Regulatorio / obligatorio", "Mantenimiento", "Innovación"], Categoria_Demanda: ["Estratégico", "Operativo", "Cumplimiento"],
     Tipo_Documento: ["Acta", "Cronograma", "Contrato / orden de compra", "Especificación / requerimientos", "Diseño / arquitectura", "Presentación", "Informe", "Manual", "Carpeta", "Otro"],
     Categoria_Leccion: ["Planeación", "Técnica", "Proveedores", "Comunicación", "Equipo", "Calidad", "Gestión del cambio"],
+    Dimension_Valor: ["Seguridad del paciente", "Eficiencia operacional", "Experiencia del paciente", "Cumplimiento / acreditación", "Estratégico", "Financiero"],
     Tipo_Actividad: ["Operación / soporte", "Comités y reuniones recurrentes", "Gestión de demanda", "Administrativo / informes", "Capacitación", "Ausencia (vacaciones, incapacidad, permiso)", "Otro"] };
   let sembrado = false;
   // La primera vez, deja en el Excel los roles de stakeholder base para poder editarlos desde Catálogos.
@@ -358,7 +363,7 @@
       cargando(true, "Leyendo Excel…");
       try { await recargar(); render(); toast("Datos actualizados"); } catch (e) { toast(e.message, true); } finally { cargando(false); }
     });
-    const vistas = { dashboard: vDashboard, avances: vAvances, seguimiento: vSeguimiento, proyectos: vProyectos, ficha: vFicha, backlog: vBacklog, recursos: vRecursos, capacidad: vCapacidad, priorizacion: vPriorizacion, lecciones: vLecciones, sugerencias: vSugerencias, auditoria: vAuditoria, cronograma: vCronograma, riesgos: vRiesgos, catalogos: vCatalogos, usuarios: vUsuarios };
+    const vistas = { dashboard: vDashboard, avances: vAvances, seguimiento: vSeguimiento, proyectos: vProyectos, ficha: vFicha, backlog: vBacklog, recursos: vRecursos, capacidad: vCapacidad, priorizacion: vPriorizacion, valor: vValor, lecciones: vLecciones, sugerencias: vSugerencias, auditoria: vAuditoria, cronograma: vCronograma, riesgos: vRiesgos, catalogos: vCatalogos, usuarios: vUsuarios };
     const el = $("#vista");
     (vistas[S.vista] || vDashboard)(el);
     el.insertAdjacentHTML("afterbegin", ayuda(S.vista));
@@ -1300,12 +1305,13 @@
         <span class="sub">${lista.length} resultado(s)</span>
       </div>
       <div class="card"><div class="tabla-scroll"><table>
-        <thead><tr><th>Proyecto</th><th class="opc">Área</th><th>PM</th><th class="opc">Metodología</th><th class="opc">Fase</th><th>Estado</th><th>Semáforo</th><th>Avance real / plan</th><th class="opc">Fin plan</th><th>Seguimiento</th></tr></thead>
+        <thead><tr><th>Proyecto</th><th class="opc">Área</th><th>PM</th><th class="opc">Metodología</th><th class="opc">Fase</th><th>Estado</th><th>Semáforo</th><th>Avance real / plan</th><th class="opc">Fin plan</th><th class="opc">Valor FSFB</th><th>Seguimiento</th></tr></thead>
         <tbody>${lista.map((p) => `<tr class="clic ${["Cerrado", "Cancelado"].includes(p.Estado) ? "fila-inactiva" : ""}" data-pid="${esc(p.ID_Proyecto)}" tabindex="0">
           <td><b>${esc(p.Nombre)}</b><div class="sub">${esc(p.ID_Proyecto)} · prioridad ${esc(String(p.Prioridad).toLowerCase())}</div></td><td class="opc">${esc(p.Cliente_Area)}</td>
           <td>${persona(nombreUsuario(p.PM))}</td><td class="opc">${esc(p.Metodologia)}</td><td class="opc">${chipFase(p.Fase)}</td><td>${chipEstadoP(p.Estado)}</td><td>${p.Estado === "Activo" || p.Semaforo ? chipSemaforo(p.Semaforo) : `<span class="sub">—</span>`}</td>
           <td class="celda-avance">${barraAvance(p.Avance_Real, p.Avance_Planeado)}</td><td class="opc">${fecha(p.Fecha_Fin_Plan)}</td>
-          <td>${pill(R.estadoSeguimiento(p, S.datos.Seguimientos).estado)}</td></tr>`).join("") || `<tr><td colspan="10">${vacio(visibles().length ? "No hay proyectos con estos filtros. Prueba «Limpiar filtros»." : "Aún no tienes proyectos. Registra el primero con «+ Nueva iniciativa».")}</td></tr>`}</tbody>
+          <td class="opc">${(() => { const V = valorProyecto(p); return V.nivel ? `${chipNivel(V.nivel)}${V.indice !== null ? `<div class="sub">logro ${V.indice}%</div>` : ""}` : `<span class="sub">—</span>`; })()}</td>
+          <td>${pill(R.estadoSeguimiento(p, S.datos.Seguimientos).estado)}</td></tr>`).join("") || `<tr><td colspan="11">${vacio(visibles().length ? "No hay proyectos con estos filtros. Prueba «Limpiar filtros»." : "Aún no tienes proyectos. Registra el primero con «+ Nueva iniciativa».")}</td></tr>`}</tbody>
       </table></div></div>`;
     enlazarFiltros();
     $("#f-texto").addEventListener("change", (e) => { FL.texto = e.target.value; render(); });
@@ -1333,7 +1339,8 @@
     if (S.fichaPid !== p.ID_Proyecto) { S.fichaPid = p.ID_Proyecto; S.fichaTab = "resumen"; }
     const abiertosN = comps.filter((x) => x.e !== "Cerrado").length;
     const vencidosN = comps.filter((x) => x.e === "Vencido").length;
-    const TABS = [["resumen", "Resumen"], ["compromisos", `Compromisos <span class="contador ${vencidosN ? "rojo" : ""}">${abiertosN}</span>`],
+    const VP = valorProyecto(p);
+    const TABS = [["resumen", "Resumen"], ["valor", `Valor${VP.nivel ? ` <span class="contador ${VP.riesgo || VP.pendientes ? "rojo" : ""}">${esc(VP.nivel)}</span>` : ""}`], ["compromisos", `Compromisos <span class="contador ${vencidosN ? "rojo" : ""}">${abiertosN}</span>`],
       ["seguimientos", `Seguimientos <span class="contador">${segs.length}</span>`], ["hitos", `Hitos <span class="contador">${hitos.length}</span>`],
       ["gantt", (() => { const ts = tareasDe(p.ID_Proyecto); const atr = ts.length ? calcCronograma(ts).atrasadas.length : 0; return `Cronograma <span class="contador ${atr ? "rojo" : ""}">${atr || ts.length}</span>`; })()], ["riesgos", `Riesgos <span class="contador">${riesgos.filter(riesgoActivo).length}</span>`],
       ["tickets", `Tickets <span class="contador">${ticketsDe(p.ID_Proyecto).filter(ticketAbierto).length}</span>`],
@@ -1370,6 +1377,7 @@
       gantt: () => seccionGantt(p, puedeP("hitos")),
       cambios: () => seccionCambios(p, puedeP("editarProyecto"), R.puede(u, "verTodo")),
       raci: () => seccionRACI(p, puedeP("editarProyecto")),
+      valor: () => seccionValor(p, puedeP("seguimiento")),
       lecciones: () => seccionLecciones(p, puedeP("editarProyecto")),
       auditoria: () => seccionAuditoria(p),
       seguimientos: () => `      <div class="card"><div class="titulo-fila"><h2>Historial de seguimientos y sesiones</h2><div class="acciones"><button class="btn chico" id="b-expandir">Expandir compromisos</button><button class="btn chico" id="b-contraer">Contraer</button>${puedeP("seguimiento") && p.Estado !== "Cancelado" ? `<button class="btn" id="b-ses2">+ Registrar sesión</button>` : ""}${puedeP("seguimiento") && p.Estado === "Activo" ? `<button class="btn" id="b-seg2">+ Registrar seguimiento</button>` : ""}</div></div>
@@ -1443,6 +1451,7 @@
     if ($("#b-dep")) $("#b-dep").addEventListener("click", () => formDependencia(p));
     el.querySelectorAll("[data-dep]").forEach((b) => b.addEventListener("click", () => formDependencia(p, (S.datos.Dependencias || []).find((d) => d.ID_Dependencia === b.dataset.dep))));
     if (tab === "raci") enlazarRACI(el, p);
+    if (tab === "valor") enlazarValor(el, p);
     if (tab === "auditoria") {
       const fa = (a) => a.ID_Proyecto === p.ID_Proyecto;
       llenarAuditoria(el, fa, false);
@@ -1583,6 +1592,7 @@
     { lista: "Tipo_Cambio", t: "Tipo de cambio", campo: "Tipo", tabla: "Cambios", idCol: "ID_Cambio" },
     { lista: "Categoria_Leccion", t: "Categoría de lección aprendida", campo: "Categoria", tabla: "Lecciones", idCol: "ID_Leccion" },
     { lista: "Tipo_Actividad", t: "Tipo de otra actividad (capacidad)", campo: "Tipo", tabla: "Actividades", idCol: "ID_Actividad" },
+    { lista: "Dimension_Valor", t: "Dimensión de valor (beneficios)", campo: "Dimension", tabla: "Beneficios", idCol: "ID_Beneficio" },
     { lista: "Tipo_Demanda", t: "Tipo de demanda", campo: "Tipo", tabla: "Demandas", idCol: "ID_Demanda" },
     { lista: "Categoria_Demanda", t: "Categoría de demanda", campo: "Categoria", tabla: "Demandas", idCol: "ID_Demanda" },
     { lista: "Copia_Recordatorios", t: "Copia fija de recordatorios (correos)", campo: "", tabla: "__ninguna", correo: true },
@@ -2625,6 +2635,12 @@
           fila("Presupuesto base (BAC)", `${cop(v.BAC)} <small>${lineaBase(p).tiene ? `línea base LB${lineaBase(p).num}` : "presupuesto actual"}</small>`)].join("")}</table>`; })()}
       ${(() => { const lb = lineaBase(p); return lb.tiene ? `<p class="hv-p"><b>Línea base vigente (LB${lb.num}):</b> ${lb.ib ? `inicio ${fecha(lb.ib)} → actual ${fecha(p.Fecha_Inicio)}${lb.diasInicio ? ` (${lb.diasInicio > 0 ? "+" : ""}${lb.diasInicio} días)` : ""} · ` : ""}fin ${fecha(lb.fb)} → actual ${fecha(p.Fecha_Fin_Plan)}${lb.dias !== null ? ` (${lb.dias > 0 ? "+" : ""}${lb.dias} días)` : ""} · presupuesto ${lb.pb !== null ? cop(lb.pb) : "—"} → actual ${cop(p.Presupuesto)}${lb.pctCosto !== null ? ` (${lb.pctCosto > 0 ? "+" : ""}${lb.pctCosto}%)` : ""}</p>` : ""; })()}
       ${(() => { const l = lineasBaseDe(p.ID_Proyecto); return l.length > 1 ? `<table class="hv-tabla"><thead><tr><th>LB</th><th>Fijada</th><th>Inicio</th><th>Fin</th><th>Presupuesto</th><th>Motivo</th></tr></thead><tbody>${l.map((x) => `<tr><td>LB${esc(x.Numero)}</td><td>${fecha(x.Fecha)}</td><td>${fecha(x.Fecha_Inicio)}</td><td>${fecha(x.Fecha_Fin)}</td><td>${x.Presupuesto !== "" && x.Presupuesto != null ? cop(x.Presupuesto) : "—"}</td><td>${esc(x.Motivo || "")}</td></tr>`).join("")}</tbody></table>` : ""; })()}` },
+      (() => { const V = valorProyecto(p); return { t: "Valor y beneficios para la FSFB", d: V.nivel ? `nivel ${V.nivel.toLowerCase()}${V.indice !== null ? ` · logro ${V.indice}%` : ""} · ${plural(V.bs.length, "beneficio", "beneficios")}` : "sin propuesta de valor",
+        h: `<table class="hv-ficha">${[fila("Beneficio esperado", t(p.Beneficio_Esperado)), fila("Valor para la FSFB", t(p.Valor_FSFB)), fila("Nivel de valor", `${t(V.nivel)}${V.nivel && !V.manual ? " <small>(sugerido)</small>" : ""}`),
+          fila("Impacto por dimensión", Object.entries(V.imp).map(([d, i]) => `${esc(d)}: <b>${esc(i)}</b>`).join(" · ") || "—"), fila("Índice de valor", V.indice === null ? "sin mediciones" : `${V.indice}% <small>(logro ponderado por importancia)</small>`),
+          ...(V.valorFin ? [fila("Valor financiero (meta)", `${cop(V.valorFin)}${V.roi ? ` · ROI ${V.roi.toFixed(1).replace(".", ",")}x · payback ${V.payback} meses` : ""}`)] : [])].join("")}</table>
+        ${tabla(["Importancia", "Dimensión", "Beneficio esperado / valor para la FSFB", "Indicador", "Base → meta", "Actual", "Logro", "Estado"], V.bs.map(({ b, e }) => `<tr><td>${t(b.Importancia)}</td><td>${t(b.Dimension)}</td><td>${t(b.Beneficio_Esperado)}${b.Valor_FSFB ? `<br><small>${t(b.Valor_FSFB)}</small>` : ""}</td><td>${t(b.Indicador)}</td>
+          <td class="hv-nw">${b.Tipo_Medida === "Cualitativo" ? "Cualitativo" : `${esc(fmtValor(b, b.Linea_Base))} → ${esc(fmtValor(b, b.Meta))}`}</td><td class="hv-nw">${e.ult ? `${esc(fmtValor(b, e.ult.Valor))}<br><small>${fecha(e.ult.Fecha)}</small>` : "—"}</td><td>${e.logro === null ? "—" : `${e.logro}%`}</td><td>${t(e.estado)}</td></tr>`), "Sin beneficios registrados.")}` }; })(),
       { t: "Equipo: stakeholders y proveedores", d: `${plural(stks.length, "persona", "personas")} · ${plural(provs.length, "proveedor", "proveedores")}`, h: `      ${tabla(["Rol", "Nombre", "Cargo / área", "Empresa", "Correo"], stks.map((x) => `<tr><td>${t(x.Rol)}</td><td>${t(x.Nombre)}</td><td>${t([x.Cargo, x.Area].filter(Boolean).join(" · "))}</td><td>${x.ID_Proveedor ? t((proveedor(x.ID_Proveedor) || {}).Nombre) : "Interno"}</td><td>${t(x.Correo)}</td></tr>`), "Sin stakeholders registrados.")}
       <p class="hv-p"><b>Proveedores:</b> ${provs.length ? provs.map((x) => `${esc(x.Nombre)}${x.Servicio ? ` (${esc(x.Servicio)})` : ""}`).join(" · ") : "ninguno"}</p>` },
       { t: "Hitos", d: `${hitos.length} · ${hitos.filter((h) => h.Estado === "Cumplido").length} cumplidos`, h: `      ${tabla(["Hito", "Fecha plan", "Fecha real", "Estado"], hitos.map((h) => `<tr><td>${t(h.Hito)}</td><td>${fecha(h.Fecha_Plan)}</td><td>${h.Fecha_Real ? fecha(h.Fecha_Real) : "—"}</td><td>${t(h.Estado)}</td></tr>`), "Sin hitos.")}` },
@@ -3993,6 +4009,7 @@ ${x.h}</section>`).join("")}
     recursos: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
     capacidad: '<path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/>',
     priorizacion: '<path d="M3 3v18h18"/><path d="M7 16h4"/><path d="M7 11h8"/><path d="M7 6h12"/>',
+    valor: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
     lecciones: '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>',
     sugerencias: '<path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.1V17h6v-.2c0-.8.4-1.6 1-2.1A7 7 0 0 0 12 2z"/>',
     catalogos: '<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M2 14h4M10 8h4M18 16h4"/>',
@@ -4035,12 +4052,12 @@ ${x.h}</section>`).join("")}
   // Menú agrupado como en las suites empresariales.
   const GRUPOS_NAV = [
     ["Inicio", ["dashboard", "avances", "seguimiento"]],
-    ["Portafolio", ["backlog", "proyectos", "cronograma", "riesgos", "priorizacion"]],
+    ["Portafolio", ["backlog", "proyectos", "cronograma", "riesgos", "priorizacion", "valor"]],
     ["Personas", ["recursos", "capacidad"]],
     ["Conocimiento", ["lecciones", "sugerencias"]],
     ["Administración", ["catalogos", "usuarios", "auditoria"]],
   ];
-  const NOMBRE_TAB = { resumen: "Resumen", compromisos: "Compromisos", seguimientos: "Seguimientos", hitos: "Hitos", gantt: "Cronograma", riesgos: "Riesgos", tickets: "Tickets", documentos: "Documentos", cambios: "Cambios", raci: "RACI", lecciones: "Lecciones", auditoria: "Historial de cambios" };
+  const NOMBRE_TAB = { resumen: "Resumen", valor: "Valor", compromisos: "Compromisos", seguimientos: "Seguimientos", hitos: "Hitos", gantt: "Cronograma", riesgos: "Riesgos", tickets: "Tickets", documentos: "Documentos", cambios: "Cambios", raci: "RACI", lecciones: "Lecciones", auditoria: "Historial de cambios" };
   function migas() {
     const v = VISTAS.find((x) => x.id === (S.vista === "ficha" ? "proyectos" : S.vista));
     const grupo = (GRUPOS_NAV.find((g) => g[1].includes(v ? v.id : "")) || ["Inicio"])[0];
@@ -4268,6 +4285,234 @@ ${x.h}</section>`).join("")}
   });
   document.addEventListener("click", (e) => { const mu = document.getElementById("menu-usuario"); if (mu && !mu.hidden && !e.target.closest(".ab-usuario")) mu.hidden = true; });
 
+  // ---------- Valor y beneficios para la FSFB ----------
+  // Cada proyecto declara su propuesta de valor (beneficio esperado, valor para la FSFB, impacto por dimensión)
+  // y sus beneficios medibles (indicador, línea base → meta). El PM registra mediciones, también después del cierre.
+  const NIVELES_VALOR = ["Crítico", "Alto", "Medio", "Bajo"];
+  const PESO_IMP = { "Crítico": 4, Alto: 3, Medio: 2, Bajo: 1 };
+  const IMPACTOS_DIM = ["Alto", "Medio", "Bajo"];
+  const FREC_MED = { Mensual: 30, Trimestral: 91, Semestral: 182, Anual: 365 };
+  const ICO_DIM = { "Seguridad del paciente": "❤", "Eficiencia operacional": "⚙", "Experiencia del paciente": "☺", "Cumplimiento / acreditación": "✓", "Estratégico": "◎", "Financiero": "$" };
+  const dimensiones = () => S.cat.Dimension_Valor || CATALOGOS_BASE.Dimension_Valor;
+  const beneficiosDe = (pid) => (S.datos.Beneficios || []).filter((b) => b.ID_Proyecto === pid).sort((a, b) => (PESO_IMP[b.Importancia] || 0) - (PESO_IMP[a.Importancia] || 0) || String(a.ID_Beneficio).localeCompare(String(b.ID_Beneficio)));
+  const medicionesDe = (bid) => (S.datos.Mediciones || []).filter((m) => m.ID_Beneficio === bid).sort((a, b) => String(a.Fecha).localeCompare(String(b.Fecha)));
+  const impactoValorDe = (p) => { try { const o = JSON.parse(p.Impacto_Valor || "{}"); return o && typeof o === "object" ? o : {}; } catch (e) { return {}; } };
+  const esMonetario = (b) => /\$|cop|peso|millon/i.test(String(b.Unidad || "")) || b.Dimension === "Financiero";
+  const fmtValor = (b, v) => (v === "" || v === null || v === undefined ? "—" : b.Tipo_Medida === "Cualitativo" ? String(v) : esMonetario(b) ? cop(v) : `${Number(v).toLocaleString("es-CO", { maximumFractionDigits: 2 })}${b.Unidad ? ` ${b.Unidad}` : ""}`);
+  const num1 = (v) => (v === "" || v === null || v === undefined || Number.isNaN(Number(v)) ? null : Number(v));
+
+  // Logro (0-100) frente a la meta, estado y próxima medición de un beneficio.
+  function evalBeneficio(b, hoy = R.hoyISO()) {
+    const ms = medicionesDe(b.ID_Beneficio), ult = ms[ms.length - 1] || null;
+    let logro = null;
+    if (ult) {
+      if (b.Tipo_Medida === "Cualitativo") logro = ult.Valor === "Cumplido" ? 100 : ult.Valor === "Parcial" ? 50 : 0;
+      else {
+        const v = num1(ult.Valor), base = num1(b.Linea_Base), meta = num1(b.Meta);
+        if (v !== null && base !== null && meta !== null) logro = meta === base ? (v === meta ? 100 : 0) : Math.round(Math.max(0, Math.min(100, ((v - base) / (meta - base)) * 100)));
+      }
+    }
+    const desde = b.Medir_Desde || b.Fecha_Registro || hoy;
+    const iniciado = hoy >= desde;
+    const dias = FREC_MED[b.Frecuencia_Medicion] || 30;
+    const proxima = ult ? R.sumarDias(ult.Fecha, dias) : desde;
+    const pendiente = iniciado && proxima <= hoy && logro !== 100;
+    const esperado = b.Fecha_Meta && b.Fecha_Meta > desde ? Math.max(0, Math.min(100, Math.round((R.difDias(hoy, desde) / R.difDias(b.Fecha_Meta, desde)) * 100))) : null;
+    let estado;
+    if (logro === 100) estado = "Logrado";
+    else if (!iniciado && logro === null) estado = "Por iniciar";
+    else if (logro === null) estado = "Sin medición";
+    else if (b.Fecha_Meta && hoy > b.Fecha_Meta) estado = "En riesgo";
+    else if (esperado !== null && logro < esperado - 20) estado = "En riesgo";
+    else estado = "En camino";
+    return { ult, ms, logro, estado, proxima, pendiente, esperado, iniciado };
+  }
+  // Valor del proyecto: índice ponderado por importancia, nivel sugerido y cifras financieras (si hay beneficios en $).
+  function valorProyecto(p, hoy = R.hoyISO()) {
+    const bs = beneficiosDe(p.ID_Proyecto).map((b) => ({ b, e: evalBeneficio(b, hoy) }));
+    const conLogro = bs.filter((x) => x.e.logro !== null);
+    const pesoT = conLogro.reduce((t, x) => t + (PESO_IMP[x.b.Importancia] || 1), 0);
+    const indice = pesoT ? Math.round(conLogro.reduce((t, x) => t + (PESO_IMP[x.b.Importancia] || 1) * x.e.logro, 0) / pesoT) : null;
+    const imp = impactoValorDe(p);
+    let sugerido = "";
+    const vals = Object.values(imp);
+    if (imp["Seguridad del paciente"] === "Alto" || bs.some((x) => x.b.Importancia === "Crítico")) sugerido = "Crítico";
+    else if (vals.includes("Alto") || bs.some((x) => x.b.Importancia === "Alto")) sugerido = "Alto";
+    else if (vals.includes("Medio") || bs.some((x) => x.b.Importancia === "Medio")) sugerido = "Medio";
+    else if (vals.length || bs.length) sugerido = "Bajo";
+    const fin = bs.filter((x) => x.b.Tipo_Medida !== "Cualitativo" && esMonetario(x.b));
+    const valorFin = fin.reduce((t, x) => t + Math.abs((num1(x.b.Meta) || 0) - (num1(x.b.Linea_Base) || 0)), 0);
+    const inversion = Number(p.Ejecutado) > Number(p.Presupuesto) ? Number(p.Ejecutado) : Number(p.Presupuesto) || 0;
+    return { bs, indice, sugerido, nivel: p.Nivel_Valor || sugerido, manual: !!p.Nivel_Valor, imp,
+      riesgo: bs.filter((x) => x.e.estado === "En riesgo").length, criticosRiesgo: bs.filter((x) => x.e.estado === "En riesgo" && x.b.Importancia === "Crítico").length,
+      pendientes: bs.filter((x) => x.e.pendiente).length, valorFin, roi: valorFin && inversion ? valorFin / inversion : null, payback: valorFin && inversion ? Math.round(inversion / (valorFin / 12)) : null,
+      tieneAlgo: !!(p.Beneficio_Esperado || p.Valor_FSFB || bs.length || vals.length) };
+  }
+  const clsNivel = (n) => ({ "Crítico": "nv-critico", Alto: "nv-alto", Medio: "nv-medio", Bajo: "nv-bajo" }[n] || "nv-na");
+  const chipNivel = (n, sug) => (n ? `<span class="pill nv ${clsNivel(n)}" title="${sug ? "Sugerido por la app según el impacto y los beneficios" : "Nivel de valor para la FSFB"}">${esc(n)}${sug ? " · sugerido" : ""}</span>` : `<span class="sub">Sin definir</span>`);
+  const chipImp = (n) => (n ? `<span class="pill nv ${clsNivel(n === "Alto" ? "Crítico" : n === "Medio" ? "Alto" : "Medio")}">${esc(n)}</span>` : `<span class="pill nv nv-na">No aplica</span>`);
+  const chipEstB = (e) => `<span class="pill bn-${normTxt(e).replace(/\s+/g, "")}">${esc(e)}</span>`;
+  const barraLogro = (l) => (l === null ? `<span class="sub">sin medir</span>` : `<span class="bn-barra" title="${l}% de logro"><i class="${l >= 100 ? "ok" : l >= 60 ? "ok" : l >= 30 ? "warn" : "bad"}" style="width:${Math.max(2, l)}%"></i></span> <b>${l}%</b>`);
+
+  function seccionValor(p, puede) {
+    const V = valorProyecto(p), hoy = R.hoyISO();
+    const dims = [...new Set([...dimensiones(), ...Object.keys(V.imp), ...V.bs.map((x) => x.b.Dimension).filter(Boolean)])];
+    const filasDim = dims.map((d) => {
+      const bs = V.bs.filter((x) => x.b.Dimension === d), im = V.imp[d] || "";
+      if (!im && !bs.length) return "";
+      return `<tr><td class="nowrap"><span class="dim-ico">${ICO_DIM[d] || "•"}</span> ${esc(d)}</td><td>${chipImp(im)}</td>
+        <td>${bs.length ? bs.map((x) => `<div class="dim-ind">${esc(x.b.Indicador || x.b.Beneficio_Esperado || "Beneficio")}: ${x.b.Tipo_Medida === "Cualitativo" ? esc(x.e.ult ? x.e.ult.Valor : "sin medir") : `${fmtValor(x.b, x.b.Linea_Base)} → ${fmtValor(x.b, x.b.Meta)} · actual ${x.e.ult ? fmtValor(x.b, x.e.ult.Valor) : "—"}`} ${barraLogro(x.e.logro)}</div>`).join("") : `<span class="sub">Sin indicador</span>`}</td></tr>`;
+    }).join("");
+    const nImp = (n) => V.bs.filter((x) => x.b.Importancia === n).length;
+    const tarjeta = ({ b, e }) => `<div class="bn-card ${e.estado === "En riesgo" ? "riesgo" : ""}">
+        <div class="bn-cab">${chipNivel(b.Importancia)}<b>${esc(b.Dimension || "Beneficio")}</b>${b.Indicador ? `<span class="sub">· ${esc(b.Indicador)}</span>` : ""}<span class="bn-der">${chipEstB(e.estado)}${e.pendiente ? ` <span class="pill vencido" title="Debía medirse el ${fecha(e.proxima)}">Medición pendiente</span>` : ""}</span></div>
+        <div class="bn-grid">
+          <div><div class="bn-k">Beneficio esperado</div>${esc(b.Beneficio_Esperado || "—")}</div>
+          <div><div class="bn-k">Valor para la FSFB</div>${esc(b.Valor_FSFB || "—")}</div>
+          <div><div class="bn-k">Indicador</div>${b.Tipo_Medida === "Cualitativo" ? `Cualitativo · último: <b>${esc(e.ult ? e.ult.Valor : "sin medir")}</b>` : `${fmtValor(b, b.Linea_Base)} → <b>${fmtValor(b, b.Meta)}</b>${b.Fecha_Meta ? ` <span class="sub">a ${fecha(b.Fecha_Meta)}</span>` : ""}<br>Actual: <b>${e.ult ? fmtValor(b, e.ult.Valor) : "—"}</b>`}${b.Tipo_Medida === "Cualitativo" && e.logro === null ? "" : `<div>${barraLogro(e.logro)}${e.esperado !== null && e.logro !== 100 && e.logro !== null ? ` <span class="sub">esperado hoy ≈ ${e.esperado}%</span>` : ""}</div>`}</div>
+        </div>
+        <div class="bn-pie"><span class="sub">${b.Dueno ? `Dueño: ${esc(b.Dueno)} · ` : ""}Medición ${esc(String(b.Frecuencia_Medicion || "Mensual").toLowerCase())} desde ${fecha(b.Medir_Desde || b.Fecha_Registro)} · próxima ${fecha(e.proxima)}</span>
+          ${puede ? `<span class="acciones"><button class="btn chico primario" data-bn-medir="${esc(b.ID_Beneficio)}">Registrar medición</button><button class="btn chico" data-bn-edit="${esc(b.ID_Beneficio)}">Editar</button></span>` : ""}</div>
+        ${e.ms.length ? `<details class="bn-hist"><summary>Historial de mediciones (${e.ms.length})</summary><table class="no-orden"><thead><tr><th>Fecha</th><th>Valor</th><th>Comentario</th><th>Registró</th><th></th></tr></thead><tbody>
+          ${e.ms.slice().reverse().map((m) => `<tr><td>${fecha(m.Fecha)}</td><td><b>${fmtValor(b, m.Valor)}</b></td><td>${esc(m.Comentario || "—")}</td><td>${esc(nombreUsuario(m.Registrado_Por))}</td><td>${puede ? `<button class="btn chico" data-bn-med="${esc(m.ID_Medicion)}">Editar</button>` : ""}</td></tr>`).join("")}</tbody></table></details>` : ""}
+      </div>`;
+    return `<div class="card vl-prop"><div class="titulo-fila"><h2>Propuesta de valor para la FSFB</h2>${puede ? `<button class="btn chico" id="b-vl-prop">Editar propuesta</button>` : ""}</div>
+        <div class="vl-grid">
+          <div><div class="bn-k">Beneficio esperado</div>${p.Beneficio_Esperado ? esc(p.Beneficio_Esperado) : `<span class="sub">Sin registrar. ¿Qué cambia cuando el proyecto entregue?</span>`}</div>
+          <div><div class="bn-k">Valor para la FSFB</div>${p.Valor_FSFB ? esc(p.Valor_FSFB) : `<span class="sub">Sin registrar. ¿Por qué le importa a la Fundación?</span>`}</div>
+          <div><div class="bn-k">Nivel de valor para la FSFB</div>${chipNivel(V.nivel, !V.manual && !!V.nivel)}${V.manual && V.sugerido && V.sugerido !== V.nivel ? `<div class="sub">La app sugiere: ${esc(V.sugerido)}</div>` : ""}</div>
+        </div></div>
+      <div class="kpis kpis-3">
+        <div class="kpi estatico"><span class="kpi-t">Índice de valor (logro ponderado)</span><span class="kpi-v">${V.indice === null ? "—" : `${V.indice}%`}</span><span class="sub">pesa más lo crítico (4·3·2·1)</span></div>
+        <div class="kpi estatico"><span class="kpi-t">Beneficios</span><span class="kpi-v">${V.bs.length}</span><span class="sub">${NIVELES_VALOR.map((n) => (nImp(n) ? `${nImp(n)} ${n.toLowerCase()}` : "")).filter(Boolean).join(" · ") || "ninguno"}</span></div>
+        <div class="kpi estatico ${V.riesgo ? "alerta" : ""}"><span class="kpi-t">En riesgo</span><span class="kpi-v">${V.riesgo}</span><span class="sub">${V.pendientes} medición(es) pendiente(s)</span></div>
+        ${V.valorFin ? `<div class="kpi estatico"><span class="kpi-t">Valor financiero (meta)</span><span class="kpi-v kpi-chico">${cop(V.valorFin)}</span><span class="sub">${V.roi ? `ROI ${V.roi.toFixed(1).replace(".", ",")}x · payback ${V.payback} meses` : "sin inversión registrada"}</span></div>` : ""}
+      </div>
+      <div class="card"><div class="titulo-fila"><h2>Impacto por dimensión de valor</h2></div>
+        ${filasDim ? `<div class="tabla-scroll"><table class="no-orden vl-dims"><thead><tr><th>Dimensión</th><th>Impacto</th><th>Indicadores y logro</th></tr></thead><tbody>${filasDim}</tbody></table></div>` : vacio("Aún no se ha marcado el impacto por dimensión. Usa «Editar propuesta».")}
+        <p class="sub">El valor no es solo financiero: seguridad del paciente, eficiencia operacional, experiencia, cumplimiento y lo estratégico también cuentan.</p></div>
+      <div class="card"><div class="titulo-fila"><h2>Beneficios <span class="contador">${V.bs.length}</span></h2>${puede ? `<button class="btn chico primario" id="b-bn">+ Beneficio</button>` : ""}</div>
+        ${V.bs.length ? V.bs.map(tarjeta).join("") : vacio("Registra los beneficios que el proyecto debe dejar, con su indicador, línea base y meta.")}
+        <p class="sub">Los beneficios se siguen midiendo después del cierre del proyecto.</p></div>`;
+  }
+  function enlazarValor(el, p) {
+    if ($("#b-vl-prop")) $("#b-vl-prop").addEventListener("click", () => formPropuestaValor(p));
+    if ($("#b-bn")) $("#b-bn").addEventListener("click", () => formBeneficio(p));
+    el.querySelectorAll("[data-bn-edit]").forEach((b) => b.addEventListener("click", () => formBeneficio(p, beneficiosDe(p.ID_Proyecto).find((x) => x.ID_Beneficio === b.dataset.bnEdit))));
+    el.querySelectorAll("[data-bn-medir]").forEach((b) => b.addEventListener("click", () => formMedicion(p, beneficiosDe(p.ID_Proyecto).find((x) => x.ID_Beneficio === b.dataset.bnMedir))));
+    el.querySelectorAll("[data-bn-med]").forEach((b) => b.addEventListener("click", () => { const m = (S.datos.Mediciones || []).find((x) => x.ID_Medicion === b.dataset.bnMed); if (m) formMedicion(p, beneficiosDe(p.ID_Proyecto).find((x) => x.ID_Beneficio === m.ID_Beneficio), m); }));
+  }
+  function formPropuestaValor(p) {
+    const V = valorProyecto(p), dims = [...new Set([...dimensiones(), ...Object.keys(V.imp)])];
+    const campos = [
+      { k: "Beneficio_Esperado", label: "Beneficio esperado", tipo: "textarea", placeholder: "Qué cambia cuando el proyecto entregue. Ej.: resultados de patología en menos de 48 h y sin errores de rotulado." },
+      { k: "Valor_FSFB", label: "Valor para la FSFB", tipo: "textarea", placeholder: "Por qué le importa a la Fundación: paciente, acreditación, eficiencia, costos, estrategia." },
+      { k: "Nivel_Valor", label: "Nivel de valor para la FSFB", tipo: "select", opciones: NIVELES_VALOR, textoVacio: `Automático${V.sugerido ? ` (sugerido: ${V.sugerido})` : ""}`, ayuda: "Si lo dejas en automático, la app lo sugiere según el impacto por dimensión y la importancia de los beneficios." },
+      { seccion: "Impacto por dimensión de valor", ayuda: "Alto, medio, bajo o vacío si no aplica" },
+      ...dims.map((d, i) => ({ k: `_dim${i}`, label: d, tipo: "select", opciones: IMPACTOS_DIM, textoVacio: "No aplica", def: V.imp[d] || "" })),
+    ];
+    modal(`Propuesta de valor · ${p.Nombre}`, campos, p, (fd) => {
+      const imp = {}; dims.forEach((d, i) => { if (fd[`_dim${i}`]) imp[d] = fd[`_dim${i}`]; });
+      guardar(() => S.api.actualizarPorId("Proyectos", "ID_Proyecto", p.ID_Proyecto, { Beneficio_Esperado: fd.Beneficio_Esperado, Valor_FSFB: fd.Valor_FSFB, Nivel_Valor: fd.Nivel_Valor, Impacto_Valor: Object.keys(imp).length ? JSON.stringify(imp) : "", ...sello() }), "Propuesta de valor guardada");
+    });
+  }
+  function formBeneficio(p, b) {
+    const nuevo = !b;
+    const campos = [
+      { k: "Importancia", label: "Importancia", tipo: "select", opciones: NIVELES_VALOR.map((n) => [n, `${n} (peso ${PESO_IMP[n]})`]), def: "Alto" },
+      { k: "Dimension", label: "Dimensión de valor", tipo: "select", opciones: dimensiones() },
+      { k: "Beneficio_Esperado", label: "Beneficio esperado", tipo: "textarea", placeholder: "Qué mejora. Ej.: eliminar muestras mal rotuladas con código de barras en la toma." },
+      { k: "Valor_FSFB", label: "Valor para la FSFB", tipo: "textarea", placeholder: "Por qué importa. Ej.: evita repetir biopsias y eventos adversos; requisito de acreditación." },
+      { seccion: "Cómo se mide" },
+      { k: "Indicador", label: "Indicador (KPI)", ancho: true, placeholder: "Muestras mal rotuladas por mes" },
+      { k: "Tipo_Medida", label: "Tipo de medida", tipo: "select", opciones: [["Numérico", "Numérico (línea base → meta)"], ["Cualitativo", "Cualitativo (cumplido / parcial / pendiente)"]], def: "Numérico" },
+      { k: "Unidad", label: "Unidad", placeholder: "horas, %, casos/mes, COP", ayuda: "Si es dinero escribe COP: se calcula ROI y payback." },
+      { k: "Linea_Base", label: "Línea base (hoy)", tipo: "number", placeholder: "12" },
+      { k: "Meta", label: "Meta", tipo: "number", placeholder: "2", ayuda: "Puede ser menor que la línea base (bajar) o mayor (subir)." },
+      { k: "Medir_Desde", label: "Medir desde", tipo: "date", def: p.Fecha_Fin_Plan && p.Fecha_Fin_Plan > R.hoyISO() ? p.Fecha_Fin_Plan : R.hoyISO(), ayuda: "Normalmente cuando el proyecto sale a producción." },
+      { k: "Fecha_Meta", label: "Fecha meta", tipo: "date" },
+      { k: "Frecuencia_Medicion", label: "Medir cada", tipo: "select", opciones: Object.keys(FREC_MED), def: "Mensual" },
+      { k: "Dueno", label: "Dueño del beneficio (área o persona)", placeholder: "Patología" },
+    ];
+    const ms = b ? medicionesDe(b.ID_Beneficio) : [];
+    modal(nuevo ? "Nuevo beneficio" : "Editar beneficio", campos, b || {}, (fd) => {
+      if (fd.Tipo_Medida === "Cualitativo") { fd.Linea_Base = ""; fd.Meta = ""; }
+      if (nuevo) guardar(() => S.api.agregarFila("Beneficios", { ID_Beneficio: R.siguienteIdHijo("BEN", S.datos.Beneficios || [], "ID_Beneficio", p.ID_Proyecto), ID_Proyecto: p.ID_Proyecto, ...fd, Registrado_Por: S.usuario.Correo, Fecha_Registro: R.hoyISO() }), "Beneficio registrado");
+      else guardar(() => S.api.actualizarPorId("Beneficios", "ID_Beneficio", b.ID_Beneficio, fd), "Beneficio actualizado");
+    }, (fd) => {
+      if (!fd.Dimension) return "Elige la dimensión de valor.";
+      if (!fd.Beneficio_Esperado && !fd.Indicador) return "Escribe el beneficio esperado o el indicador.";
+      if (fd.Tipo_Medida !== "Cualitativo") {
+        if (fd.Linea_Base === "" || fd.Meta === "") return "Para una medida numérica escribe la línea base y la meta.";
+        if (fd.Linea_Base === fd.Meta) return "La meta debe ser distinta de la línea base.";
+      }
+      if (fd.Fecha_Meta && fd.Medir_Desde && fd.Fecha_Meta < fd.Medir_Desde) return "La fecha meta no puede ser anterior a «Medir desde».";
+      return "";
+    }, nuevo ? {} : { eliminar: { texto: "Eliminar beneficio", mensaje: `Se eliminará el beneficio${ms.length ? ` y sus ${ms.length} medición(es)` : ""}.`,
+      accion: () => guardar(async () => { if (ms.length) await S.api.eliminarFilas("Mediciones", "ID_Medicion", ms.map((m) => m.ID_Medicion)); await S.api.eliminarFilas("Beneficios", "ID_Beneficio", [b.ID_Beneficio]); }, "Beneficio eliminado") } });
+  }
+  function formMedicion(p, b, m) {
+    if (!b) return;
+    const nuevo = !m, cual = b.Tipo_Medida === "Cualitativo";
+    const campos = [
+      { k: "Fecha", label: "Fecha de la medición", tipo: "date", def: R.hoyISO() },
+      cual ? { k: "Valor", label: "Resultado", tipo: "select", opciones: ["Cumplido", "Parcial", "Pendiente"] }
+        : { k: "Valor", label: `Valor medido${b.Unidad ? ` (${b.Unidad})` : ""}`, tipo: "number", ayuda: `Línea base ${fmtValor(b, b.Linea_Base)} → meta ${fmtValor(b, b.Meta)}` },
+      { k: "Comentario", label: "Comentario / fuente", tipo: "textarea", placeholder: "Fuente del dato o explicación (opcional)" },
+    ];
+    modal(`${nuevo ? "Registrar medición" : "Editar medición"} · ${b.Indicador || b.Dimension}`, campos, m || {}, (fd) => {
+      if (nuevo) guardar(() => S.api.agregarFila("Mediciones", { ID_Medicion: R.siguienteIdHijo("MED", S.datos.Mediciones || [], "ID_Medicion", p.ID_Proyecto), ID_Beneficio: b.ID_Beneficio, ID_Proyecto: p.ID_Proyecto, ...fd, Registrado_Por: S.usuario.Correo }), "Medición registrada");
+      else guardar(() => S.api.actualizarPorId("Mediciones", "ID_Medicion", m.ID_Medicion, fd), "Medición actualizada");
+    }, (fd) => (!fd.Fecha ? "Escribe la fecha." : fd.Valor === "" ? "Escribe el valor medido." : ""),
+    nuevo ? {} : { eliminar: { texto: "Eliminar medición", mensaje: "Se eliminará esta medición.", accion: () => guardar(() => S.api.eliminarFilas("Mediciones", "ID_Medicion", [m.ID_Medicion]), "Medición eliminada") } });
+  }
+
+  // Vista de portafolio: valor por proyecto y por dimensión, beneficios en riesgo y mediciones pendientes.
+  function vValor(el) {
+    const F = S.valF || { nivel: "" };
+    const base = filtrados().filter((p) => p.Estado !== "Cancelado").map((p) => ({ p, V: valorProyecto(p) }));
+    const lista = base.filter((x) => !F.nivel || (F.nivel === "sin" ? !x.V.nivel : x.V.nivel === F.nivel))
+      .sort((a, b) => (PESO_IMP[b.V.nivel] || 0) - (PESO_IMP[a.V.nivel] || 0) || (b.V.indice ?? -1) - (a.V.indice ?? -1) || String(a.p.Nombre).localeCompare(String(b.p.Nombre), "es"));
+    const n = (nv) => base.filter((x) => x.V.nivel === nv).length;
+    const todosB = lista.flatMap((x) => x.V.bs.map((y) => ({ ...y, p: x.p })));
+    const conI = lista.filter((x) => x.V.indice !== null);
+    const indiceP = conI.length ? Math.round(conI.reduce((t, x) => t + x.V.indice * (PESO_IMP[x.V.nivel] || 1), 0) / conI.reduce((t, x) => t + (PESO_IMP[x.V.nivel] || 1), 0)) : null;
+    const valorFin = lista.reduce((t, x) => t + x.V.valorFin, 0);
+    const dims = [...new Set([...dimensiones(), ...todosB.map((x) => x.b.Dimension).filter(Boolean)])];
+    const filaDim = (d) => {
+      const ps = lista.filter((x) => x.V.imp[d] || x.V.bs.some((y) => y.b.Dimension === d));
+      const bs = todosB.filter((x) => x.b.Dimension === d), cl = bs.filter((x) => x.e.logro !== null);
+      if (!ps.length) return "";
+      return `<tr><td class="nowrap"><span class="dim-ico">${ICO_DIM[d] || "•"}</span> ${esc(d)}</td><td>${ps.length}</td><td>${IMPACTOS_DIM.map((i) => { const k = lista.filter((x) => x.V.imp[d] === i).length; return k ? `${chipImp(i)} ${k}` : ""; }).filter(Boolean).join(" ") || "—"}</td>
+        <td>${bs.length}</td><td>${cl.length ? barraLogro(Math.round(cl.reduce((t, x) => t + x.e.logro, 0) / cl.length)) : `<span class="sub">sin medir</span>`}</td><td>${bs.filter((x) => x.e.estado === "En riesgo").length || "—"}</td></tr>`;
+    };
+    const pend = todosB.filter((x) => x.e.pendiente).sort((a, b) => String(a.e.proxima).localeCompare(String(b.e.proxima)));
+    const riesgo = todosB.filter((x) => x.e.estado === "En riesgo").sort((a, b) => (PESO_IMP[b.b.Importancia] || 0) - (PESO_IMP[a.b.Importancia] || 0));
+    el.innerHTML = `<h1>Valor del portafolio</h1>
+      ${barraFiltros()}
+      <div class="filtros"><label class="filtro"><span>Nivel de valor</span><select id="vl-nivel"><option value="">Todos</option>${NIVELES_VALOR.map((v) => `<option ${v === F.nivel ? "selected" : ""}>${v}</option>`).join("")}<option value="sin" ${F.nivel === "sin" ? "selected" : ""}>Sin definir</option></select></label><span class="sub">${lista.length} proyecto(s) · incluye cerrados que siguen midiendo beneficios</span></div>
+      <div class="kpis kpis-3">
+        <div class="kpi estatico"><span class="kpi-t">Proyectos por nivel de valor</span><span class="kpi-v kpi-chico">${NIVELES_VALOR.map((v) => `<span class="pill nv ${clsNivel(v)}">${v} ${n(v)}</span>`).join(" ")}</span><span class="sub">${base.filter((x) => !x.V.nivel).length} sin definir</span></div>
+        <div class="kpi estatico"><span class="kpi-t">Índice de valor del portafolio</span><span class="kpi-v">${indiceP === null ? "—" : `${indiceP}%`}</span><span class="sub">logro de beneficios, ponderado por nivel</span></div>
+        <div class="kpi estatico ${riesgo.length ? "alerta" : ""}"><span class="kpi-t">Beneficios en riesgo</span><span class="kpi-v">${riesgo.length}</span><span class="sub">${riesgo.filter((x) => x.b.Importancia === "Crítico").length} crítico(s) · ${todosB.length} beneficio(s) en total</span></div>
+        <div class="kpi estatico ${pend.length ? "alerta" : ""}"><span class="kpi-t">Mediciones pendientes</span><span class="kpi-v">${pend.length}</span><span class="sub">${valorFin ? `valor financiero meta ${cop(valorFin)}` : "las registra el PM"}</span></div>
+      </div>
+      <div class="card"><h2>Aporte por dimensión de valor</h2>
+        ${dims.map(filaDim).join("") ? `<div class="tabla-scroll"><table class="no-orden"><thead><tr><th>Dimensión</th><th>Proyectos</th><th>Impacto</th><th>Beneficios</th><th>Logro promedio</th><th>En riesgo</th></tr></thead><tbody>${dims.map(filaDim).join("")}</tbody></table></div>` : vacio("Aún no hay proyectos con propuesta de valor. Se registra en la pestaña «Valor» de cada proyecto.")}</div>
+      <div class="card"><h2>Valor por proyecto</h2>
+        ${lista.length ? `<div class="tabla-scroll"><table><thead><tr><th>Proyecto</th><th>PM</th><th>Nivel de valor</th><th>Dimensiones con impacto alto</th><th>Índice de valor</th><th>Beneficios</th><th>En riesgo</th><th>Próxima medición</th></tr></thead><tbody>
+          ${lista.map(({ p, V }) => { const prox = V.bs.map((x) => x.e.proxima).filter(Boolean).sort()[0]; return `<tr class="clic" data-vl-pid="${esc(p.ID_Proyecto)}"><td><b>${esc(p.Nombre)}</b><div class="sub">${esc(p.ID_Proyecto)} · ${esc(p.Estado)}</div>${p.Valor_FSFB ? `<div class="sub vl-frase">${esc(p.Valor_FSFB)}</div>` : ""}</td><td>${persona(nombreUsuario(p.PM))}</td>
+            <td>${chipNivel(V.nivel, !V.manual && !!V.nivel)}</td><td>${Object.entries(V.imp).filter(([, v]) => v === "Alto").map(([d]) => `<span class="chip-act">${ICO_DIM[d] || "•"} ${esc(d)}</span>`).join(" ") || `<span class="sub">—</span>`}</td>
+            <td class="nowrap">${barraLogro(V.indice)}</td><td>${V.bs.length}</td><td>${V.riesgo ? `<b class="baja">${V.riesgo}</b>` : "—"}</td><td class="nowrap">${prox ? `${fecha(prox)}${V.pendientes ? ` <span class="baja">⚠</span>` : ""}` : "—"}</td></tr>`; }).join("")}</tbody></table></div>`
+        : vacio("No hay proyectos con estos filtros.")}</div>
+      ${pend.length || riesgo.length ? `<div class="card"><h2>Para atender</h2><div class="tabla-scroll"><table class="no-orden"><thead><tr><th>Beneficio</th><th>Proyecto</th><th>PM</th><th>Importancia</th><th>Situación</th></tr></thead><tbody>
+        ${[...new Set([...riesgo, ...pend])].slice(0, 30).map((x) => `<tr class="clic" data-vl-pid="${esc(x.p.ID_Proyecto)}"><td>${esc(x.b.Indicador || x.b.Beneficio_Esperado)}<div class="sub">${esc(x.b.Dimension)}</div></td><td>${esc(x.p.Nombre)}</td><td>${esc(nombreUsuario(x.p.PM))}</td><td>${chipNivel(x.b.Importancia)}</td>
+          <td>${x.e.estado === "En riesgo" ? chipEstB("En riesgo") : ""} ${x.e.pendiente ? `<span class="pill vencido">Medición pendiente desde ${fecha(x.e.proxima)}</span>` : ""}</td></tr>`).join("")}</tbody></table></div></div>` : ""}`;
+    enlazarFiltros();
+    $("#vl-nivel").addEventListener("change", (e) => { S.valF = { ...F, nivel: e.target.value }; render(); });
+    el.querySelectorAll("[data-vl-pid]").forEach((r) => r.addEventListener("click", () => { S.fichaTab = "valor"; S.fichaPid = r.dataset.vlPid; ir("ficha", r.dataset.vlPid); }));
+  }
+
   // ---------- Informe ejecutivo en PowerPoint (marca FSFB) ----------
   let cargaPptx = null;
   function libPptx() {
@@ -4300,9 +4545,9 @@ ${x.h}</section>`).join("")}
       { k: "Alcance", label: "Alcance", tipo: "select", ancho: true, opciones: [...(yoPM ? [] : [["", "Todo el portafolio (general)"]]), ...pms.map(([c, n]) => [c, `Solo PM: ${n}`])],
         def: yoPM ? lc(S.usuario.Correo) : S.filtros.pm ? lc(S.filtros.pm) : "", textoVacio: yoPM ? "Seleccione…" : "Todo el portafolio (general)" },
       { k: "Corte", label: "Fecha de corte", tipo: "date", def: R.hoyISO(), ayuda: "Seguimientos, compromisos y capacidad se calculan a esta fecha." },
-      { k: "Incluir", label: "Láminas a incluir", tipo: "checks", opciones: [["pm", "Resumen y sección por cada PM"], ["proyectos", "Estado de los proyectos"], ["capacidad", "Capacidad del equipo"], ["seguimientos", "Seguimientos"], ["compromisos", "Compromisos y riesgos"], ["gantt", "Cronograma del portafolio (Gantt agrupado por PM)"],
+      { k: "Incluir", label: "Láminas a incluir", tipo: "checks", opciones: [["pm", "Resumen y sección por cada PM"], ["proyectos", "Estado de los proyectos"], ["capacidad", "Capacidad del equipo"], ["seguimientos", "Seguimientos"], ["compromisos", "Compromisos y riesgos"], ["gantt", "Cronograma del portafolio (Gantt agrupado por PM)"], ["valor", "Valor para la FSFB (portafolio y, con la lámina por proyecto, el de cada uno)"],
         ["fichas", "Una lámina por proyecto (logros, próximos pasos, hitos)"], ["edt", "EDT y cronograma de cada proyecto (los que tienen cronograma cargado)"]],
-        def: "pm, proyectos, gantt, capacidad, seguimientos, compromisos, edt" },
+        def: "pm, proyectos, gantt, valor, capacidad, seguimientos, compromisos, edt" },
     ];
     modal("Informe de estado en PowerPoint", campos, {}, (fd) => { cerrarModal(); generarInformePPT({ pm: fd.Alcance, corte: fd.Corte || R.hoyISO(), incluir: new Set(String(fd.Incluir).split(/,\s*/).filter(Boolean)) }); },
       (fd) => (fd.Corte && !/^\d{4}-\d{2}-\d{2}$/.test(fd.Corte) ? "Fecha de corte no válida." : ""),
@@ -4370,6 +4615,57 @@ ${x.h}</section>`).join("")}
       };
       const M = metricas(ps);
       const cap = capacidad(corte).filter((x) => x.asign.some((a) => M.ids.has(a.p.ID_Proyecto)) || (pm && lc(x.correo) === pm));
+      // ---- Valor para la FSFB ----
+      const COL_NIV = { "Crítico": "8E1B3E", Alto: PPT.azul, Medio: PPT.claro, Bajo: "AEB8C6" };
+      const nivCelda = (n, i) => (n ? { text: n, options: { fill: { color: COL_NIV[n] || PPT.gris }, color: n === "Medio" || n === "Bajo" ? PPT.texto : PPT.blanco, bold: true, fontSize: 10, align: "center", valign: "middle" } } : celda("—", i, { align: "center" }));
+      const estColor = (e) => (e === "Logrado" ? PPT.Verde : e === "En riesgo" ? PPT.Rojo : e === "En camino" ? PPT.azul : PPT.sec);
+      const valorPortafolio = () => {
+        const base = alcance.filter((p) => p.Estado !== "Cancelado").map((p) => ({ p, V: valorProyecto(p, corte) })).filter((x) => x.V.tieneAlgo);
+        const s = lamina("Valor para la FSFB", "Nivel de valor de los proyectos, aporte por dimensión y logro de los beneficios (no solo financiero)");
+        if (!base.length) return vacioTxt(s, "Aún no hay proyectos con propuesta de valor. Se registra en la pestaña «Valor» de cada proyecto.");
+        NIVELES_VALOR.forEach((n, k) => tile(s, 0.5 + k * 1.55, 1.5, 1.45, 1.25, n, base.filter((x) => x.V.nivel === n).length, "proyecto(s)", COL_NIV[n]));
+        const bs = base.flatMap((x) => x.V.bs), conI = base.filter((x) => x.V.indice !== null);
+        const idx = conI.length ? Math.round(conI.reduce((t, x) => t + x.V.indice * (PESO_IMP[x.V.nivel] || 1), 0) / conI.reduce((t, x) => t + (PESO_IMP[x.V.nivel] || 1), 0)) : null;
+        tile(s, 0.5, 2.9, 3.0, 1.25, "Índice de valor del portafolio", idx === null ? "—" : `${idx}%`, "logro ponderado por nivel", PPT.dorado);
+        const rg = bs.filter((x) => x.e.estado === "En riesgo").length;
+        tile(s, 3.6, 2.9, 2.6, 1.25, "Beneficios en riesgo", rg, `${bs.filter((x) => x.e.pendiente).length} mediciones pendientes`, rg ? PPT.Rojo : PPT.Verde);
+        const dims = dimensiones().filter((d) => base.some((x) => x.V.imp[d]));
+        if (dims.length) s.addChart(pptx.ChartType.bar, IMPACTOS_DIM.map((i) => ({ name: `Impacto ${i.toLowerCase()}`, labels: dims, values: dims.map((d) => base.filter((x) => x.V.imp[d] === i).length) })),
+          { x: 0.5, y: 4.3, w: 5.8, h: 2.7, barDir: "bar", barGrouping: "stacked", chartColors: [PPT.azul, PPT.claro, "C9D3E0"], catAxisOrientation: "maxMin", catAxisLabelFontSize: 9, valAxisLabelFontSize: 8,
+            showLegend: true, legendPos: "t", legendFontSize: 9, showValue: true, dataLabelFontSize: 8, dataLabelFormatCode: "0;;;", dataLabelColor: PPT.blanco, showTitle: true, title: "Proyectos por dimensión de valor", titleFontSize: 11, titleColor: PPT.azul, valGridLine: { color: "E5E5E5", size: 0.5 } });
+        const top = base.sort((a, b) => (PESO_IMP[b.V.nivel] || 0) - (PESO_IMP[a.V.nivel] || 0) || (b.V.indice ?? -1) - (a.V.indice ?? -1)).slice(0, 13);
+        const filas = [[cab("Proyecto"), cab("Nivel", { align: "center" }), cab("Logro", { align: "center" }), cab("En riesgo", { align: "center" })]];
+        top.forEach(({ p, V }, i) => filas.push([celda(corta(p.Nombre, 34), i, { bold: true }), nivCelda(V.nivel, i), celda(V.indice === null ? "—" : `${V.indice}%`, i, { align: "center" }), celda(V.riesgo || "—", i, { align: "center", color: V.riesgo ? PPT.Rojo : PPT.texto, bold: !!V.riesgo })]));
+        tabla(s, filas, [3.3, 1.0, 0.8, 0.88], 1.5, { x: 6.85, rowH: 0.36 });
+      };
+      const valorDeProyecto = (p) => {
+        const V = valorProyecto(p, corte);
+        if (!V.tieneAlgo) return;
+        const s = lamina(`Valor · ${corta(p.Nombre, 52)}`, `Propuesta de valor para la FSFB${V.indice !== null ? ` · índice de valor ${V.indice}%` : ""}${V.valorFin ? ` · valor financiero meta ${cop(V.valorFin)}${V.roi ? ` (ROI ${V.roi.toFixed(1).replace(".", ",")}x)` : ""}` : ""}`);
+        const caja = (x, w, tit, txt) => {
+          s.addShape(pptx.ShapeType.roundRect, { x, y: 1.5, w, h: 1.55, fill: { color: PPT.suave }, line: { color: PPT.suave }, rectRadius: 0.06 });
+          s.addText(tit, { x: x + 0.15, y: 1.55, w: w - 0.3, h: 0.3, fontFace: F, fontSize: 11, bold: true, color: PPT.azul, margin: 0 });
+          s.addText(corta(txt || "Sin registrar.", 300), { x: x + 0.15, y: 1.86, w: w - 0.3, h: 1.12, fontFace: F, fontSize: 11, color: txt ? PPT.texto : PPT.sec, italic: !txt, valign: "top", margin: 0, fit: "shrink" });
+        };
+        caja(0.5, 4.9, "Beneficio esperado", p.Beneficio_Esperado);
+        caja(5.55, 4.9, "Valor para la FSFB", p.Valor_FSFB);
+        s.addShape(pptx.ShapeType.roundRect, { x: 10.6, y: 1.5, w: 2.23, h: 1.55, fill: { color: COL_NIV[V.nivel] || PPT.gris }, line: { color: COL_NIV[V.nivel] || PPT.gris }, rectRadius: 0.06 });
+        s.addText([{ text: "Nivel de valor", options: { fontSize: 10, breakLine: true } }, { text: V.nivel || "Sin definir", options: { fontSize: 24, bold: true, breakLine: true } }, { text: V.nivel && !V.manual ? "sugerido" : "", options: { fontSize: 9 } }],
+          { x: 10.6, y: 1.5, w: 2.23, h: 1.55, fontFace: F, color: V.nivel === "Medio" || V.nivel === "Bajo" ? PPT.texto : PPT.blanco, align: "center", valign: "middle" });
+        const imps = Object.entries(V.imp);
+        let x = 0.5;
+        s.addText("Impacto:", { x, y: 3.2, w: 0.8, h: 0.32, fontFace: F, fontSize: 10, bold: true, color: PPT.azul, margin: 0, valign: "middle" }); x += 0.8;
+        imps.forEach(([d, i]) => { const w = 0.35 + (d.length + i.length) * 0.075; if (x + w > 12.8) return; s.addShape(pptx.ShapeType.roundRect, { x, y: 3.22, w, h: 0.28, fill: { color: i === "Alto" ? PPT.azul : i === "Medio" ? PPT.claro : "DCE3EC" }, line: { color: PPT.blanco }, rectRadius: 0.1 });
+          s.addText(`${d}: ${i}`, { x, y: 3.22, w, h: 0.28, fontFace: F, fontSize: 9, color: i === "Alto" ? PPT.blanco : PPT.texto, align: "center", valign: "middle", margin: 0 }); x += w + 0.1; });
+        if (!imps.length) s.addText("Sin marcar", { x, y: 3.2, w: 3, h: 0.32, fontFace: F, fontSize: 10, color: PPT.sec, italic: true, margin: 0, valign: "middle" });
+        if (!V.bs.length) return vacioTxt(s, "Sin beneficios medibles registrados.", 4.2);
+        const filas = [[cab("Importancia", { align: "center" }), cab("Dimensión"), cab("Beneficio / indicador"), cab("Base → meta", { align: "center" }), cab("Actual", { align: "center" }), cab("Logro", { align: "center" }), cab("Estado", { align: "center" })]];
+        V.bs.slice(0, 7).forEach(({ b, e }, i) => filas.push([nivCelda(b.Importancia, i), celda(b.Dimension, i), celda(corta([b.Indicador, b.Beneficio_Esperado].filter(Boolean).join(" — "), 90), i),
+          celda(b.Tipo_Medida === "Cualitativo" ? "Cualitativo" : `${fmtValor(b, b.Linea_Base)} → ${fmtValor(b, b.Meta)}`, i, { align: "center" }), celda(e.ult ? fmtValor(b, e.ult.Valor) : "—", i, { align: "center" }),
+          celda(e.logro === null ? "—" : `${e.logro}%`, i, { align: "center", bold: true }), celda(e.estado, i, { align: "center", bold: true, color: estColor(e.estado) })]));
+        tabla(s, filas, [1.05, 1.9, 4.2, 1.75, 1.3, 0.8, 1.33], 3.7, { rowH: 0.4, fontSize: 9 });
+        if (V.bs.length > 7) s.addText(`y ${V.bs.length - 7} beneficio(s) más`, { x: 0.5, y: 6.8, w: 6, h: 0.25, fontFace: F, fontSize: 9, color: PPT.sec });
+      };
       // ---- Gantt genérico con figuras (portafolio o proyecto) ----
       const MES3 = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
       const ganttPPT = (s, filas, ini, fin, o = {}) => {
@@ -4597,6 +4893,7 @@ ${x.h}</section>`).join("")}
       };
       if (incluir.has("proyectos")) tablaProyectos(ps, "Estado de los proyectos", !pm);
       if (incluir.has("gantt")) ganttPortafolio();
+      if (incluir.has("valor")) valorPortafolio();
 
       // 5. Secciones por PM (general)
       if (!pm && incluir.has("pm") && gruposPM.length > 1) gruposPM.forEach((g) => {
@@ -4711,7 +5008,7 @@ ${x.h}</section>`).join("")}
         if (ult) s.addText(`Fuente: seguimiento del ${fecha(ult.Fecha_Corte)}`, { x: 4.9, y: 6.7, w: 6, h: 0.28, fontFace: F, fontSize: 9, color: PPT.sec, margin: 0 });
       };
       // Por proyecto: ficha, luego su EDT y su cronograma (si tiene uno cargado).
-      ps.forEach((p) => { if (incluir.has("fichas")) fichaProyecto(p); if (incluir.has("edt")) laminasCronograma(p); });
+      ps.forEach((p) => { if (incluir.has("fichas")) fichaProyecto(p); if (incluir.has("valor") && incluir.has("fichas")) valorDeProyecto(p); if (incluir.has("edt")) laminasCronograma(p); });
 
       const bytes = await pptx.write({ outputType: "uint8array" });
       const nombre = `Estado_Portafolio_${nomPM ? normTxt(nomPM).replace(/[^a-z0-9]+/g, "_") + "_" : ""}${corte}.pptx`;
@@ -4869,6 +5166,8 @@ ${x.h}</section>`).join("")}
     { t: "Último seguimiento", v: (p) => R.estadoSeguimiento(p, S.datos.Seguimientos).ultimaFecha, tipo: "fecha" },
     { t: "Proveedores", v: (p) => idsLista(p.Proveedores).map((i) => (proveedor(i) || {}).Nombre || i).join(", "), ancho: 26 },
     { t: "Puntaje prioridad", v: (p) => (puntaje(p) === null ? "" : puntaje(p)), tipo: "num" },
+    { t: "Nivel de valor FSFB", v: (p) => valorProyecto(p).nivel, ancho: 14 }, { t: "Índice de valor", v: (p) => valorProyecto(p).indice ?? "", tipo: "pct" },
+    { t: "Beneficio esperado", v: (p) => p.Beneficio_Esperado, ancho: 40 }, { t: "Valor para la FSFB", v: (p) => p.Valor_FSFB, ancho: 40 },
     { t: "Comentario de estado", v: (p) => p.Comentario_Estado, ancho: 44 },
   ];
   const colsCompromiso = (conProy) => [
@@ -4979,6 +5278,20 @@ ${x.h}</section>`).join("")}
         { t: "Empresa", v: (r) => empresaDe(r) }, { t: "Proyectos", v: (r) => proyectosDeRecurso(r).map(({ p, roles }) => `${p.Nombre} (${roles.join(", ")})`).join("; "), ancho: 40 }, { t: "Correo", v: (r) => r.Correo, ancho: 28 }, { t: "Teléfono", v: (r) => r.Telefono, ancho: 14 },
         { t: "Capacidad", v: (r) => num0(r.Capacidad) ?? 100, tipo: "pct" }, { t: "Asignado", v: (r) => (asig(r) || {}).total || 0, tipo: "pct" }, { t: "Activo", v: (r) => r.Activo || "Sí", ancho: 8 }], filas: lista }],
         q ? [`Búsqueda: «${q}»`] : []);
+    },
+    valor: () => {
+      const ps = filtrados().filter((p) => p.Estado !== "Cancelado").map((p) => ({ p, V: valorProyecto(p) }));
+      const bs = ps.flatMap(({ p, V }) => V.bs.map((x) => ({ p, ...x })));
+      return exportarExcel("Valor del portafolio", [
+        { nombre: "Proyectos", columnas: [{ t: "Proyecto", v: (x) => x.p.Nombre, ancho: 34 }, { t: "PM", v: (x) => nombreUsuario(x.p.PM) }, { t: "Estado", v: (x) => x.p.Estado, ancho: 12 },
+          { t: "Nivel de valor", v: (x) => x.V.nivel, ancho: 12 }, { t: "Índice de valor", v: (x) => x.V.indice ?? "", tipo: "pct" }, { t: "Beneficio esperado", v: (x) => x.p.Beneficio_Esperado, ancho: 44 },
+          { t: "Valor para la FSFB", v: (x) => x.p.Valor_FSFB, ancho: 44 }, ...dimensiones().map((d) => ({ t: d, v: (x) => x.V.imp[d] || "", ancho: 14 })),
+          { t: "Beneficios", v: (x) => x.V.bs.length, tipo: "num" }, { t: "En riesgo", v: (x) => x.V.riesgo, tipo: "num" }, { t: "Mediciones pendientes", v: (x) => x.V.pendientes, tipo: "num" }], filas: ps },
+        { nombre: "Beneficios", columnas: [{ t: "Proyecto", v: (x) => x.p.Nombre, ancho: 30 }, { t: "Importancia", v: (x) => x.b.Importancia, ancho: 11 }, { t: "Dimensión", v: (x) => x.b.Dimension, ancho: 22 },
+          { t: "Beneficio esperado", v: (x) => x.b.Beneficio_Esperado, ancho: 40 }, { t: "Valor para la FSFB", v: (x) => x.b.Valor_FSFB, ancho: 40 }, { t: "Indicador", v: (x) => x.b.Indicador, ancho: 30 },
+          { t: "Unidad", v: (x) => x.b.Unidad, ancho: 10 }, { t: "Línea base", v: (x) => x.b.Linea_Base }, { t: "Meta", v: (x) => x.b.Meta }, { t: "Último valor", v: (x) => (x.e.ult ? x.e.ult.Valor : "") },
+          { t: "Fecha última medición", v: (x) => (x.e.ult ? x.e.ult.Fecha : ""), tipo: "fecha" }, { t: "Logro", v: (x) => x.e.logro ?? "", tipo: "pct" }, { t: "Estado", v: (x) => x.e.estado, ancho: 14 },
+          { t: "Fecha meta", v: (x) => x.b.Fecha_Meta, tipo: "fecha" }, { t: "Próxima medición", v: (x) => x.e.proxima, tipo: "fecha" }, { t: "Dueño", v: (x) => x.b.Dueno }], filas: bs }], filtrosGenerales());
     },
     capacidad: () => {
       const idsF = new Set(filtrados().map((p) => p.ID_Proyecto));
@@ -5256,6 +5569,7 @@ ${x.h}</section>`).join("")}
       Valor: d.Valor, Alineacion: d.Alineacion, Impacto_Paciente: d.Impacto_Paciente, Urgencia: d.Urgencia, Riesgo_Prio: d.Riesgo_Prio, Esfuerzo: d.Esfuerzo, Comentario_Estado: `Viene de la demanda ${d.Codigo_Almera}. ${d.Descripcion || ""}`.trim() };
     formProyecto(null, pref, async (idProyecto) => {
       await S.api.actualizarPorId("Demandas", "ID_Demanda", d.ID_Demanda, { Estado: "Convertida", ID_Proyecto: idProyecto, Fecha_Estado: R.hoyISO() });
+      if (d.Beneficio) await S.api.actualizarPorId("Proyectos", "ID_Proyecto", idProyecto, { Beneficio_Esperado: d.Beneficio });
       const personas = [["Sponsor", d.Sponsor], ["Solicitante", d.Solicitante]].filter(([, n]) => n);
       if (personas.length) {
         const recs = [];
@@ -5885,6 +6199,8 @@ ${x.h}</section>`).join("")}
     const rsg = (S.datos.Riesgos || []).filter((r) => r.ID_Proyecto === pid && ["Abierto", "Materializado"].includes(r.Estado)).length;
     const hit = (S.datos.Hitos || []).filter((h) => h.ID_Proyecto === pid && h.Estado !== "Cumplido").length;
     const tks = (S.datos.Tickets || []).filter((t) => t.ID_Proyecto === pid && !["Resuelto", "Cerrado"].includes(t.Estado)).length;
+    const sinMed = beneficiosDe(pid).filter((b) => !medicionesDe(b.ID_Beneficio).length).length;
+    if (sinMed) n.push(`${sinMed} beneficio(s) sin medir (se siguen midiendo después del cierre)`);
     if (comps) n.push(`${comps} compromiso(s)`); if (rsg) n.push(`${rsg} riesgo(s)`); if (hit) n.push(`${hit} hito(s)`); if (tks) n.push(`${tks} ticket(s)`);
     return n;
   }
@@ -6213,6 +6529,8 @@ ${x.h}</section>`).join("")}
     await borrar("LineasBase", "ID_LB", (S.datos.LineasBase || []).filter((x) => x.ID_Proyecto === pid));
     await borrar("Tareas", "ID_Tarea", (S.datos.Tareas || []).filter((x) => x.ID_Proyecto === pid));
     await borrar("Cronogramas", "ID_Version", (S.datos.Cronogramas || []).filter((x) => x.ID_Proyecto === pid));
+    await borrar("Mediciones", "ID_Medicion", (S.datos.Mediciones || []).filter((x) => x.ID_Proyecto === pid));
+    await borrar("Beneficios", "ID_Beneficio", (S.datos.Beneficios || []).filter((x) => x.ID_Proyecto === pid));
     await S.api.eliminarFilas("Proyectos", "ID_Proyecto", [pid]);
   }
 

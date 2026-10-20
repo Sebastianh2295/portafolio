@@ -1213,3 +1213,31 @@ table.gt-izq thead th { position: sticky; top: 0; z-index: 3; height: 48px; back
 /* v74 — Informe PPT */
 .btn-sugerir + .btn-ppt, .btn-ppt + .btn-exportar { margin-left: 8px; }
 @media (max-width: 760px) { .btn-ppt span { display: none; } }
+/* v76 — Valor para la FSFB */
+.pill.nv { font-weight: 600; }
+.nv-critico { background: #f6dde5; color: #7a1535; }
+.nv-alto { background: #dde8f6; color: #104994; }
+.nv-medio { background: #e3f2fc; color: #1d5f8f; }
+.nv-bajo { background: #eef1f5; color: #4a5568; }
+.nv-na { background: #f3f4f6; color: #8a94a3; font-weight: 400; }
+.bn-logrado { background: #e3f3ea; color: #1e5e3a; } .bn-encamino { background: #e6effc; color: #1f4f8f; }
+.bn-enriesgo { background: #fbe3e0; color: #8e2a1f; } .bn-sinmedicion, .bn-poriniciar { background: #eee; color: #666; }
+.bn-barra { position: relative; display: inline-block; width: 80px; height: 7px; background: var(--borde); border-radius: 4px; vertical-align: middle; }
+.bn-barra i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; background: var(--verde); }
+.bn-barra i.warn { background: var(--amarillo); } .bn-barra i.bad { background: var(--rojo); }
+.vl-grid, .bn-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px 18px; }
+.bn-k { font-size: 12px; color: var(--texto-2, #667); margin-bottom: 2px; }
+.bn-card { border: 1px solid var(--borde); border-radius: 10px; padding: 10px 14px; margin-bottom: 10px; }
+.bn-card.riesgo { border-color: #e5a29a; }
+.bn-cab { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+.bn-der { margin-left: auto; display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.bn-pie { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; align-items: center; margin-top: 10px; }
+.bn-hist { margin-top: 8px; font-size: 13px; } .bn-hist summary { cursor: pointer; color: var(--azul); }
+.dim-ico { display: inline-block; width: 18px; text-align: center; color: var(--azul); font-weight: 700; }
+.dim-ind { margin: 2px 0; font-size: 13px; }
+.vl-frase { max-width: 380px; font-style: italic; }
+.kpi-v.kpi-chico { font-size: 18px; line-height: 1.6; }
+:root[data-tema="oscuro"] .nv-critico { background: #4a1f2c; color: #f4c6d3; }
+:root[data-tema="oscuro"] .nv-alto { background: #1f3352; color: #c7dbf6; }
+:root[data-tema="oscuro"] .nv-medio { background: #1d3a4d; color: #c3e3f7; }
+:root[data-tema="oscuro"] .nv-bajo, :root[data-tema="oscuro"] .nv-na { background: #2a3442; color: #c4ccd8; }
