@@ -1886,7 +1886,7 @@
       <div class="titulo-fila"><h2>${esc(titulo)}</h2><button class="btn enlace" id="m-cerrar" aria-label="Cerrar">✕</button></div>
       <form id="m-form" novalidate>${extra.antes || ""}<div class="form-grid">${cuerpo}</div>${extra.despues || ""}
       <div class="error-campo" id="m-error" role="alert"></div>
-      <div class="acciones derecha">${extra.eliminar ? `<button type="button" class="btn peligro-suave" id="m-eliminar">${esc(extra.eliminar.texto)}</button>` : ""}<button type="button" class="btn" id="m-cancelar">Cancelar</button><button type="submit" class="btn primario">Guardar</button></div></form></div>`;
+      <div class="acciones derecha">${extra.eliminar ? `<button type="button" class="btn peligro-suave" id="m-eliminar">${esc(extra.eliminar.texto)}</button>` : ""}<button type="button" class="btn" id="m-cancelar">Cancelar</button><button type="submit" class="btn primario">${esc(extra.textoBoton || "Guardar")}</button></div></form></div>`;
     document.body.appendChild(m);
     $("#m-cerrar").addEventListener("click", cerrarModal);
     $("#m-cancelar").addEventListener("click", cerrarModal);
@@ -4658,38 +4658,75 @@ ${x.h}</section>`).join("")}
   const corta = (s, n) => { s = String(s ?? "").replace(/\s+/g, " ").trim(); return s.length > n ? s.slice(0, n - 1) + "…" : s; };
 
   function formInformePPT() {
-    const vis = visibles();
-    const pms = [...new Set(vis.filter(CUENTAN).map((p) => lc(p.PM)).filter(Boolean))].map((c) => [c, nombreUsuario(c)]).sort((a, b) => String(a[1]).localeCompare(String(b[1]), "es"));
+    const vis = visibles().slice().sort((a, b) => String(a.Nombre).localeCompare(String(b.Nombre), "es"));
+    const pms = [...new Set(vis.map((p) => lc(p.PM)).filter(Boolean))].map((c) => [c, nombreUsuario(c)]).sort((a, b) => String(a[1]).localeCompare(String(b[1]), "es"));
     const yoPM = R.soloPM(S.usuario);
+    const pmIni = S.filtros.pm ? lc(S.filtros.pm) : "";
+    const ck = (cls, val, txt, sub, on, extra = "") => `<label class="check inf-op" ${extra}><input type="checkbox" class="${cls}" value="${esc(val)}" ${on ? "checked" : ""}> <span>${esc(txt)}${sub ? ` <span class="sub">${esc(sub)}</span>` : ""}</span></label>`;
+    const html = `<div class="inf-alc">
+        <p class="sub">Elige uno o varios PM y/o uno o varios proyectos. Si no marcas nada, sale todo el portafolio. Si combinas, entran los proyectos de los PM marcados más los proyectos marcados.</p>
+        <div class="inf-cols">
+          <div class="inf-col"><div class="inf-cab"><b>PM</b> <span class="sub" id="inf-npm"></span> ${pms.length > 1 ? `<button type="button" class="btn enlace" data-inf-todos="inf-pm">Todos</button> <button type="button" class="btn enlace" data-inf-ninguno="inf-pm">Ninguno</button>` : ""}</div>
+            <div class="inf-lista">${pms.map(([c, n]) => ck("inf-pm", c, n, `${vis.filter((p) => lc(p.PM) === c && CUENTAN(p)).length} activos`, c === pmIni)).join("")}</div></div>
+          <div class="inf-col"><div class="inf-cab"><b>Proyectos</b> <span class="sub" id="inf-npr"></span> <button type="button" class="btn enlace" data-inf-ninguno="inf-pr">Ninguno</button></div>
+            <input type="search" id="inf-q" placeholder="Buscar proyecto, ID o PM" aria-label="Buscar proyecto">
+            <label class="check inf-op"><input type="checkbox" id="inf-cerrados"> <span class="sub">Mostrar también cerrados y cancelados</span></label>
+            <div class="inf-lista inf-lista-pr">${vis.map((p) => ck("inf-pr", p.ID_Proyecto, p.Nombre, `${p.ID_Proyecto} · ${nombreUsuario(p.PM)}${CUENTAN(p) ? "" : ` · ${p.Estado}`}`, false, `data-txt="${esc(normTxt(`${p.Nombre} ${p.ID_Proyecto} ${nombreUsuario(p.PM)}`))}" data-activo="${CUENTAN(p) ? 1 : 0}"`)).join("")}</div></div>
+        </div>
+        <div class="inf-resumen" id="inf-res"></div></div>`;
     const campos = [
-      { k: "Alcance", label: "Alcance", tipo: "select", ancho: true, opciones: [...(yoPM ? [] : [["", "Todo el portafolio (general)"]]), ...pms.map(([c, n]) => [c, `Solo PM: ${n}`])],
-        def: yoPM ? lc(S.usuario.Correo) : S.filtros.pm ? lc(S.filtros.pm) : "", textoVacio: yoPM ? "Seleccione…" : "Todo el portafolio (general)" },
+      { html },
       { k: "Corte", label: "Fecha de corte", tipo: "date", def: R.hoyISO(), ayuda: "Seguimientos, compromisos y capacidad se calculan a esta fecha." },
       { k: "Incluir", label: "Láminas a incluir", tipo: "checks", opciones: [["pm", "Resumen y sección por cada PM"], ["proyectos", "Estado de los proyectos"], ["capacidad", "Capacidad del equipo"], ["seguimientos", "Seguimientos"], ["compromisos", "Compromisos y riesgos"], ["gantt", "Cronograma del portafolio (Gantt agrupado por PM)"], ["valor", "Valor para la FSFB (portafolio y, con la lámina por proyecto, el de cada uno)"],
         ["fichas", "Una lámina por proyecto (logros, próximos pasos, hitos)"], ["edt", "EDT y cronograma de cada proyecto (los que tienen cronograma cargado)"]],
         def: "pm, proyectos, gantt, valor, capacidad, seguimientos, compromisos, edt" },
     ];
-    modal("Informe de estado en PowerPoint", campos, {}, (fd) => { cerrarModal(); generarInformePPT({ pm: fd.Alcance, corte: fd.Corte || R.hoyISO(), incluir: new Set(String(fd.Incluir).split(/,\s*/).filter(Boolean)) }); },
+    const marcados = (m, cls) => [...m.querySelectorAll(`.${cls}:checked`)].map((i) => i.value);
+    modal("Informe de estado en PowerPoint", campos, {}, (fd, sel) => { cerrarModal(); generarInformePPT({ pms: new Set(sel.pms), pids: new Set(sel.pids), corte: fd.Corte || R.hoyISO(), incluir: new Set(String(fd.Incluir).split(/,\s*/).filter(Boolean)) }); },
       (fd) => (fd.Corte && !/^\d{4}-\d{2}-\d{2}$/.test(fd.Corte) ? "Fecha de corte no válida." : ""),
-      { antes: `<p class="sub">Genera una presentación con la marca FSFB (portada, resumen ejecutivo y las láminas que elijas). Se descarga como .pptx y la puedes editar en PowerPoint.</p>` });
+      { textoBoton: "Generar PowerPoint", antes: `<p class="sub">Presentación sobre la plantilla FSFB (portada, resumen ejecutivo y las láminas que elijas). Se descarga como .pptx y la puedes editar en PowerPoint.</p>`,
+        init: (m) => {
+          const q = m.querySelector("#inf-q"), cerr = m.querySelector("#inf-cerrados");
+          const filtrar = () => { const t = normTxt(q.value); m.querySelectorAll(".inf-lista-pr .inf-op").forEach((l) => { const i = l.querySelector("input"); l.hidden = !(i.checked || ((!t || l.dataset.txt.includes(t)) && (cerr.checked || l.dataset.activo === "1"))); }); };
+          const resumir = () => {
+            const a = marcados(m, "inf-pm"), b = marcados(m, "inf-pr");
+            m.querySelector("#inf-npm").textContent = a.length ? `(${a.length})` : "";
+            m.querySelector("#inf-npr").textContent = b.length ? `(${b.length})` : "";
+            const n = vis.filter((p) => (!a.length && !b.length ? CUENTAN(p) : (a.includes(lc(p.PM)) && CUENTAN(p)) || b.includes(p.ID_Proyecto))).length;
+            m.querySelector("#inf-res").innerHTML = `<b>Alcance:</b> ${!a.length && !b.length ? "todo el portafolio" : [a.length ? `${a.length === 1 ? "PM" : `${a.length} PM`}: ${a.map(nombreUsuario).join(", ")}` : "", b.length ? `${b.length} proyecto(s) marcado(s)` : ""].filter(Boolean).join(" + ")} · <b>${n}</b> proyecto(s) en el informe`;
+          };
+          q.addEventListener("input", filtrar); cerr.addEventListener("change", filtrar);
+          m.addEventListener("change", (e) => { if (e.target.matches(".inf-pm, .inf-pr")) { resumir(); filtrar(); } });
+          m.querySelectorAll("[data-inf-todos]").forEach((b) => b.addEventListener("click", () => { m.querySelectorAll(`.${b.dataset.infTodos}`).forEach((i) => { i.checked = true; }); resumir(); }));
+          m.querySelectorAll("[data-inf-ninguno]").forEach((b) => b.addEventListener("click", () => { m.querySelectorAll(`.${b.dataset.infNinguno}`).forEach((i) => { i.checked = false; }); resumir(); filtrar(); }));
+          if (yoPM) m.querySelectorAll(".inf-pm").forEach((i) => { i.checked = true; });
+          filtrar(); resumir();
+        },
+        recoger: (m) => ({ datos: { pms: marcados(m, "inf-pm"), pids: marcados(m, "inf-pr") } }) });
   }
 
-  async function generarInformePPT({ pm, corte, incluir }) {
+  async function generarInformePPT({ pms = new Set(), pids = new Set(), corte, incluir }) {
     cargando(true, "Generando PowerPoint…");
     try {
       // Fondos, detalle de esquina y logo tomados de la plantilla FSFB_Plantilla_2026.pptx.
       const [Pptx, imgPortada, imgOscura, imgCierre, imgEsquina, imgLogo] = await Promise.all([libPptx(), ...["portada.jpg", "oscura.jpg", "cierre.jpg", "esquina.png", "logo_pie.png"].map((f) => imagenDataURL(`assets/ppt/${f}`))]);
       const segs = S.datos.Seguimientos;
       const todos = visibles();
-      const alcance = todos.filter((p) => !pm || lc(p.PM) === pm);
-      const ps = alcance.filter(CUENTAN).sort((a, b) => String(nombreUsuario(a.PM)).localeCompare(String(nombreUsuario(b.PM)), "es") || String(a.Nombre).localeCompare(String(b.Nombre), "es"));
+      // Alcance: todo el portafolio, o los proyectos de los PM marcados más los proyectos marcados (estos aunque estén cerrados).
+      const libre = !pms.size && !pids.size;
+      const alcance = todos.filter((p) => libre || pms.has(lc(p.PM)) || pids.has(p.ID_Proyecto));
+      const ps = alcance.filter((p) => CUENTAN(p) || pids.has(p.ID_Proyecto)).sort((a, b) => String(nombreUsuario(a.PM)).localeCompare(String(nombreUsuario(b.PM)), "es") || String(a.Nombre).localeCompare(String(b.Nombre), "es"));
+      const pmsEnInforme = [...new Set(ps.map((p) => lc(p.PM)))];
+      const pm = !libre && pmsEnInforme.length === 1 ? pmsEnInforme[0] : "";   // un solo PM: informe "del PM" (sin secciones por PM)
       const nomPM = pm ? nombreUsuario(pm) : "";
+      const alcanceTxt = libre ? "" : pids.size && !pms.size && ps.length === 1 ? `Proyecto: ${ps[0].Nombre}` : nomPM && !pids.size ? `PM: ${nomPM}`
+        : [pms.size ? `PM: ${[...pms].map(nombreUsuario).join(", ")}` : "", pids.size ? `${pids.size} proyecto(s) seleccionado(s)` : ""].filter(Boolean).join(" + ");
       const pptx = new Pptx();
       pptx.layout = "LAYOUT_WIDE";   // 13,33 × 7,5 in
       pptx.author = S.usuario ? S.usuario.Nombre || S.usuario.Correo : "Oficina de Proyectos";
       pptx.company = "Fundación Santa Fe de Bogotá"; pptx.title = "Estado del portafolio de proyectos";
       const F = PPT.fuente, W = 13.333;
-      const pie = `Oficina de Proyectos · Fundación Santa Fe de Bogotá · Corte ${fecha(corte)}${nomPM ? ` · PM: ${nomPM}` : ""}`;
+      const pie = `Oficina de Proyectos · Fundación Santa Fe de Bogotá · Corte ${fecha(corte)}${alcanceTxt ? ` · ${corta(alcanceTxt, 70)}` : ""}`;
       // Layouts de la plantilla: portada (foto), separador oscuro (curvas), contenido (esquina + logo) y cierre (edificio).
       pptx.defineSlideMaster({ title: "PORTADA", background: { data: imgPortada } });
       pptx.defineSlideMaster({ title: "SECCION", background: { data: imgOscura } });
@@ -4973,7 +5010,7 @@ ${x.h}</section>`).join("")}
       const port = pptx.addSlide({ masterName: "PORTADA" });
       port.addText([
         { text: "Estado del portafolio de proyectos", options: { fontSize: 24, bold: true, breakLine: true } },
-        { text: nomPM ? `Informe del PM: ${nomPM}` : "Informe general de la Oficina de Proyectos", options: { fontSize: 13, breakLine: true } },
+        { text: alcanceTxt ? corta(alcanceTxt.replace(/^PM: /, nomPM && !pids.size ? "Informe del PM: " : "PM: "), 90) : "Informe general de la Oficina de Proyectos", options: { fontSize: 13, breakLine: true } },
         { text: `Corte: ${fechaLarga(corte)}`, options: { fontSize: 13, breakLine: true } },
         { text: `Proyectos activos y en pausa: ${ps.length}`, options: { fontSize: 13 } },
       ], { x: 0.44, y: 4.74, w: 5.26, h: 1.82, fontFace: F, color: PPT.blanco, valign: "middle", margin: 0.05, fit: "shrink" });
@@ -4998,7 +5035,7 @@ ${x.h}</section>`).join("")}
         if (m.pres) s.addText(`Presupuesto de proyectos activos: ${cop(m.pres)} · ejecutado ${cop(m.ejec)} (${Math.round((m.ejec / m.pres) * 100)}%)`, { x: 0.5, y: 6.85, w: 4.5, h: 0.25, fontFace: F, fontSize: 8, color: PPT.sec, margin: 0 });
         return s;
       };
-      resumen(ps, M, "Resumen ejecutivo", nomPM ? `Proyectos de ${nomPM} activos o en pausa` : "Todos los proyectos activos o en pausa del portafolio");
+      resumen(ps, M, "Resumen ejecutivo", libre ? "Todos los proyectos activos o en pausa del portafolio" : nomPM && !pids.size ? `Proyectos de ${nomPM} activos o en pausa` : `Alcance: ${corta(alcanceTxt, 110)}`);
 
       // 3. Resumen por PM (general)
       const gruposPM = [...new Set(ps.map((p) => lc(p.PM)))].map((c) => ({ c, n: nombreUsuario(c), lista: ps.filter((p) => lc(p.PM) === c) })).sort((a, b) => String(a.n).localeCompare(String(b.n), "es"));
@@ -5162,7 +5199,8 @@ ${x.h}</section>`).join("")}
       const fin = pptx.addSlide({ masterName: "CIERRE" });
       fin.addText("Gracias", { x: 7.646, y: 2.838, w: 4.542, h: 1.823, fontFace: F, fontSize: 36, bold: true, color: PPT.blanco, valign: "middle", margin: 0 });
       const bytes = await pptx.write({ outputType: "uint8array" });
-      const nombre = `Estado_Portafolio_${nomPM ? normTxt(nomPM).replace(/[^a-z0-9]+/g, "_") + "_" : ""}${corte}.pptx`;
+      const sufijo = libre ? "" : ps.length === 1 ? ps[0].Nombre : nomPM || (pms.size ? `${pms.size}_PM` : "") + (pids.size ? `${pms.size ? "_" : ""}${pids.size}_proyectos` : "");
+      const nombre = `Estado_Portafolio_${sufijo ? normTxt(sufijo).replace(/[^a-z0-9]+/g, "_").slice(0, 40) + "_" : ""}${corte}.pptx`;
       descargar(bytes, nombre, "application/vnd.openxmlformats-officedocument.presentationml.presentation");
       toast(`Presentación generada: ${nombre}`);
     } catch (e) { toast("No se pudo generar la presentación: " + e.message + (S.modo === "panel" ? " Si el panel bloquea la descarga, abre la app en ventana grande." : ""), true); }
