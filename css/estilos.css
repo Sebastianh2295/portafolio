@@ -1241,3 +1241,16 @@ table.gt-izq thead th { position: sticky; top: 0; z-index: 3; height: 48px; back
 :root[data-tema="oscuro"] .nv-alto { background: #1f3352; color: #c7dbf6; }
 :root[data-tema="oscuro"] .nv-medio { background: #1d3a4d; color: #c3e3f7; }
 :root[data-tema="oscuro"] .nv-bajo, :root[data-tema="oscuro"] .nv-na { background: #2a3442; color: #c4ccd8; }
+/* v77 — Edición directa en tablas */
+[data-ed] { cursor: text; position: relative; }
+[data-ed]:hover { background: rgba(16, 73, 148, .06); box-shadow: inset 0 0 0 1px rgba(16, 73, 148, .35); }
+[data-ed]:hover::after { content: "✎"; position: absolute; top: 2px; right: 4px; font-size: 11px; color: var(--azul); opacity: .8; }
+[data-ed]:focus-visible { outline: 2px solid var(--azul); outline-offset: -2px; }
+[data-ed].editando { background: #fff; box-shadow: inset 0 0 0 2px var(--azul); }
+[data-ed].editando::after { content: none; }
+.ed-caja { display: flex; flex-direction: column; gap: 2px; min-width: 120px; }
+.ed-ctl { width: 100%; min-width: 110px; font: inherit; padding: 4px 6px; border: 1px solid var(--azul); border-radius: 6px; background: #fff; color: #222; }
+textarea.ed-ctl { min-width: 220px; }
+.ed-ayuda { font-size: 10.5px; color: var(--texto-2, #778); white-space: nowrap; }
+.ed-guardando { font-size: 12px; color: var(--azul); font-style: italic; }
+:root[data-tema="oscuro"] [data-ed].editando, :root[data-tema="oscuro"] .ed-ctl { background: #1d2733; color: #e8eef6; }

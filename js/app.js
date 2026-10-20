@@ -286,6 +286,7 @@
 
   // ---------- Estructura ----------
   function render() {
+    ED.clear();
     S.charts.forEach((c) => c.destroy());
     S.charts = [];
     if (!S.usuario) return pantallaLogin();
@@ -861,7 +862,8 @@
         const coms = comentariosDe(c.ID_Compromiso);
         const ult = coms[coms.length - 1];
         return `<tr>${conProyecto ? `<td><button class="btn enlace" data-pid="${esc(c.ID_Proyecto)}" title="Ir al proyecto"><b>${esc(p.Nombre)}</b></button></td>` : ""}
-          <td>${esc(c.Compromiso)}<div class="sub">${esc(origen(c))}</div></td><td>${celdaResp(c, R.puedeEditar(S.usuario, p, "compromisos"))}</td><td>${fecha(c.Fecha_Compromiso)}</td>
+          <td${ed({ puede: R.puedeEditar(S.usuario, p, "compromisos"), tabla: "Compromisos", idCol: "ID_Compromiso", id: c.ID_Compromiso, campo: "Compromiso", tipo: "textarea", valor: c.Compromiso, requerido: true, etiqueta: "Compromiso" })}>${esc(c.Compromiso)}<div class="sub">${esc(origen(c))}</div></td><td>${celdaResp(c, R.puedeEditar(S.usuario, p, "compromisos"))}</td>
+          <td class="nowrap"${ed({ puede: R.puedeEditar(S.usuario, p, "compromisos"), tabla: "Compromisos", idCol: "ID_Compromiso", id: c.ID_Compromiso, campo: "Fecha_Compromiso", tipo: "date", valor: c.Fecha_Compromiso, etiqueta: "Fecha del compromiso" })}>${fecha(c.Fecha_Compromiso)}</td>
           <td>${pillComp(c)}${e === "Cerrado" && c.Fecha_Cierre ? `<div class="sub">${fecha(c.Fecha_Cierre)}</div>` : ""}</td>
           <td class="opc">${ult ? `<span class="ult-com">${esc(resumenCom(ult))}</span><div class="sub">${esc(nombreUsuario(ult.Autor))} · ${fechaHora(ult.Fecha_Hora)}</div>` : `<span class="sub">Sin comentarios</span>`}</td>
           <td class="derecha nowrap"><button class="btn chico ${coms.length ? "" : "primario-suave"}" data-abrir-comp="${esc(c.ID_Compromiso)}">${coms.length ? `Comentarios (${coms.length})` : "Abrir"}</button>
@@ -1296,6 +1298,21 @@
     const lista = filtrados().filter((p) => (!FL.semaforo || p.Semaforo === FL.semaforo) &&
       (!FL.texto || `${p.ID_Proyecto} ${p.Nombre} ${p.Cliente_Area} ${p.Codigo_Almera || ""}`.toLowerCase().includes(FL.texto.toLowerCase())))
       .sort((a, b) => String(a.Nombre).localeCompare(String(b.Nombre), "es"));
+    // Celdas editables con clic (según permisos). Cerrar/cancelar y mover la fecha comprometida pasan por su flujo.
+    const pmsEd = usuariosConRol("PM").sort((a, b) => String(a.Nombre).localeCompare(String(b.Nombre), "es")).map((x) => [x.Correo, x.Nombre || x.Correo]);
+    const EP = (p, campo, o = {}) => ed({ puede: R.puedeEditar(S.usuario, p, "editarProyecto") && (o.puede ?? true), tabla: "Proyectos", idCol: "ID_Proyecto", id: p.ID_Proyecto, campo, valor: p[campo] ?? "", extra: () => sello(), ...o, ...(o.puede !== undefined ? { puede: R.puedeEditar(S.usuario, p, "editarProyecto") && o.puede } : {}) });
+    const edEstado = (p) => (v) => {
+      if (!["Cerrado", "Cancelado"].includes(v) || p.Estado === v) return true;
+      formProyecto(p);
+      const sel = document.querySelector('#m-form [name="Estado"]'); if (sel) { sel.value = v; sel.dispatchEvent(new Event("change", { bubbles: true })); }
+      toast(`Para ${v === "Cerrado" ? "cerrar" : "cancelar"} el proyecto revisa y guarda el formulario.`);
+      return false;
+    };
+    const edFin = (p) => () => {
+      if (!lineaBase(p).tiene) return true;
+      confirmar("Fecha comprometida en línea base", `«${p.Nombre}» tiene línea base: mover el fin planeado se registra como control de cambios (tiempo) para no perder la trazabilidad.`, "Registrar control de cambios", () => { cerrarModal(); formCambio(p); }, "primario");
+      return false;
+    };
     el.innerHTML = `
       <div class="titulo-fila"><h1>Proyectos</h1>${R.puede(S.usuario, "crearProyecto") ? `<button class="btn primario" id="b-nuevo">+ Nueva iniciativa</button>` : ""}</div>
       ${barraFiltros()}
@@ -1307,10 +1324,12 @@
       <div class="card"><div class="tabla-scroll"><table>
         <thead><tr><th>Proyecto</th><th class="opc">Área</th><th>PM</th><th class="opc">Metodología</th><th class="opc">Fase</th><th>Estado</th><th>Semáforo</th><th>Avance real / plan</th><th class="opc">Fin plan</th><th class="opc">Valor FSFB</th><th>Seguimiento</th></tr></thead>
         <tbody>${lista.map((p) => `<tr class="clic ${["Cerrado", "Cancelado"].includes(p.Estado) ? "fila-inactiva" : ""}" data-pid="${esc(p.ID_Proyecto)}" tabindex="0">
-          <td><b>${esc(p.Nombre)}</b><div class="sub">${esc(p.ID_Proyecto)} · prioridad ${esc(String(p.Prioridad).toLowerCase())}</div></td><td class="opc">${esc(p.Cliente_Area)}</td>
-          <td>${persona(nombreUsuario(p.PM))}</td><td class="opc">${esc(p.Metodologia)}</td><td class="opc">${chipFase(p.Fase)}</td><td>${chipEstadoP(p.Estado)}</td><td>${p.Estado === "Activo" || p.Semaforo ? chipSemaforo(p.Semaforo) : `<span class="sub">—</span>`}</td>
-          <td class="celda-avance">${barraAvance(p.Avance_Real, p.Avance_Planeado)}</td><td class="opc">${fecha(p.Fecha_Fin_Plan)}</td>
-          <td class="opc">${(() => { const V = valorProyecto(p); return V.nivel ? `${chipNivel(V.nivel)}${V.indice !== null ? `<div class="sub">logro ${V.indice}%</div>` : ""}` : `<span class="sub">—</span>`; })()}</td>
+          <td><b>${esc(p.Nombre)}</b><div class="sub">${esc(p.ID_Proyecto)} · prioridad ${esc(String(p.Prioridad).toLowerCase())}</div></td><td class="opc"${EP(p, "Cliente_Area", { tipo: "select", opciones: S.cat.Cliente_Area, etiqueta: "Área" })}>${esc(p.Cliente_Area)}</td>
+          <td${EP(p, "PM", { tipo: "select", opciones: pmsEd, puede: R.puede(S.usuario, "verTodo"), etiqueta: "PM" })}>${persona(nombreUsuario(p.PM))}</td><td class="opc"${EP(p, "Metodologia", { tipo: "select", opciones: S.cat.Metodologia, etiqueta: "Metodología" })}>${esc(p.Metodologia)}</td>
+          <td class="opc"${EP(p, "Fase", { tipo: "select", opciones: S.cat.Fase, etiqueta: "Fase" })}>${chipFase(p.Fase)}</td><td${EP(p, "Estado", { tipo: "select", opciones: S.cat.Estado, antes: edEstado(p), etiqueta: "Estado" })}>${chipEstadoP(p.Estado)}</td>
+          <td${EP(p, "Semaforo", { tipo: "select", opciones: S.cat.Semaforo, vacio: "—", etiqueta: "Semáforo" })}>${p.Estado === "Activo" || p.Semaforo ? chipSemaforo(p.Semaforo) : `<span class="sub">—</span>`}</td>
+          <td class="celda-avance"${EP(p, "Avance_Real", { tipo: "number", min: 0, max: 100, requerido: true, etiqueta: "Avance real" })}>${barraAvance(p.Avance_Real, p.Avance_Planeado)}</td><td class="opc"${EP(p, "Fecha_Fin_Plan", { tipo: "date", requerido: true, antes: edFin(p), validar: (v) => (p.Fecha_Inicio && v < p.Fecha_Inicio ? "El fin no puede ser anterior al inicio." : ""), etiqueta: "Fin planeado" })}>${fecha(p.Fecha_Fin_Plan)}</td>
+          <td class="opc"${EP(p, "Nivel_Valor", { tipo: "select", opciones: NIVELES_VALOR, vacio: `Automático (${valorProyecto(p).sugerido || "sin datos"})`, etiqueta: "Nivel de valor" })}>${(() => { const V = valorProyecto(p); return V.nivel ? `${chipNivel(V.nivel)}${V.indice !== null ? `<div class="sub">logro ${V.indice}%</div>` : ""}` : `<span class="sub">—</span>`; })()}</td>
           <td>${pill(R.estadoSeguimiento(p, S.datos.Seguimientos).estado)}</td></tr>`).join("") || `<tr><td colspan="11">${vacio(visibles().length ? "No hay proyectos con estos filtros. Prueba «Limpiar filtros»." : "Aún no tienes proyectos. Registra el primero con «+ Nueva iniciativa».")}</td></tr>`}</tbody>
       </table></div></div>`;
     enlazarFiltros();
@@ -1409,7 +1428,10 @@
 `,
       hitos: () => `      <div class="card"><div class="titulo-fila"><h2>Hitos</h2>${puedeP("hitos") ? `<button class="btn" id="b-hito">+ Hito</button>` : ""}</div><div class="tabla-scroll"><table>
         <thead><tr><th>Hito</th><th>Fecha plan</th><th>Fecha real</th><th>Estado</th><th></th></tr></thead>
-        <tbody>${hitos.map((h) => { const est = h.Estado !== "Cumplido" && h.Fecha_Plan < hoy ? "Atrasado" : h.Estado; return `<tr><td>${esc(h.Hito)}</td><td>${fecha(h.Fecha_Plan)}</td><td>${h.Fecha_Real ? fecha(h.Fecha_Real) : "—"}</td><td>${pill(est)}</td>
+        <tbody>${hitos.map((h) => { const est = h.Estado !== "Cumplido" && h.Fecha_Plan < hoy ? "Atrasado" : h.Estado; const EH = (campo, o) => ed({ puede: puedeP("hitos"), tabla: "Hitos", idCol: "ID_Hito", id: h.ID_Hito, campo, valor: h[campo] ?? "", ...o });
+          return `<tr><td${EH("Hito", { tipo: "text", requerido: true, etiqueta: "Hito" })}>${esc(h.Hito)}</td><td${EH("Fecha_Plan", { tipo: "date", requerido: true, etiqueta: "Fecha plan" })}>${fecha(h.Fecha_Plan)}</td>
+          <td${EH("Fecha_Real", { tipo: "date", validar: (v) => (v && v > hoy ? "La fecha real no puede ser futura." : ""), extra: (v) => ({ Estado: v ? "Cumplido" : h.Estado === "Cumplido" ? "Pendiente" : h.Estado }), etiqueta: "Fecha real" })}>${h.Fecha_Real ? fecha(h.Fecha_Real) : "—"}</td>
+          <td${EH("Estado", { tipo: "select", opciones: S.cat.Estado_Hito, extra: (v) => (v === "Cumplido" ? { Fecha_Real: h.Fecha_Real || hoy } : { Fecha_Real: "" }), etiqueta: "Estado del hito" })}>${pill(est)}</td>
           <td class="derecha">${puedeP("hitos") ? `<button class="btn chico" data-hito="${esc(h.ID_Hito)}">Editar</button>` : ""}</td></tr>`; }).join("") || `<tr><td colspan="5">${vacio("Sin hitos. Agrega los hitos clave del proyecto con «+ Hito».")}</td></tr>`}</tbody></table></div></div>
 `,
       riesgos: () => seccionRiesgos(p, puedeP("riesgos")),
@@ -3589,8 +3611,8 @@ ${x.h}</section>`).join("")}
       <div class="card"><p class="sub">Directorio único de personas del portafolio. En stakeholders, equipo y responsables de compromisos se eligen de aquí y sus datos se llenan solos; a alguien nuevo lo agregas con «+ Agregar como recurso nuevo» o con «+ Recurso».</p>
         ${lista.length ? `<div class="tabla-scroll"><table><thead><tr><th>Persona</th><th>Proyectos</th><th>Empresa</th><th>Área</th><th>Contacto</th><th>Asignado</th><th></th></tr></thead><tbody>
           ${lista.map((r) => { const a = asig(r), c = num0(r.Capacidad) ?? 100; return `<tr class="${r.Activo === "No" ? "inactivo" : ""}"><td>${persona(r.Nombre, r.Cargo)}${r.Activo === "No" ? ` <span class="pill noaplica">Inactivo</span>` : ""}</td>
-            <td class="rec-proys">${etiquetasProy(r)}</td><td>${esc(empresaDe(r))}</td><td>${esc(r.Area || "—")}</td><td>${contacto(r.Correo, r.Telefono)}</td>
-            <td class="nowrap">${a ? `${a.total}% de ${c}%${a.total > c ? ` <span class="baja">⚠</span>` : ""}<div class="sub">${a.asign.length} asignación(es)</div>` : `<span class="sub">— de ${c}%</span>`}</td>
+            <td class="rec-proys">${etiquetasProy(r)}</td><td>${esc(empresaDe(r))}</td><td${ed({ puede, tabla: "Recursos", idCol: "ID_Recurso", id: r.ID_Recurso, campo: "Area", tipo: "select", opciones: S.cat.Cliente_Area, vacio: "—", valor: r.Area, etiqueta: "Área" })}>${esc(r.Area || "—")}</td><td>${contacto(r.Correo, r.Telefono)}</td>
+            <td class="nowrap"${ed({ puede, tabla: "Recursos", idCol: "ID_Recurso", id: r.ID_Recurso, campo: "Capacidad", tipo: "number", min: 0, max: 100, requerido: true, valor: r.Capacidad ?? "", etiqueta: "Capacidad" })}>${a ? `${a.total}% de ${c}%${a.total > c ? ` <span class="baja">⚠</span>` : ""}<div class="sub">${a.asign.length} asignación(es)</div>` : `<span class="sub">— de ${c}%</span>`}</td>
             <td class="derecha">${puede ? `<button class="btn chico" data-rec="${esc(r.ID_Recurso)}">Editar</button>` : ""}</td></tr>`; }).join("")}</tbody></table></div>`
         : vacio(q ? "Nadie coincide con la búsqueda." : "Aún no hay recursos. Se crean solos con las personas que ya existen o con «+ Recurso».")}</div>`;
     const qi = $("#rec-q"); qi.addEventListener("change", () => { S.recQ = qi.value; render(); });
@@ -4284,6 +4306,103 @@ ${x.h}</section>`).join("")}
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); abrirBusqueda(); }
   });
   document.addEventListener("click", (e) => { const mu = document.getElementById("menu-usuario"); if (mu && !mu.hidden && !e.target.closest(".ab-usuario")) mu.hidden = true; });
+
+  // ---------- Edición directa en las tablas (clic en la celda, como en Excel) ----------
+  // ed(cfg) devuelve los atributos de una celda editable. cfg: { puede, tabla, idCol, id, campo, tipo, opciones, valor, min, max, vacio, antes(v), extra(v), despues(v) }.
+  // Antes de guardar se relee la fila en Excel: si otra persona la cambió, se pregunta qué valor dejar.
+  const ED = new Map();
+  let edN = 0;
+  function ed(cfg) {
+    if (!cfg || !cfg.puede || !S.usuario) return "";
+    const k = "e" + (++edN); ED.set(k, cfg);
+    return ` data-ed="${k}" tabindex="0" title="Clic para editar"`;
+  }
+  const txtOpcion = (ops, v) => { const o = (ops || []).find((x) => String(Array.isArray(x) ? x[0] : x) === String(v)); return o ? (Array.isArray(o) ? o[1] : o) : v; };
+  function abrirEditor(td) {
+    const cfg = ED.get(td.dataset.ed);
+    if (!cfg || td.classList.contains("editando")) return;
+    const previo = td.innerHTML, v0 = cfg.valor ?? "";
+    td.classList.add("editando");
+    let ctl;
+    if (cfg.tipo === "select") {
+      const ops = cfg.opciones || [];
+      const todas = v0 !== "" && !ops.some((o) => String(Array.isArray(o) ? o[0] : o) === String(v0)) ? [String(v0), ...ops] : ops;
+      ctl = `<select class="ed-ctl">${cfg.vacio !== undefined ? `<option value="">${esc(cfg.vacio)}</option>` : ""}${todas.map((o) => { const [val, t] = Array.isArray(o) ? o : [o, o]; return `<option value="${esc(val)}" ${String(val) === String(v0) ? "selected" : ""}>${esc(t)}</option>`; }).join("")}</select>`;
+    } else if (cfg.tipo === "textarea") ctl = `<textarea class="ed-ctl" rows="3">${esc(v0)}</textarea>`;
+    else ctl = `<input class="ed-ctl" type="${cfg.tipo === "number" ? "number" : cfg.tipo === "date" ? "date" : "text"}" value="${esc(v0)}" ${cfg.min !== undefined ? `min="${cfg.min}"` : ""} ${cfg.max !== undefined ? `max="${cfg.max}"` : ""}>`;
+    td.innerHTML = `<div class="ed-caja">${ctl}<span class="ed-ayuda">Enter guarda · Esc cancela</span></div>`;
+    const i = td.querySelector(".ed-ctl");
+    let hecho = false;
+    const cerrar = () => { td.classList.remove("editando"); td.innerHTML = previo; };
+    const confirmarValor = () => {
+      if (hecho) return; hecho = true;
+      let v = String(i.value).trim();
+      if (String(v) === String(v0)) return cerrar();
+      if (cfg.tipo === "number") {
+        if (v === "" && cfg.requerido) { toast("Este campo no puede quedar vacío.", true); return cerrar(); }
+        if (v !== "") { const n = Number(v); if (Number.isNaN(n) || (cfg.min !== undefined && n < cfg.min) || (cfg.max !== undefined && n > cfg.max)) { toast(`Valor no válido${cfg.max !== undefined ? ` (entre ${cfg.min} y ${cfg.max})` : ""}.`, true); return cerrar(); } v = n; }
+      }
+      if (cfg.requerido && v === "") { toast("Este campo no puede quedar vacío.", true); return cerrar(); }
+      if (cfg.validar) { const msg = cfg.validar(v); if (msg) { toast(msg, true); return cerrar(); } }
+      if (cfg.antes && cfg.antes(v) === false) return cerrar();
+      guardarCelda(td, cfg, v, previo);
+    };
+    i.addEventListener("keydown", (e) => {
+      e.stopPropagation();
+      if (e.key === "Escape") { e.preventDefault(); hecho = true; cerrar(); td.focus(); }
+      else if (e.key === "Enter" && cfg.tipo !== "textarea") { e.preventDefault(); confirmarValor(); }
+      else if (e.key === "Enter" && cfg.tipo === "textarea" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); confirmarValor(); }
+    });
+    if (cfg.tipo === "select") i.addEventListener("change", confirmarValor);
+    i.addEventListener("blur", () => setTimeout(() => { if (!hecho && document.activeElement !== i) confirmarValor(); }, 120));
+    i.focus();
+    if (i.select && cfg.tipo !== "select" && cfg.tipo !== "date") i.select();
+  }
+  async function guardarCelda(td, cfg, v, previo) {
+    td.innerHTML = `<span class="ed-guardando">Guardando…</span>`;
+    const y = window.scrollY;
+    const fin = () => { render(); window.scrollTo(0, y); };
+    const escribir = async () => {
+      cerrarModal();
+      try {
+        await S.api.actualizarPorId(cfg.tabla, cfg.idCol, cfg.id, { [cfg.campo]: v, ...(cfg.extra ? cfg.extra(v) : {}) });
+        if (cfg.despues) await cfg.despues(v);
+        armarCatalogos(); fin(); toast(`${cfg.etiqueta || "Dato"} actualizado`);
+      } catch (e) { toast("No se pudo guardar: " + e.message, true); td.innerHTML = previo; td.classList.remove("editando"); }
+    };
+    // ¿Alguien más lo cambió desde que se cargó?
+    try {
+      const filas = await S.api.leerTabla(cfg.tabla);
+      const f = filas.find((r) => String(r[cfg.idCol]) === String(cfg.id));
+      const enExcel = f ? f[cfg.campo] ?? "" : null;
+      const norm = (x) => (typeof x === "number" && x > 20000 && x < 90000 && cfg.tipo === "date" ? new Date(Math.round((x - 25569) * 86400000)).toISOString().slice(0, 10) : String(x ?? ""));
+      if (f && norm(enExcel) !== String(cfg.valor ?? "")) {
+        const fila = (S.datos[cfg.tabla] || []).find((r) => String(r[cfg.idCol]) === String(cfg.id));
+        if (fila) fila[cfg.campo] = norm(enExcel);
+        const mostrar = (x) => (cfg.tipo === "date" ? fecha(x) : txtOpcion(cfg.opciones, x)) || "vacío";
+        fin();
+        confirmar("Otra persona cambió este dato", `Mientras lo tenías abierto, en Excel cambió de «${mostrar(cfg.valor)}» a «${mostrar(norm(enExcel))}». ¿Lo reemplazo por «${mostrar(v)}»?`, "Reemplazar", escribir, "primario");
+        return;
+      }
+    } catch (e) { /* si no se puede releer, se guarda igual */ }
+    return escribir();
+  }
+  function enlazarEdicionTablas() {
+    document.addEventListener("click", (e) => {
+      const td = e.target.closest && e.target.closest("[data-ed]");
+      if (!td) return;
+      e.stopPropagation();
+      if (td.classList.contains("editando")) return;
+      if (e.target.closest("a, button:not([data-ed])")) { e.preventDefault(); }
+      abrirEditor(td);
+    }, true);
+    document.addEventListener("keydown", (e) => {
+      const td = e.target.closest && e.target.closest("[data-ed]");
+      if (td && !td.classList.contains("editando") && (e.key === "Enter" || e.key === "F2")) { e.preventDefault(); e.stopPropagation(); abrirEditor(td); }
+    }, true);
+  }
+
+  enlazarEdicionTablas();
 
   // ---------- Valor y beneficios para la FSFB ----------
   // Cada proyecto declara su propuesta de valor (beneficio esperado, valor para la FSFB, impacto por dimensión)
@@ -5422,7 +5541,7 @@ ${x.h}</section>`).join("")}
         <td>${esc(d.Tipo || "—")}<div class="sub">${esc([d.Categoria, d.Area, d.Tamano ? `Talla ${d.Tamano}` : ""].filter(Boolean).join(" · "))}</div>${obligatoria(d) ? `<span class="pill materializado">Obligatorio</span>` : ""}</td>
         <td>${pill(d.Estado || "Recibida")}${d.ID_Proyecto ? `<div><button class="btn enlace" data-pid="${esc(d.ID_Proyecto)}">Ver proyecto</button></div>` : ""}</td>
         <td class="nowrap">${pts === null ? `<span class="sub">Sin calificar</span>` : `<span class="cap-barra"><span class="cap-lleno" style="width:${pts}%;background:var(--azul)"></span></span> <b>${pts}</b>`}</td>
-        <td>${d.PM_Asignado ? persona(nombreUsuario(d.PM_Asignado)) : `<span class="sub">—</span>`}</td>
+        <td${ed({ puede: R.puede(S.usuario, "verTodo"), tabla: "Demandas", idCol: "ID_Demanda", id: d.ID_Demanda, campo: "PM_Asignado", tipo: "select", opciones: usuariosConRol("PM").map((x) => [x.Correo, x.Nombre || x.Correo]), vacio: "Sin asignar", valor: d.PM_Asignado, etiqueta: "PM asignado" })}>${d.PM_Asignado ? persona(nombreUsuario(d.PM_Asignado)) : `<span class="sub">—</span>`}</td>
         <td class="${antiguedad(d) > 30 && ABIERTOS_DEMANDA.includes(d.Estado || "Recibida") ? "baja" : ""}">${antiguedad(d)} días<div class="sub">${diasEn(d)} en este estado</div></td></tr>`; }).join("")}</tbody></table></div>`
       : vacio(todas.length ? "Ninguna demanda coincide con los filtros." : "Aún no hay demandas. Registra la primera con «+ Nueva demanda» cuando Gestión de la Demanda te asigne una iniciativa en Almera.");
     const cols = ESTADOS_DEMANDA.filter((e) => F.estado === "todas" || e !== "Convertida" && e !== "Rechazada" || F.estado === e);
@@ -5617,9 +5736,10 @@ ${x.h}</section>`).join("")}
       <p class="sub">Los tickets que se están manejando en la plataforma helpdesk para este proyecto. Los estados se configuran en Catálogos.</p>
       <div class="seg barra-comp"><button class="btn chico ${ver === "abiertos" ? "primario" : ""}" data-tkver="abiertos">Abiertos (${n})</button><button class="btn chico ${ver === "todos" ? "primario" : ""}" data-tkver="todos">Todos (${todos.length})</button></div>
       ${lista.length ? `<div class="tabla-scroll"><table><thead><tr><th>N.º ticket</th><th>Título</th><th>Estado</th><th>Prioridad</th><th class="opc">Registrado</th><th></th></tr></thead>
-        <tbody>${lista.map((t) => `<tr><td><b>${esc(t.Numero || "—")}</b></td><td>${esc(t.Titulo)}</td><td>${pill(t.Estado || "Abierto")}</td><td>${esc(t.Prioridad || "—")}</td>
+        <tbody>${lista.map((t) => { const ET = (campo, o) => ed({ puede, tabla: "Tickets", idCol: "ID_Ticket", id: t.ID_Ticket, campo, valor: t[campo] ?? "", ...o }); return `<tr><td${ET("Numero", { tipo: "text", etiqueta: "Número" })}><b>${esc(t.Numero || "—")}</b></td><td${ET("Titulo", { tipo: "text", requerido: true, etiqueta: "Título" })}>${esc(t.Titulo)}</td>
+          <td${ET("Estado", { tipo: "select", opciones: S.cat.Estado_Ticket, etiqueta: "Estado del ticket" })}>${pill(t.Estado || "Abierto")}</td><td${ET("Prioridad", { tipo: "select", opciones: S.cat.Prioridad, etiqueta: "Prioridad" })}>${esc(t.Prioridad || "—")}</td>
           <td class="opc sub">${t.Fecha_Registro ? fecha(t.Fecha_Registro) : ""} ${esc(nombreUsuario(t.Registrado_Por))}</td>
-          <td class="derecha">${puede ? `<button class="btn chico" data-tk="${esc(t.ID_Ticket)}">Editar</button>` : ""}</td></tr>`).join("")}</tbody></table></div>`
+          <td class="derecha">${puede ? `<button class="btn chico" data-tk="${esc(t.ID_Ticket)}">Editar</button>` : ""}</td></tr>`; }).join("")}</tbody></table></div>`
         : vacio(todos.length ? "No hay tickets abiertos. Mira «Todos»." : `Aún no hay tickets.${puede ? " Registra el primero con «+ Ticket»." : ""}`)}</div>`;
   }
   // ---------- Documentos del proyecto (varios enlaces) ----------
@@ -5836,8 +5956,9 @@ ${x.h}</section>`).join("")}
         <div class="filtros"><label class="filtro"><span>Tipo</span><select id="act-tipo"><option value="">Todos</option>${tipos.map((t) => `<option ${t === AF.tipo ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></label>
           <label class="filtro"><span>Estado</span><select id="act-estado">${[["Vigente", "Vigentes"], ["Programada", "Programadas"], ["Finalizada", "Finalizadas"], ["", "Todas"]].map(([v, t]) => `<option value="${v}" ${v === AF.estado ? "selected" : ""}>${t}</option>`).join("")}</select></label></div>
         ${acts.length ? `<div class="tabla-scroll"><table><thead><tr><th>Persona</th><th>Tipo</th><th>Descripción</th><th>Dedicación</th><th>Vigencia</th><th>Estado</th><th></th></tr></thead><tbody>
-          ${acts.map((a) => `<tr><td>${persona(a.Nombre || nombreUsuario(a.Correo), a.Correo)}</td><td><span class="chip-act ${esAusencia(a) ? "aus" : ""}">${esc(a.Tipo || "—")}</span></td><td>${esc(a.Descripcion || "—")}</td>
-            <td class="nowrap"><b>${num0(a.Dedicacion) ?? "—"}%</b></td><td class="nowrap">${fecha(a.Fecha_Inicio)} → ${a.Fecha_Fin ? fecha(a.Fecha_Fin) : "Permanente"}</td><td>${pill(estadoAct(a, corte))}</td>
+          ${acts.map((a) => `<tr><td>${persona(a.Nombre || nombreUsuario(a.Correo), a.Correo)}</td><td${ed({ puede: editable(a), tabla: "Actividades", idCol: "ID_Actividad", id: a.ID_Actividad, campo: "Tipo", tipo: "select", opciones: S.cat.Tipo_Actividad, valor: a.Tipo, etiqueta: "Tipo" })}><span class="chip-act ${esAusencia(a) ? "aus" : ""}">${esc(a.Tipo || "—")}</span></td>
+            <td${ed({ puede: editable(a), tabla: "Actividades", idCol: "ID_Actividad", id: a.ID_Actividad, campo: "Descripcion", tipo: "textarea", valor: a.Descripcion, etiqueta: "Descripción" })}>${esc(a.Descripcion || "—")}</td>
+            <td class="nowrap"${ed({ puede: editable(a), tabla: "Actividades", idCol: "ID_Actividad", id: a.ID_Actividad, campo: "Dedicacion", tipo: "number", min: 1, max: 100, requerido: true, valor: num0(a.Dedicacion) ?? "", etiqueta: "Dedicación" })}><b>${num0(a.Dedicacion) ?? "—"}%</b></td><td class="nowrap">${fecha(a.Fecha_Inicio)} → ${a.Fecha_Fin ? fecha(a.Fecha_Fin) : "Permanente"}</td><td>${pill(estadoAct(a, corte))}</td>
             <td class="derecha">${editable(a) ? `<button class="btn chico" data-act="${esc(a.ID_Actividad)}">Editar</button>` : ""}</td></tr>`).join("")}</tbody></table></div>`
         : vacio(AF.estado || AF.tipo ? "No hay actividades con ese filtro." : "Aún no hay otras actividades registradas.")}
       </div>`;
