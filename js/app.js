@@ -4650,8 +4650,9 @@ ${x.h}</section>`).join("")}
     const b = await r.blob();
     return new Promise((ok) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).replace(/^data:/, "")); fr.readAsDataURL(b); });
   }
-  const PPT = { azul: "104994", claro: "6BBAEF", dorado: "D6964A", suave: "EAF2FB", texto: "333333", sec: "666666", linea: "CCCCCC", blanco: "FFFFFF",
-    Verde: "2E8B57", Amarillo: "E0A800", Rojo: "C0392B", gris: "9AA5B1", fuente: "Calibri" };
+  // Colores y fuente de la plantilla oficial FSFB 2026 (azul de títulos 00109E, turquesa de acento 00A3C4, Century Gothic).
+  const PPT = { azul: "00109E", claro: "00A3C4", dorado: "00A3C4", suave: "EAF2FB", texto: "333333", sec: "666666", linea: "CCCCCC", blanco: "FFFFFF",
+    Verde: "2E8B57", Amarillo: "E0A800", Rojo: "C0392B", gris: "9AA5B1", fuente: "Century Gothic" };
   const MESES_LARGOS = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
   const fechaLarga = (iso) => { const [y, m, d] = String(iso).split("-").map(Number); return `${d} de ${MESES_LARGOS[m - 1]} de ${y}`; };
   const corta = (s, n) => { s = String(s ?? "").replace(/\s+/g, " ").trim(); return s.length > n ? s.slice(0, n - 1) + "…" : s; };
@@ -4676,7 +4677,8 @@ ${x.h}</section>`).join("")}
   async function generarInformePPT({ pm, corte, incluir }) {
     cargando(true, "Generando PowerPoint…");
     try {
-      const [Pptx, logo, logoB] = await Promise.all([libPptx(), imagenDataURL("assets/logo_fsfb.png"), imagenDataURL("assets/logo_fsfb_blanco.png")]);
+      // Fondos, detalle de esquina y logo tomados de la plantilla FSFB_Plantilla_2026.pptx.
+      const [Pptx, imgPortada, imgOscura, imgCierre, imgEsquina, imgLogo] = await Promise.all([libPptx(), ...["portada.jpg", "oscura.jpg", "cierre.jpg", "esquina.png", "logo_pie.png"].map((f) => imagenDataURL(`assets/ppt/${f}`))]);
       const segs = S.datos.Seguimientos;
       const todos = visibles();
       const alcance = todos.filter((p) => !pm || lc(p.PM) === pm);
@@ -4688,22 +4690,47 @@ ${x.h}</section>`).join("")}
       pptx.company = "Fundación Santa Fe de Bogotá"; pptx.title = "Estado del portafolio de proyectos";
       const F = PPT.fuente, W = 13.333;
       const pie = `Oficina de Proyectos · Fundación Santa Fe de Bogotá · Corte ${fecha(corte)}${nomPM ? ` · PM: ${nomPM}` : ""}`;
-      pptx.defineSlideMaster({ title: "FSFB", background: { color: PPT.blanco }, margin: [0.5, 0.5, 0.5, 0.5],
+      // Layouts de la plantilla: portada (foto), separador oscuro (curvas), contenido (esquina + logo) y cierre (edificio).
+      pptx.defineSlideMaster({ title: "PORTADA", background: { data: imgPortada } });
+      pptx.defineSlideMaster({ title: "SECCION", background: { data: imgOscura } });
+      pptx.defineSlideMaster({ title: "CIERRE", background: { data: imgCierre } });
+      pptx.defineSlideMaster({ title: "FSFB", background: { color: PPT.blanco }, margin: [0.4, 0.6, 0.4, 0.6],
         objects: [
-          { image: { x: W - 2.05, y: 0.28, w: 1.6, h: 0.587, data: logo } },
-          { rect: { x: 0, y: 7.12, w: W, h: 0.38, fill: { color: PPT.suave } } },
-          { rect: { x: 0, y: 7.12, w: 0.35, h: 0.38, fill: { color: PPT.dorado } } },
-          { text: { text: pie, options: { x: 0.5, y: 7.14, w: 10, h: 0.34, fontFace: F, fontSize: 9, color: PPT.sec, valign: "middle" } } },
+          { image: { x: 11.737, y: 0, w: 1.596, h: 1.94, data: imgEsquina } },
+          { image: { x: 11.217, y: 6.745, w: 1.714, h: 0.498, data: imgLogo } },
+          { text: { text: pie, options: { x: 0.6, y: 6.95, w: 9.6, h: 0.3, fontFace: F, fontSize: 8, color: PPT.sec, valign: "middle", margin: 0 } } },
         ],
-        slideNumber: { x: W - 1, y: 7.16, w: 0.6, h: 0.3, fontFace: F, fontSize: 9, color: PPT.sec, align: "right" } });
-      pptx.defineSlideMaster({ title: "SECCION", background: { color: PPT.azul },
-        objects: [{ image: { x: 0.6, y: 0.5, w: 2.2, h: 0.807, data: logoB } }, { rect: { x: 0.6, y: 3.05, w: 1.2, h: 0.08, fill: { color: PPT.dorado } } }] });
+        slideNumber: { x: 10.3, y: 6.95, w: 0.8, h: 0.3, fontFace: F, fontSize: 8, color: PPT.sec, align: "right" } });
+      // El contenido se diseñó sobre 0,5–12,83 × 1,5–7,05 in; se lleva a la zona útil de la plantilla (0,6–11,6 × 1,45–6,65 in)
+      // y la letra se reduce un poco porque Century Gothic es más ancha.
+      const KZ = 0.89, KF = 0.88;
+      const fz = (v) => Math.max(7, Math.round(v * KF * 2) / 2);
+      const escOpts = (o0) => {
+        if (!o0 || typeof o0 !== "object") return o0;
+        const o = { ...o0 };
+        if (typeof o.x === "number") o.x = 0.6 + (o.x - 0.5) * KZ;
+        if (typeof o.y === "number") o.y = 1.45 + (o.y - 1.5) * KZ;
+        if (typeof o.w === "number") o.w *= KZ;
+        if (typeof o.h === "number") o.h *= KZ;
+        if (Array.isArray(o.colW)) o.colW = o.colW.map((c) => c * KZ);
+        if (typeof o.rowH === "number") o.rowH *= KZ;
+        if (typeof o.rectRadius === "number") o.rectRadius *= KZ;
+        Object.keys(o).forEach((k) => { if (/fontsize$/i.test(k) && typeof o[k] === "number") o[k] = fz(o[k]); if (/fontface$/i.test(k)) o[k] = F; });
+        return o;
+      };
+      const escTexto = (t) => (Array.isArray(t) ? t.map((r) => (r && r.options ? { ...r, options: { ...r.options, ...(r.options.fontSize ? { fontSize: fz(r.options.fontSize) } : {}) } } : r)) : t);
+      const zona = (sl) => ({
+        addText: (t, o) => sl.addText(escTexto(t), escOpts(o)),
+        addShape: (tipo, o) => sl.addShape(tipo, escOpts(o)),
+        addChart: (tipo, d, o) => sl.addChart(tipo, d, escOpts({ fontFace: F, catAxisLabelFontFace: F, valAxisLabelFontFace: F, legendFontFace: F, titleFontFace: F, dataLabelFontFace: F, ...o })),
+        addImage: (o) => sl.addImage(escOpts(o)),
+        addTable: (filas, o) => sl.addTable(filas.map((f) => f.map((c) => (c && c.options && c.options.fontSize ? { ...c, options: { ...c.options, fontSize: fz(c.options.fontSize) } } : c))), escOpts(o)),
+      });
       const lamina = (titulo, sub) => {
         const s = pptx.addSlide({ masterName: "FSFB" });
-        s.addText(titulo, { x: 0.5, y: 0.3, w: W - 3, h: 0.6, fontFace: F, fontSize: 26, bold: true, color: PPT.azul, valign: "middle", margin: 0 });
-        s.addShape(pptx.ShapeType.rect, { x: 0.5, y: 0.95, w: 1.1, h: 0.06, fill: { color: PPT.dorado }, line: { color: PPT.dorado } });
-        if (sub) s.addText(sub, { x: 0.5, y: 1.05, w: W - 3, h: 0.35, fontFace: F, fontSize: 12, color: PPT.sec, margin: 0 });
-        return s;
+        s.addText(titulo, { x: 0.6, y: 0.4, w: 10.9, h: 0.55, fontFace: F, fontSize: 24, bold: true, color: PPT.azul, valign: "middle", margin: 0, fit: "shrink" });
+        if (sub) s.addText(sub, { x: 0.6, y: 0.97, w: 10.9, h: 0.38, fontFace: F, fontSize: 11, color: PPT.sec, valign: "top", margin: 0, fit: "shrink" });
+        return zona(s);
       };
       const vacioTxt = (s, msg, y = 2.6) => s.addText(msg, { x: 0.5, y, w: W - 1, h: 0.6, fontFace: F, fontSize: 14, color: PPT.sec, italic: true, align: "center" });
       const tile = (s, x, y, w, h, titulo, valor, nota, color = PPT.azul) => {
@@ -4713,7 +4740,7 @@ ${x.h}</section>`).join("")}
         s.addText(String(valor), { x: x + 0.2, y: y + 0.4, w: w - 0.3, h: 0.52, fontFace: F, fontSize: 28, bold: true, color, margin: 0, valign: "middle" });
         if (nota) s.addText(nota, { x: x + 0.2, y: y + h - 0.36, w: w - 0.3, h: 0.28, fontFace: F, fontSize: 10, color: PPT.sec, margin: 0 });
       };
-      const cab = (t, extra = {}) => ({ text: t, options: { bold: true, color: PPT.blanco, fill: { color: PPT.azul }, fontSize: 11, valign: "middle", ...extra } });
+      const cab = (t, extra = {}) => ({ text: t, options: { bold: true, color: PPT.blanco, fill: { color: PPT.azul }, fontSize: 10, valign: "middle", ...extra } });
       const celda = (t, i, extra = {}) => ({ text: String(t ?? ""), options: { fill: { color: i % 2 ? PPT.suave : PPT.blanco }, color: PPT.texto, fontSize: 10, valign: "middle", ...extra } });
       const semCelda = (sem, i) => { const c = PPT[sem]; return c ? { text: sem, options: { fill: { color: c }, color: sem === "Amarillo" ? PPT.texto : PPT.blanco, bold: true, fontSize: 10, align: "center", valign: "middle" } } : celda(sem || "—", i, { align: "center" }); };
       const tabla = (s, filas, colW, y = 1.55, extra = {}) => s.addTable(filas, { x: 0.5, y, w: colW.reduce((a, b) => a + b, 0), colW, fontFace: F, border: { type: "solid", pt: 0.5, color: PPT.linea }, rowH: 0.36, margin: [2, 5, 2, 5], ...extra });
@@ -4943,11 +4970,13 @@ ${x.h}</section>`).join("")}
       };
 
       // 1. Portada
-      const port = pptx.addSlide({ masterName: "SECCION" });
-      port.addText("Estado del portafolio de proyectos", { x: 0.6, y: 3.3, w: 11.5, h: 1, fontFace: F, fontSize: 40, bold: true, color: PPT.blanco, margin: 0 });
-      port.addText(nomPM ? `Informe del PM: ${nomPM}` : "Informe general · Oficina de Proyectos", { x: 0.6, y: 4.35, w: 11.5, h: 0.6, fontFace: F, fontSize: 22, color: PPT.claro, margin: 0 });
-      port.addText(`Corte: ${fechaLarga(corte)}`, { x: 0.6, y: 5.0, w: 11.5, h: 0.5, fontFace: F, fontSize: 16, color: PPT.blanco, margin: 0 });
-      port.addText(`Proyectos activos y en pausa: ${ps.length}`, { x: 0.6, y: 6.6, w: 11.5, h: 0.4, fontFace: F, fontSize: 12, color: PPT.claro, margin: 0 });
+      const port = pptx.addSlide({ masterName: "PORTADA" });
+      port.addText([
+        { text: "Estado del portafolio de proyectos", options: { fontSize: 24, bold: true, breakLine: true } },
+        { text: nomPM ? `Informe del PM: ${nomPM}` : "Informe general de la Oficina de Proyectos", options: { fontSize: 13, breakLine: true } },
+        { text: `Corte: ${fechaLarga(corte)}`, options: { fontSize: 13, breakLine: true } },
+        { text: `Proyectos activos y en pausa: ${ps.length}`, options: { fontSize: 13 } },
+      ], { x: 0.44, y: 4.74, w: 5.26, h: 1.82, fontFace: F, color: PPT.blanco, valign: "middle", margin: 0.05, fit: "shrink" });
 
       // 2. Resumen ejecutivo
       const resumen = (lista, m, titulo, sub) => {
@@ -5018,8 +5047,9 @@ ${x.h}</section>`).join("")}
       if (!pm && incluir.has("pm") && gruposPM.length > 1) gruposPM.forEach((g) => {
         const sec = pptx.addSlide({ masterName: "SECCION" });
         const m = metricas(g.lista), c = cap.find((x) => lc(x.correo) === g.c);
-        sec.addText(g.n, { x: 0.6, y: 3.3, w: 11.5, h: 0.9, fontFace: F, fontSize: 36, bold: true, color: PPT.blanco, margin: 0 });
-        sec.addText(`${m.act.length} activo(s)${m.pausa ? ` · ${m.pausa} en pausa` : ""} · avance ${m.real}% vs. ${m.plan}% plan · seguimientos al día ${m.alDia}%${c ? ` · carga ${c.total}% de ${c.cap}%` : ""}`, { x: 0.6, y: 4.25, w: 12, h: 0.5, fontFace: F, fontSize: 16, color: PPT.claro, margin: 0 });
+        sec.addText(g.n, { x: 0.44, y: 2.84, w: 7.6, h: 0.9, fontFace: F, fontSize: 32, bold: true, color: PPT.blanco, margin: 0, valign: "bottom", fit: "shrink" });
+        sec.addText([`${m.act.length} proyecto(s) activo(s)${m.pausa ? `, ${m.pausa} en pausa` : ""}`, `Avance ${m.real}% frente a ${m.plan}% planeado`, `Seguimientos al día: ${m.alDia}%`, ...(c ? [`Carga del PM: ${c.total}% de ${c.cap}%`] : [])].map((t, i, a) => ({ text: t, options: { breakLine: i < a.length - 1 } })),
+          { x: 0.44, y: 3.85, w: 7.6, h: 1.6, fontFace: F, fontSize: 16, color: PPT.blanco, margin: 0, valign: "top" });
         tablaProyectos(g.lista, `Proyectos de ${g.n}`, false);
       });
 
@@ -5038,7 +5068,7 @@ ${x.h}</section>`).join("")}
               showLegend: true, legendPos: "t", legendFontSize: 10, showValue: true, dataLabelFontSize: 8, dataLabelColor: PPT.blanco, dataLabelFormatCode: "0;;;", valGridLine: { color: "E5E5E5", size: 0.5 } });
           const filas = [[cab("Sobre su capacidad"), cab("Carga", { align: "center" })]];
           sobre.slice(0, 6).forEach((x, i) => filas.push([celda(corta(x.nombre, 26), i), celda(`${x.total}% de ${x.cap}%`, i, { align: "center", color: PPT.Rojo, bold: true })]));
-          if (sobre.length) tabla(s, filas, [2.3, 1.23], 4.45, { x: 9.3, rowH: 0.32 });
+          if (sobre.length) tabla(s, filas, [1.9, 1.63], 4.45, { x: 9.3, rowH: 0.32 });
           else s.addText("Nadie está sobre su capacidad.", { x: 9.3, y: 4.4, w: 3.5, h: 0.4, fontFace: F, fontSize: 12, color: PPT.Verde, bold: true });
         }
       }
@@ -5079,7 +5109,7 @@ ${x.h}</section>`).join("")}
           const filas = [[cab("Compromiso"), cab("Proyecto"), cab("Responsable"), cab("Fecha", { align: "center" })]];
           comp.slice(0, 10).forEach(({ c, e }, i) => filas.push([celda(corta(c.Compromiso, 48), i), celda(corta((proyecto(c.ID_Proyecto) || {}).Nombre, 20), i), celda(corta(responsablesDe(c, false).map((x) => x.Nombre).join(", ") || "—", 18), i),
             celda(fecha(c.Fecha_Compromiso), i, { align: "center", bold: true, color: e === "Vencido" ? PPT.Rojo : "9A6B00" })]));
-          tabla(s, filas, [2.6, 1.55, 1.25, 0.9], 1.9, { rowH: 0.42, fontSize: 9 });
+          tabla(s, filas, [2.4, 1.5, 1.2, 1.2], 1.9, { rowH: 0.42, fontSize: 9 });
           if (comp.length > 10) s.addText(`y ${comp.length - 10} más`, { x: 0.5, y: 6.75, w: 6, h: 0.3, fontFace: F, fontSize: 9, color: PPT.sec });
         }
         const rg = S.datos.Riesgos.filter((r) => M.ids.has(r.ID_Proyecto) && riesgoActivo(r) && R.nivelRiesgo(califActual(r)) === "Alto").sort((a, b) => califActual(b) - califActual(a));
@@ -5129,6 +5159,8 @@ ${x.h}</section>`).join("")}
       // Por proyecto: ficha, luego su EDT y su cronograma (si tiene uno cargado).
       ps.forEach((p) => { if (incluir.has("fichas")) fichaProyecto(p); if (incluir.has("valor") && incluir.has("fichas")) valorDeProyecto(p); if (incluir.has("edt")) laminasCronograma(p); });
 
+      const fin = pptx.addSlide({ masterName: "CIERRE" });
+      fin.addText("Gracias", { x: 7.646, y: 2.838, w: 4.542, h: 1.823, fontFace: F, fontSize: 36, bold: true, color: PPT.blanco, valign: "middle", margin: 0 });
       const bytes = await pptx.write({ outputType: "uint8array" });
       const nombre = `Estado_Portafolio_${nomPM ? normTxt(nomPM).replace(/[^a-z0-9]+/g, "_") + "_" : ""}${corte}.pptx`;
       descargar(bytes, nombre, "application/vnd.openxmlformats-officedocument.presentationml.presentation");
