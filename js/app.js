@@ -2120,7 +2120,7 @@
 
   // ---------- Versiones del cronograma ----------
   // Cada importación es una versión (V1, V2…), con su fecha de corte y, si se quiere, la sesión de seguimiento a la que corresponde.
-  // La vigente (la de mayor número) guarda todas sus tareas; las anteriores conservan fases (resúmenes) e hitos para comparar.
+  // Cada versión guarda todas sus tareas y, desde la v81, también el archivo original (Planner o Project) para descargarlo.
   const vidLegado = (pid) => `CRV-${pid}-1`;
   const vidDe = (t) => t.ID_Version || vidLegado(t.ID_Proyecto);
   const versionesDe = (pid) => (S.datos.Cronogramas || []).filter((v) => v.ID_Proyecto === pid).sort((a, b) => Number(a.Numero) - Number(b.Numero));
@@ -2152,7 +2152,7 @@
       if (!f) return;
       cargando(true, "Leyendo el cronograma…");
       let res;
-      try { res = /\.xml$/i.test(f.name) ? await leerProjectXML(f) : await leerPlannerExcel(f); }
+      try { res = /\.xml$/i.test(f.name) ? await leerProjectXML(f) : await leerPlannerExcel(f); res.bytes = new Uint8Array(await f.arrayBuffer()); res.tipoArchivo = f.type || (/\.xml$/i.test(f.name) ? "application/xml" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"); }
       catch (e) { cargando(false); toast("No se pudo leer el cronograma: " + e.message, true); return; }
       cargando(false);
       if (!res.tareas.length) { toast("El archivo no trae tareas.", true); return; }
@@ -2178,7 +2178,7 @@
   }
   const traeBase = (tareas) => tareas.some((t) => t.Inicio_Base && t.Fin_Base);
 
-  // Guarda una versión nueva: compacta la anterior, agrega tareas y la fila de versión. Devuelve el cálculo.
+  // Guarda una versión nueva: agrega tareas y la fila de versión. Devuelve el cálculo.
   async function guardarVersionCronograma(p, res, archivo, op) {
     const pid = p.ID_Proyecto, hoy = R.hoyISO(), corte = op.corte || hoy;
     const lista = op.nivel ? res.tareas.filter((t) => (Number(t.Nivel) || 1) <= Number(op.nivel)) : res.tareas;
@@ -2186,15 +2186,18 @@
     const vs = versionesDe(pid), num = vs.length ? Math.max(...vs.map((v) => Number(v.Numero) || 0)) + 1 : 1;
     let vid = `CRV-${pid}-${num}`;
     while ((S.datos.Cronogramas || []).some((v) => v.ID_Version === vid)) vid += "b";
-    // La versión anterior conserva solo fases e hitos (para comparar sin llenar el Excel).
-    const prev = versionVigente(pid);
-    const sobran = prev ? tareasDe(pid, prev.ID_Version).filter((t) => t.Resumen !== "Sí" && t.Hito !== "Sí").map((t) => t.ID_Tarea) : [];
-    if (sobran.length) await S.api.eliminarFilas("Tareas", "ID_Tarea", sobran);
+    // Cada versión conserva TODAS sus tareas (antes las anteriores se compactaban a fases e hitos).
     const filas = lista.map((t, k) => ({ ID_Tarea: `${vid}-${k + 1}`, ID_Proyecto: pid, ID_Version: vid, ID_Externo: t.ID_Externo || "", Orden: k + 1, EDT: t.EDT, Nivel: Number(t.Nivel) || 1, Nombre: t.Nombre, Grupo: t.Grupo,
       Inicio: t.Inicio, Fin: t.Fin, Duracion_Dias: t.Inicio && t.Fin ? R.difDias(t.Fin, t.Inicio) + 1 : "", Pct_Completado: Number(t.Pct_Completado) || 0, Hito: t.Hito, Resumen: t.Resumen,
       Responsable: t.Responsable, Inicio_Base: t.Inicio_Base, Fin_Base: t.Fin_Base, Predecesoras: t.Predecesoras, Origen: res.origen, Fecha_Importacion: hoy }));
     for (let k = 0; k < filas.length; k += 100) await S.api.agregarFilas("Tareas", filas.slice(k, k + 100));
-    await S.api.agregarFila("Cronogramas", { ID_Version: vid, ID_Proyecto: pid, Numero: num, Fecha_Corte: corte, Fecha_Importacion: hoy, Origen: res.origen, Archivo: archivo,
+    // El archivo original (Planner .xlsx o Project .xml) se guarda en el libro para poder descargarlo después.
+    let guardado = "";
+    if (res.bytes && res.bytes.length) {
+      try { await guardarArchivo(vid, res.bytes, archivo, res.tipoArchivo, "el archivo del cronograma"); guardado = "Sí"; }
+      catch (e) { toast(`La versión se guardó, pero no el archivo original: ${e.message}`, true); }
+    }
+    await S.api.agregarFila("Cronogramas", { Archivo_Guardado: guardado, ID_Version: vid, ID_Proyecto: pid, Numero: num, Fecha_Corte: corte, Fecha_Importacion: hoy, Origen: res.origen, Archivo: archivo,
       ID_Seguimiento: op.idSeg || "", Tareas: c.hojas, Avance_Real: c.real, Avance_Plan: c.plan, Inicio: c.inicio, Fin: c.fin, Atrasadas: c.atrasadas.length, Hitos: c.hitos, Nota: op.nota || "", Registrado_Por: S.usuario.Correo });
     await S.api.actualizarPorId("Proyectos", "ID_Proyecto", pid, { Cronograma_Origen: res.origen, Cronograma_Archivo: archivo, Cronograma_Fecha: hoy, Cronograma_Por: S.usuario.Correo,
       ...(op.avance ? { Avance_Real: c.real, Avance_Planeado: c.plan } : {}), ...sello() });
@@ -2506,7 +2509,7 @@
         <td class="nowrap"><b>${pct(v.Avance_Real)}</b> / ${pct(v.Avance_Plan)} <span class="${desv < -5 ? "texto-rojo" : "sub"}">(${desv > 0 ? "+" : ""}${desv})</span></td>
         <td class="nowrap">${fecha(v.Fin)}${corr ? ` <span class="gt-dif ${corr > 0 ? "mal" : "bien"}">${corr > 0 ? "+" : ""}${corr} d</span>` : ""}</td>
         <td>${Number(v.Atrasadas) ? `<span class="texto-rojo">${esc(v.Atrasadas)}</span>` : "0"}</td>
-        <td><span class="sub">${esc(v.Origen || "")}${v.Archivo ? ` · ${esc(v.Archivo)}` : ""}</span>${v.Nota ? `<div>${esc(v.Nota)}</div>` : ""}</td>
+        <td><span class="sub">${esc(v.Origen || "")}${v.Archivo ? ` · ${v.Archivo_Guardado === "Sí" ? `<button type="button" class="btn enlace crv-arch" data-crv-arch="${esc(v.ID_Version)}" title="Descargar el archivo original de esta versión">⬇ ${esc(v.Archivo)}</button>` : `${esc(v.Archivo)} <span class="sub" title="Esta versión se cargó antes de que la app guardara el archivo original">(archivo no guardado)</span>`}` : ""}</span>${tareasDe(p.ID_Proyecto, v.ID_Version).some((t) => t.Resumen !== "Sí" && t.Hito !== "Sí") ? "" : `<div class="sub">Solo fases e hitos (versión compactada antes de la v81)</div>`}${v.Nota ? `<div>${esc(v.Nota)}</div>` : ""}</td>
         <td class="derecha nowrap"><button class="btn chico" data-crv-ver="${esc(v.ID_Version)}">Ver</button>${puede ? ` <button class="btn chico" data-crv-edit="${esc(v.ID_Version)}">Editar</button>` : ""}</td></tr>`;
     }).join("");
     return `<div class="card"><div class="titulo-fila"><h2>Versiones del cronograma <span class="contador">${vs.length}</span></h2></div>
@@ -2527,10 +2530,11 @@
       const cambios = { ...fd, ...(esVig ? { Avance_Real: c.real, Avance_Plan: c.plan, Atrasadas: c.atrasadas.length } : {}) };
       guardar(() => S.api.actualizarPorId("Cronogramas", "ID_Version", v.ID_Version, cambios), `V${v.Numero} actualizada`);
     }, (fd) => (fd.Fecha_Corte && fd.Fecha_Corte > R.hoyISO() ? "La fecha de corte no puede ser futura." : ""), {
-      eliminar: { texto: "Eliminar versión", titulo: `Eliminar V${v.Numero}`, mensaje: esVig && vs.length > 1 ? `Se borrará la V${v.Numero}. La versión anterior quedará como vigente, pero solo con sus fases e hitos (su detalle se compactó).` : `Se borrará la V${v.Numero} con sus tareas.`,
+      eliminar: { texto: "Eliminar versión", titulo: `Eliminar V${v.Numero}`, mensaje: esVig && vs.length > 1 ? `Se borrará la V${v.Numero} y su archivo. La versión anterior quedará como vigente.` : `Se borrará la V${v.Numero} con sus tareas.`,
         accion: () => guardar(async () => {
           const ids = (S.datos.Tareas || []).filter((t) => t.ID_Proyecto === p.ID_Proyecto && vidDe(t) === v.ID_Version).map((t) => t.ID_Tarea);
           if (ids.length) await S.api.eliminarFilas("Tareas", "ID_Tarea", ids);
+          if (v.Archivo_Guardado === "Sí") await S.api.borrarArchivo(v.ID_Version);
           await S.api.eliminarFilas("Cronogramas", "ID_Version", [v.ID_Version]);
           const F = (S.ganttF || {})[p.ID_Proyecto]; if (F) { F.ver = ""; F.comp = ""; }
           if (!versionesDe(p.ID_Proyecto).length) await S.api.actualizarPorId("Proyectos", "ID_Proyecto", p.ID_Proyecto, { Cronograma_Origen: "", Cronograma_Archivo: "", Cronograma_Fecha: "", Cronograma_Por: "" });
@@ -2549,6 +2553,11 @@
     const cc = el.querySelector("#b-crono-cc"); if (cc) cc.addEventListener("click", () => formCambio(p));
     const av = el.querySelector("#b-crono-av");
     if (av) av.addEventListener("click", () => { const c = calcCronograma(tareasDe(pid)); guardar(() => S.api.actualizarPorId("Proyectos", "ID_Proyecto", pid, { Avance_Real: c.real, Avance_Planeado: c.plan, ...sello() }), `Avance actualizado: ${c.real}% / ${c.plan}%`); });
+    el.querySelectorAll("[data-crv-arch]").forEach((x) => x.addEventListener("click", async () => {
+      const txt = x.innerHTML; x.innerHTML = "Descargando…";
+      try { const f = await leerArchivo(x.dataset.crvArch); descargar(f.bytes, f.nombre, f.tipo); } catch (e) { toast("No se pudo descargar el archivo: " + e.message, true); }
+      x.innerHTML = txt;
+    }));
     el.querySelectorAll("[data-crv-ver]").forEach((x) => x.addEventListener("click", () => { F.ver = x.dataset.crvVer; if (F.comp === F.ver) F.comp = ""; delete F.scroll; render(); const g = $("#gt-cont"); if (g) g.scrollIntoView({ block: "start", behavior: "smooth" }); }));
     el.querySelectorAll("[data-crv-edit]").forEach((x) => x.addEventListener("click", () => { const v = versionesDe(pid).find((y) => y.ID_Version === x.dataset.crvEdit); if (v) editarVersion(p, v); }));
     // Gráficos de evolución entre versiones.
@@ -6906,6 +6915,8 @@ ${x.h}</section>`).join("")}
     await borrar("Documentos", "ID_Documento", (S.datos.Documentos || []).filter((x) => x.ID_Proyecto === pid));
     await borrar("LineasBase", "ID_LB", (S.datos.LineasBase || []).filter((x) => x.ID_Proyecto === pid));
     await borrar("Tareas", "ID_Tarea", (S.datos.Tareas || []).filter((x) => x.ID_Proyecto === pid));
+    const archCrono = (S.datos.Cronogramas || []).filter((x) => x.ID_Proyecto === pid && x.Archivo_Guardado === "Sí").map((x) => x.ID_Version);
+    if (archCrono.length) await S.api.borrarArchivos(archCrono);
     await borrar("Cronogramas", "ID_Version", (S.datos.Cronogramas || []).filter((x) => x.ID_Proyecto === pid));
     await borrar("Agenda", "ID_Sesion", (S.datos.Agenda || []).filter((x) => x.ID_Proyecto === pid));
     await borrar("Mediciones", "ID_Medicion", (S.datos.Mediciones || []).filter((x) => x.ID_Proyecto === pid));

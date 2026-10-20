@@ -1291,3 +1291,4 @@ textarea.ed-ctl { min-width: 220px; }
 .ag-ev.choque { background: #fbe3e0 !important; color: #8e2a1f !important; border-color: #c0392b; }
 .ag-leyenda { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; align-items: center; }
 .ag-leyenda .ag-ev { width: auto; display: inline-block; cursor: default; }
+.crv-arch { font-size: 12px; padding: 0; text-align: left; }
