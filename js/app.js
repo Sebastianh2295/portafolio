@@ -1796,7 +1796,41 @@
     for (let i = 1; i < primera.Total; i++) { if (avance) avance(i + 1, primera.Total); const p = await S.api.leerParte(id, i); if (Number(p.Total) !== Number(primera.Total)) throw new Error("tiene partes de dos versiones distintas. Vuelve a subirlo."); datos += p.Datos; }
     return { datos, primera };
   }
-  async function subirActa(idSeg, bytes, nombre) { await guardarArchivo(idSeg, bytes, nombre, "application/pdf", "el acta"); }
+  const esActaWord = (nombre) => /\.docx$/i.test(String(nombre || ""));
+  async function subirActa(idSeg, bytes, nombre) { await guardarArchivo(idSeg, bytes, nombre, esActaWord(nombre) ? ACTAS.TIPO_DOCX : "application/pdf", "el acta"); }
+  // Compromisos del acta que ya existen en el proyecto (mismo texto): no se vuelven a crear.
+  const claveComp = (t) => normTxt(t).replace(/[^a-z0-9 ]/g, "").slice(0, 70);
+  const yaExisteComp = (pid, c) => S.datos.Compromisos.some((x) => x.ID_Proyecto === pid && claveComp(x.Compromiso) === claveComp(c.Compromiso));
+  const msgActa = (res) => (res.compromisos.length
+    ? `Encontré ${res.compromisos.length} compromiso(s)${res.formato && res.formato !== "FSFB" ? ` (${res.formato === "lista" ? "en lista" : res.formato === "Word" ? "en el Word" : "en tabla"})` : ""}`
+    : res.titulo ? "Encontré la sección de compromisos, pero no pude separar sus filas" : "No encontré compromisos en el acta");
+  // Revisión de los compromisos leídos de un acta antes de agregarlos a la sesión.
+  function revisarCompromisosActa(s, lista) {
+    const filas = lista.map((c) => ({ ...c, dup: yaExisteComp(s.ID_Proyecto, c) }));
+    const html = `<p class="sub">Revisa y ajusta antes de agregar. Los que ya existen en el proyecto vienen desmarcados.</p>
+      <div class="ra-lista">${filas.map((c, i) => `<div class="ra-fila ${c.dup ? "dup" : ""}"><label class="check"><input type="checkbox" class="ra-ok" data-i="${i}" ${c.dup ? "" : "checked"}></label>
+        <textarea class="ra-t" rows="2" data-i="${i}">${esc(c.Compromiso)}</textarea>
+        <input class="ra-r" data-i="${i}" value="${esc(separarNombres(c.Responsable).join("; "))}" placeholder="Responsable(s)" data-recurso data-multi autocomplete="off">
+        <input class="ra-f" type="date" data-i="${i}" value="${esc(c.Fecha_Compromiso || "")}" title="${esc(c.Fecha_Texto && !c.Fecha_Compromiso ? `En el acta: ${c.Fecha_Texto}` : "")}">
+        ${c.dup ? `<span class="pill noaplica">Ya existe</span>` : ""}</div>`).join("")}</div>`;
+    modal(`Compromisos del acta (${filas.length})`, [{ html }], {}, (fd, sel) => guardar(async () => {
+      if (!sel.length) return;
+      const nuevas = [];
+      for (const [k, c] of sel.entries()) {
+        const resp = await resolverResponsables(separarNombres(c.Responsable).map((n) => ({ Nombre: n })), c._nuevos);
+        nuevas.push({ ID_Compromiso: R.siguienteIdHijo("CMP", S.datos.Compromisos, "ID_Compromiso", s.ID_Proyecto, k), ID_Proyecto: s.ID_Proyecto, ID_Seguimiento: s.ID_Seguimiento,
+          Compromiso: c.Compromiso, ...resp, Fecha_Compromiso: c.Fecha_Compromiso, Estado: "Pendiente", Fecha_Cierre: "", Registrado_Por: S.usuario.Correo, Fecha_Creacion: R.hoyISO() });
+      }
+      await S.api.agregarFilas("Compromisos", nuevas);
+    }, `${sel.length} compromiso(s) agregados`), null, {
+      textoBoton: "Agregar compromisos",
+      init: (m) => { if (typeof enlazarRecursos === "function") enlazarRecursos(m); },
+      recoger: (m) => {
+        const sel = [...m.querySelectorAll(".ra-ok:checked")].map((x) => { const i = x.dataset.i, q = (c) => m.querySelector(`.${c}[data-i="${i}"]`); const inp = q("ra-r");
+          return { Compromiso: q("ra-t").value.trim(), Responsable: inp.value.trim(), Fecha_Compromiso: q("ra-f").value, _nuevos: inp._nuevos || new Set() }; }).filter((c) => c.Compromiso);
+        return sel.length ? { datos: sel } : { error: "Marca al menos un compromiso (o usa Cancelar)." };
+      } });
+  }
   async function verActa(idSeg, nombre) {
     cerrarModal();
     const m = document.createElement("div");
@@ -1811,9 +1845,11 @@
       const { datos, primera } = await leerBase64(idSeg, (i, n) => { const v = $("#v-paginas"); if (v) v.innerHTML = `<div class="vacio">Abriendo el acta… ${i} de ${n}</div>`; });
       let bytes = ACTAS.deBase64(datos);
       if (primera && String(primera.Tipo || "").startsWith("gzip;")) bytes = await gunzip(bytes);
+      const word = esActaWord(nombre);
       const d = $("#v-descargar");
-      if (d) { d.href = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" })); d.download = nombre || "acta.pdf"; d.hidden = false; }
-      await ACTAS.mostrar(bytes, $("#v-paginas"));
+      if (d) { d.href = URL.createObjectURL(new Blob([bytes], { type: word ? ACTAS.TIPO_DOCX : "application/pdf" })); d.download = nombre || (word ? "acta.docx" : "acta.pdf"); d.hidden = false; }
+      if (word) { const v = $("#v-paginas"); if (v) v.innerHTML = `<div class="vacio">Esta acta es un documento de Word. Usa «Descargar» para abrirla en Word.</div>`; }
+      else await ACTAS.mostrar(bytes, $("#v-paginas"));
     } catch (e) {
       const c = $("#v-paginas");
       const s = S.datos.Seguimientos.find((x) => x.ID_Seguimiento === idSeg);
@@ -1826,7 +1862,7 @@
   }
   function elegirPDF(alElegir) {
     const i = document.createElement("input");
-    i.type = "file"; i.accept = "application/pdf,.pdf";
+    i.type = "file"; i.accept = "application/pdf,.pdf,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
     i.addEventListener("change", () => { if (i.files[0]) alElegir(i.files[0]); });
     i.click();
   }
@@ -1838,19 +1874,14 @@
       if (archivo.size > MAX_ACTA) { toast("El acta pesa más de 5 MB. Guarda una versión más liviana del PDF.", true); return; }
       cargando(true, "Leyendo el acta…");
       let res;
-      try { res = await ACTAS.leerActa(archivo); } catch (e) { cargando(false); toast("No se pudo leer el PDF: " + e.message, true); return; }
+      try { res = await ACTAS.leerActa(archivo); } catch (e) { cargando(false); toast("No se pudo leer el acta: " + e.message, true); return; }
       cargando(false);
-      const yaTiene = reemplazo || S.datos.Compromisos.some((c) => c.ID_Seguimiento === idSeg);
       await guardar(async () => {
         await subirActa(idSeg, res.datos, archivo.name);
         await S.api.actualizarPorId("Seguimientos", "ID_Seguimiento", idSeg, { Acta_Archivo: archivo.name, ...(s.Fecha_Acta ? {} : { Fecha_Acta: res.fecha }) });
       }, "Acta adjuntada");
-      if (!yaTiene && res.compromisos.length) {
-        confirmar("Compromisos encontrados en el acta", `Leí ${res.compromisos.length} compromiso(s) en el acta. ¿Los agrego a esta sesión?`, "Agregar compromisos", () => guardar(() => S.api.agregarFilas("Compromisos",
-          res.compromisos.map((c, i) => ({ ID_Compromiso: R.siguienteIdHijo("CMP", S.datos.Compromisos, "ID_Compromiso", s.ID_Proyecto, i), ID_Proyecto: s.ID_Proyecto, ID_Seguimiento: idSeg,
-            Compromiso: c.Compromiso, Responsable: c.Responsable, Fecha_Compromiso: c.Fecha_Compromiso, Estado: "Pendiente", Fecha_Cierre: "", Registrado_Por: S.usuario.Correo }))),
-        `${res.compromisos.length} compromiso(s) agregados`), "primario");
-      }
+      if (res.compromisos.length) revisarCompromisosActa(s, res.compromisos);
+      else toast(`Acta adjuntada. ${msgActa(res)}.`);
     });
   }
   function enlazarActas(el) {
@@ -6634,8 +6665,8 @@ ${x.h}</section>`).join("")}
       { k: "URL_Acta", label: "Enlace al acta (opcional)", tipo: "url", placeholder: "https://…", ayuda: "Solo si además la tienes en SharePoint o Teams." },
     ];
     const cargaActa = `<div class="carga-acta">
-      <div><b>¿Tienes el acta en PDF?</b><div class="sub">Súbela: la app lee la fecha y los compromisos, los llena abajo y guarda el acta con la sesión.</div></div>
-      <button type="button" class="btn primario" id="b-acta-pdf">Subir acta (PDF)</button>
+      <div><b>¿Tienes el acta?</b><div class="sub">Súbela en PDF o Word (.docx), en cualquier formato: la app lee la fecha y los compromisos (tabla o lista), los llena abajo y guarda el acta con la sesión.</div></div>
+      <button type="button" class="btn primario" id="b-acta-pdf">Subir acta (PDF o Word)</button>
       <div id="acta-estado" class="acta-estado" aria-live="polite"></div></div>`;
     const contexto = `${datalistRecursos("dl-recursos")}<div class="contexto">
       <div><span class="sub">Último reporte</span><b>${ult ? `${fecha(ult.Fecha_Corte)} · ${pct(ult.Avance_Real)} · ${chipSemaforo(ult.Semaforo)}` : "Es el primer reporte"}</b></div>
@@ -6756,10 +6787,10 @@ ${x.h}</section>`).join("")}
           const sinFecha = res.compromisos.filter((c) => !c.Fecha_Compromiso).length;
           est.className = "acta-estado ok";
           est.innerHTML = `<b>${esc(archivo.name)}</b> se guardará con la sesión. ${res.fecha ? `Fecha del acta: ${fecha(res.fecha)}. ` : "No encontré la fecha del acta. "}` +
-            (res.encontrada ? `Cargué ${res.compromisos.length} compromiso(s) abajo${sinFecha ? ` (${sinFecha} sin fecha en el acta)` : ""}; revísalos antes de guardar.` : res.titulo ? "Encontré «Compromisos de la reunión» pero no pude leer las columnas de la tabla (No. · Descripción actividad · Responsable · Fecha de entrega); escríbelos abajo." : "No encontré la tabla «Compromisos de la reunión»; escríbelos abajo si hay.");
+            (res.compromisos.length ? `${msgActa(res)} y los cargué abajo${sinFecha ? ` (${sinFecha} sin fecha en el acta)` : ""}; revísalos antes de guardar.` : `${msgActa(res)}; escríbelos abajo si hay.`);
         } catch (e) {
           acta = null;
-          est.className = "acta-estado error"; est.textContent = "No se pudo leer el PDF: " + e.message;
+          est.className = "acta-estado error"; est.textContent = "No se pudo leer el acta: " + e.message;
         }
       }));
     };
@@ -7199,9 +7230,12 @@ ${x.h}</section>`).join("")}
           accionActa = { tipo: "subir", bytes: res.datos, nombre: archivo.name };
           if (res.fecha) m.querySelector("[name=Fecha_Acta]").value = res.fecha;
           est.className = "acta-estado ok";
-          est.textContent = `${archivo.name} se guardará al dar Guardar.${res.compromisos.length && !comps.length ? ` Trae ${res.compromisos.length} compromiso(s); se agregarán a la sesión.` : ""}`;
-          accionActa.compromisos = !comps.length ? res.compromisos : [];
-        } catch (e) { est.className = "acta-estado error"; est.textContent = "No se pudo leer el PDF: " + e.message; }
+          const nuevosActa = res.compromisos.filter((c) => !yaExisteComp(s.ID_Proyecto, c));
+          nuevosActa.forEach((c) => contN.insertAdjacentHTML("beforeend", filaComp(c))); enlazarN();
+          if (typeof enlazarRecursos === "function") enlazarRecursos(contN);
+          est.textContent = `${archivo.name} se guardará al dar Guardar. ${msgActa(res)}${res.compromisos.length ? `: ${nuevosActa.length} nuevo(s) cargados abajo en «Compromisos nuevos» para revisar${res.compromisos.length - nuevosActa.length ? ` (${res.compromisos.length - nuevosActa.length} ya existían)` : ""}` : ""}.`;
+          accionActa.compromisos = [];
+        } catch (e) { est.className = "acta-estado error"; est.textContent = "No se pudo leer el acta: " + e.message; }
       }));
     };
     const recoger = (m) => {

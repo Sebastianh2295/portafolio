@@ -160,11 +160,194 @@
     return { encontrada: !!cols, titulo: tituloVisto, compromisos: filas };
   }
 
+  /* ---------- Lectura genérica (cualquier formato de acta) ----------
+     Busca la sección de compromisos/acuerdos/tareas y una tabla cuyo encabezado tenga columnas como
+     Descripción/Actividad/Acción/Compromiso, Responsable/Encargado y Fecha/Plazo/Entrega (en cualquier orden).
+     Si no hay tabla, lee la lista (viñetas o numerada) que sigue al título. */
+  const RX = {
+    desc: /descripci|actividad|acci[oó]n|compromiso|tarea|acuerdo|^qu[eé]\b|^detalle/i,
+    resp: /responsable|encargad|qui[eé]n|due[ñn]o|a cargo/i,
+    fecha: /fecha|plazo|entrega|l[ií]mite|cu[aá]ndo|vencimiento|^para\b/i,
+    no: /^(no\.?|n[°º.]?|#|ítem|item|id|n[uú]m\.?)$/i,
+    estado: /^estado$/i,
+  };
+  const RX_TIT = /(compromisos|acuerdos|tareas\s+(asignadas|pendientes)|plan\s+de\s+acci[oó]n|action\s+items|pr[oó]ximos\s+pasos|pendientes)/i;
+  const RX_NO_TIT = /seguimiento\s+(a|de)\s+(los\s+)?compromisos\s+anteriores|compromisos\s+anteriores/i;
+  const RX_FIN = /^(lista de participantes|participantes|asistentes|asistencia|hora de finalizaci|pr[oó]xima reuni|fecha\s*[–-]\s*hora|firmas?\b|aprobaci[oó]n del acta|observaciones|riesgos|advertencias|siendo las|se da por terminada|conclusiones|temas tratados|desarrollo de la reuni)/i;
+  const RX_PIE = /^(fecha emisi|propiedad intelectual|p[aá]gina\s+\d|c[oó]digo:|versi[oó]n:|fecha vigente)/i;
+  const tipoCol = (t) => (RX.no.test(t) ? "no" : RX.resp.test(t) ? "resp" : RX.fecha.test(t) ? "fecha" : RX.estado.test(t) ? "estado" : RX.desc.test(t) ? "desc" : "");
+  // Fecha de entrega: también "15/10", "15-oct", "octubre 15" (usa el año del acta).
+  function fechaEntrega(texto, anio) {
+    const f = fechaISO(texto); if (f) return f;
+    const t = String(texto || "").toLowerCase();
+    let m = t.match(/(\d{1,2})[/.-](\d{1,2})(?![/.-]?\d)/);
+    if (m && anio && +m[2] >= 1 && +m[2] <= 12) return `${anio}-${pad(m[2])}-${pad(m[1])}`;
+    m = t.match(/(\d{1,2})\s*(?:de\s+)?([a-záéíóúñ]{3,})/);
+    const mes = m && Object.keys(MESES).find((k) => k.startsWith(m[2].slice(0, 3)));
+    if (m && mes && anio) return `${anio}-${pad(MESES[mes])}-${pad(m[1])}`;
+    m = t.match(/([a-záéíóúñ]{3,})\s+(\d{1,2})\b/);
+    const mes2 = m && Object.keys(MESES).find((k) => k.startsWith(m[1].slice(0, 3)));
+    if (m && mes2 && anio) return `${anio}-${pad(MESES[mes2])}-${pad(m[2])}`;
+    return "";
+  }
+  // Una línea de lista: "1. Juan Pérez: enviar X (20/10/2026)" → compromiso, responsable y fecha.
+  const NOMBRE = "[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\\s+(?:de\\s+|del\\s+)?[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+){0,4}";
+  function compromisoDeLinea(txt, anio) {
+    let t = String(txt || "").replace(/^\s*(\d{1,3}[.)-]|[-•●▪◦*–·✓☐]|\([a-z0-9]\))\s*/i, "").trim();
+    if (t.length < 4) return null;
+    let resp = "", f = "", fTxt = "";
+    const fechas = [
+      /(?:fecha(?:\s+de\s+entrega)?|plazo|para(?:\s+el)?|antes\s+del?|hasta\s+el)\s*:?\s*(\d{1,2}[/.-]\d{1,2}(?:[/.-]\d{2,4})?|\d{1,2}\s+de\s+[a-záéíóúñ]+(?:\s+de\s+\d{4})?)/i,
+      /\(?\b(\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}|\d{1,2}\s+de\s+[a-záéíóúñ]+\s+de\s+\d{4})\b\)?/i,
+      /\(?\b(\d{1,2}[/.-]\d{1,2})\b(?![/.-]?\d)\)?/,
+    ];
+    for (const rx of fechas) { const fm = t.match(rx); if (fm) { const v = fechaEntrega(fm[1], anio); if (v) { f = v; fTxt = fm[1]; t = t.replace(fm[0], " "); break; } } }
+    t = t.replace(/\(\s*\)/g, " ").replace(/\s+/g, " ").trim();
+    const rx = [
+      [new RegExp(`responsables?\\s*:\\s*([^;.()\\n]+)`, "i"), 1],
+      [new RegExp(`\\((${NOMBRE}(?:\\s*(?:[/,;]|\\sy\\s)\\s*${NOMBRE})*)\\)`), 1],
+      [new RegExp(`^(${NOMBRE}(?:\\s*(?:[/,;]|\\sy\\s)\\s*${NOMBRE})*)\\s*[:]\\s+`), 1],
+      [new RegExp(`\\s[–-]\\s*(${NOMBRE}(?:\\s*(?:[/,;]|\\sy\\s)\\s*${NOMBRE})*)\\s*[–-]?\\s*$`), 1],
+    ];
+    for (const [r, g] of rx) { const m = t.match(r); if (m && /\s/.test(m[g].trim()) || (m && r === rx[0][0])) { resp = m[g].trim(); t = t.replace(m[0], " "); break; } }
+    t = t.replace(/\(\s*\)/g, " ").replace(/\s*[–-]\s*$/, "").replace(/\s+/g, " ").replace(/^[,;:.\s–-]+|[,;:\s–-]+$/g, "").trim();
+    return t.length >= 4 ? { Compromiso: t.charAt(0).toUpperCase() + t.slice(1), Responsable: resp, Fecha_Texto: fTxt, Fecha_Compromiso: f } : null;
+  }
+  // Renglones de todo el documento PDF, con sus fragmentos.
+  function renglones(paginas) {
+    const out = [];
+    paginas.forEach((items, pg) => {
+      const l = [];
+      items.slice().sort((a, b) => a.y - b.y || a.x - b.x).forEach((i) => { const u = l[l.length - 1]; if (u && Math.abs(u.y - i.y) < 3) u.items.push(i); else l.push({ pg, y: i.y, h: i.h, items: [i] }); });
+      l.forEach((x) => { x.items.sort((a, b) => a.x - b.x); x.t = unir(x.items.slice()); out.push(x); });
+    });
+    return out;
+  }
+  function leerGenerico(paginas, anio) {
+    const L = renglones(paginas).filter((l) => !RX_PIE.test(l.t));
+    const iTit = L.findIndex((l) => RX_TIT.test(l.t) && !RX_NO_TIT.test(l.t) && l.t.length < 90);
+    // Encabezado de tabla: un renglón (o dos seguidos) con al menos dos tipos de columna, uno de ellos descripción o responsable+fecha.
+    const esEnc = (items) => { const tipos = new Set(items.map((i) => tipoCol(i.t)).filter(Boolean)); return tipos.size >= 2 && (tipos.has("desc") || (tipos.has("resp") && tipos.has("fecha"))); };
+    let iEnc = -1, enc = null;
+    const desde = iTit >= 0 ? iTit : 0, hastaBusq = iTit >= 0 ? Math.min(L.length, iTit + 8) : L.length;
+    for (let i = desde; i < hastaBusq && iEnc < 0; i++) {
+      const junto = L[i + 1] && L[i + 1].pg === L[i].pg && L[i + 1].y - L[i].y < 16 ? [...L[i].items, ...L[i + 1].items] : L[i].items;
+      if (esEnc(L[i].items)) { iEnc = i; enc = L[i].items; }
+      else if (esEnc(junto)) { iEnc = i + 1; enc = junto; }
+    }
+    if (iEnc >= 0) {
+      // Columnas: se agrupan los fragmentos del encabezado que se tocan; cada grupo toma el tipo de su texto.
+      const g = [];
+      enc.slice().sort((a, b) => a.x - b.x).forEach((i) => { const k = g.find((c) => i.x <= c.max + 6 && i.x + i.w >= c.min - 6); if (k) { k.min = Math.min(k.min, i.x); k.max = Math.max(k.max, i.x + i.w); k.t += " " + i.t; } else g.push({ min: i.x, max: i.x + i.w, t: i.t }); });
+      g.forEach((c) => { c.tipo = tipoCol(c.t) || tipoCol(c.t.split(" ")[0]); c.centro = (c.min + c.max) / 2; });
+      const filasDatos = [];
+      for (let i = iEnc + 1; i < L.length; i++) {
+        const l = L[i];
+        if (RX_FIN.test(l.t) || (RX_TIT.test(l.t) && l.t.length < 60 && !esEnc(l.items))) break;
+        if (esEnc(l.items)) continue;   // encabezado repetido en otra página
+        filasDatos.push(l);
+      }
+      // Inicio real de cada columna: x de los datos que se repiten (contenido alineado a la izquierda).
+      const conteo = {};
+      filasDatos.forEach((l) => l.items.forEach((i) => { const k = Math.round(i.x); conteo[k] = (conteo[k] || 0) + 1; }));
+      const inicios = Object.keys(conteo).map(Number).sort((a, b) => a - b);
+      g.forEach((c, k) => {
+        const previo = k ? g[k - 1].ini : -Infinity;
+        const cand = inicios.filter((x) => x > previo + 12 && x <= c.centro + 4 && (k === 0 || x > g[k - 1].centro));
+        c.ini = cand.length ? cand[0] : c.min - 4;
+      });
+      const colDe = (i) => { let r = g[0]; g.forEach((c) => { if (i.x >= c.ini - 4) r = c; }); return r; };
+      const hayNo = g.some((c) => c.tipo === "no");
+      const filas = [];
+      let act = null, prevY = null, prevPg = null;
+      filasDatos.forEach((l) => {
+        const porCol = new Map();
+        l.items.forEach((i) => { const c = colDe(i); porCol.set(c, [...(porCol.get(c) || []), i.t]); });
+        const txt = (tipo) => g.filter((c) => c.tipo === tipo).map((c) => (porCol.get(c) || []).join(" ")).join(" ").trim();
+        const no = txt("no");
+        const salto = prevY !== null && (l.pg !== prevPg || l.y - prevY > l.h * 1.55);
+        const nueva = hayNo ? /^\d{1,3}\.?$/.test(no) : !act || (salto && txt("desc"));
+        if (nueva || !act) { act = { desc: [], resp: [], fecha: [] }; filas.push(act); }
+        ["desc", "resp", "fecha"].forEach((k) => { const v = txt(k); if (v) act[k].push(v); });
+        prevY = l.y; prevPg = l.pg;
+      });
+      const comps = filas.map((f) => ({ Compromiso: f.desc.join(" ").replace(/\s+/g, " ").trim(), Responsable: f.resp.join(" ").replace(/\s+/g, " ").trim(), Fecha_Texto: f.fecha.join(" "), Fecha_Compromiso: fechaEntrega(f.fecha.join(" "), anio) }))
+        .filter((c) => c.Compromiso.length >= 3);
+      if (comps.length) return { encontrada: true, titulo: iTit >= 0, compromisos: comps, formato: "tabla" };
+    }
+    // Lista bajo el título.
+    if (iTit < 0) return { encontrada: false, titulo: false, compromisos: [], formato: "" };
+    const items = [];
+    for (let i = iTit + 1; i < L.length; i++) {
+      const t = L[i].t;
+      if (RX_FIN.test(t) || (RX_TIT.test(t) && t.length < 60)) break;
+      if (/^\s*(\d{1,3}[.)-]|[-•●▪◦*–·✓☐])\s*/.test(t) || !items.length) items.push(t); else items[items.length - 1] += " " + t;
+    }
+    const comps = items.map((t) => compromisoDeLinea(t, anio)).filter(Boolean);
+    return { encontrada: comps.length > 0, titulo: true, compromisos: comps, formato: "lista" };
+  }
+
+  /* ---------- Actas en Word (.docx) ---------- */
+  let cargaXLSX = null;
+  function libZip() {
+    if (window.XLSX && window.XLSX.CFB) return Promise.resolve(window.XLSX);
+    if (!cargaXLSX) cargaXLSX = new Promise((ok, falla) => { const s = document.createElement("script"); s.src = new URL("lib/xlsx.full.min.js", location.href).href; s.onload = () => ok(window.XLSX); s.onerror = () => falla(new Error("No se pudo cargar el lector de Word.")); document.head.appendChild(s); });
+    return cargaXLSX;
+  }
+  async function leerWord(datos) {
+    const X = await libZip();
+    const zip = X.CFB.read(datos, { type: "array" });
+    const ent = X.CFB.find(zip, "word/document.xml") || X.CFB.find(zip, "/word/document.xml");
+    if (!ent) throw new Error("El archivo no parece un documento de Word (.docx).");
+    const xml = new DOMParser().parseFromString(new TextDecoder("utf-8").decode(ent.content), "application/xml");
+    const hijos = (n, nombre) => [...n.childNodes].filter((c) => c.localName === nombre);
+    const texto = (n) => [...n.getElementsByTagNameNS("*", "p")].map((p) => [...p.getElementsByTagNameNS("*", "t")].map((t) => t.textContent).join("")).join("\n").trim();
+    const cuerpo = xml.getElementsByTagNameNS("*", "body")[0];
+    const bloques = [];
+    [...cuerpo.childNodes].forEach((n) => {
+      if (n.localName === "p") { const t = [...n.getElementsByTagNameNS("*", "t")].map((x) => x.textContent).join("").trim(); if (t) bloques.push({ p: t }); }
+      else if (n.localName === "tbl") bloques.push({ tabla: hijos(n, "tr").map((tr) => hijos(tr, "tc").map(texto)) });
+    });
+    const todo = bloques.flatMap((b) => (b.p ? [b.p] : b.tabla.flat()));
+    const etFecha = todo.find((t) => /^fecha\s*:/i.test(t) && fechaISO(t));
+    const fecha = etFecha ? fechaISO(etFecha) : "";
+    const anio = (fecha || new Date().toISOString()).slice(0, 4);
+    let titulo = false;
+    // 1) Tabla con encabezado de compromisos (la fila del título puede estar dentro de la misma tabla).
+    for (let k = 0; k < bloques.length; k++) {
+      const b = bloques[k];
+      if (b.p && RX_TIT.test(b.p) && !RX_NO_TIT.test(b.p)) titulo = true;
+      if (!b.tabla) continue;
+      if (b.tabla.some((f) => f.some((c) => RX_TIT.test(c) && !RX_NO_TIT.test(c) && c.length < 90))) titulo = true;
+      const iEnc = b.tabla.findIndex((f) => { const tipos = new Set(f.map((c) => tipoCol(c.split("\n")[0].trim())).filter(Boolean)); return tipos.size >= 2 && (tipos.has("desc") || (tipos.has("resp") && tipos.has("fecha"))); });
+      if (iEnc < 0) continue;
+      const tipos = b.tabla[iEnc].map((c) => tipoCol(c.split("\n")[0].trim()));
+      const val = (f, t) => f.filter((_, j) => tipos[j] === t).join(" ").replace(/\s+/g, " ").trim();
+      const comps = b.tabla.slice(iEnc + 1).filter((f) => !f.every((c) => !c.trim())).map((f) => ({ Compromiso: val(f, "desc"), Responsable: val(f, "resp"), Fecha_Texto: val(f, "fecha"), Fecha_Compromiso: fechaEntrega(val(f, "fecha"), anio) }))
+        .filter((c) => c.Compromiso.length >= 3 && !RX_FIN.test(c.Compromiso));
+      if (comps.length) return { fecha, encontrada: true, titulo: true, compromisos: comps, formato: "Word" };
+    }
+    // 2) Lista de párrafos bajo el título.
+    const iT = bloques.findIndex((b) => b.p && RX_TIT.test(b.p) && !RX_NO_TIT.test(b.p) && b.p.length < 90);
+    if (iT >= 0) {
+      const comps = [];
+      for (let k = iT + 1; k < bloques.length; k++) { const b = bloques[k]; if (!b.p) break; if (RX_FIN.test(b.p) || (RX_TIT.test(b.p) && b.p.length < 60)) break; const c = compromisoDeLinea(b.p, anio); if (c) comps.push(c); }
+      return { fecha, encontrada: comps.length > 0, titulo: true, compromisos: comps, formato: "Word" };
+    }
+    return { fecha, encontrada: false, titulo, compromisos: [], formato: "Word" };
+  }
+
+  const TIPO_DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
   async function leerActa(archivo) {
     const datos = new Uint8Array(await archivo.arrayBuffer());
+    const esWord = /\.docx$/i.test(archivo.name || "") || (datos[0] === 0x50 && datos[1] === 0x4b);
+    if (esWord) return { ...(await leerWord(datos)), datos, tipo: TIPO_DOCX, word: true };
     const paginas = await fragmentos(datos);
-    const r = leerCompromisos(paginas);
-    return { fecha: leerFecha(paginas), ...r, datos };
+    const fecha = leerFecha(paginas) || (() => { for (const l of renglones(paginas)) { if (/fecha/i.test(l.t)) { const f = fechaISO(l.t); if (f) return f; } } return ""; })();
+    let r = leerCompromisos(paginas);   // formato FSFB (GC-GME-FT-010)
+    if (r.compromisos.length) r.formato = "FSFB";
+    else { const g = leerGenerico(paginas, (fecha || new Date().toISOString()).slice(0, 4)); if (g.compromisos.length || !r.titulo) r = g; }
+    return { fecha, ...r, datos, tipo: "application/pdf" };
   }
 
   // Base64 por partes para no bloquear el navegador con archivos grandes.
@@ -199,5 +382,5 @@
     }
   }
 
-  window.ACTAS = { leerActa, fechaISO, aBase64, deBase64, mostrar, leerCompromisos };
+  window.ACTAS = { leerActa, fechaISO, aBase64, deBase64, mostrar, leerCompromisos, leerGenerico, compromisoDeLinea, TIPO_DOCX };
 })();

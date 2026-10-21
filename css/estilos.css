@@ -1292,3 +1292,11 @@ textarea.ed-ctl { min-width: 220px; }
 .ag-leyenda { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; align-items: center; }
 .ag-leyenda .ag-ev { width: auto; display: inline-block; cursor: default; }
 .crv-arch { font-size: 12px; padding: 0; text-align: left; }
+/* v83 — Revisión de compromisos leídos del acta */
+.ra-lista { display: flex; flex-direction: column; gap: 8px; max-height: 60vh; overflow-y: auto; }
+.ra-fila { display: grid; grid-template-columns: 26px minmax(0, 1fr) minmax(180px, 230px) 150px; gap: 8px; align-items: start; border: 1px solid var(--borde); border-radius: 8px; padding: 8px; }
+.ra-fila.dup { opacity: .65; background: var(--fondo-suave, #f4f6fa); }
+.ra-fila .check { padding-top: 6px; }
+.ra-fila .pill { grid-column: 2 / -1; justify-self: start; }
+.ra-fila textarea { min-height: 42px; }
+@media (max-width: 760px) { .ra-fila { grid-template-columns: 26px minmax(0, 1fr); } .ra-fila > :nth-child(n+3) { grid-column: 2; } }
