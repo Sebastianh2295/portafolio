@@ -1746,15 +1746,29 @@
   const MAX_ACTA = 5 * 1024 * 1024;           // 5 MB por acta
   const TAM_PARTE = 30000;                     // caracteres por celda (límite de Excel: 32.767)
   // Guarda cualquier archivo en la hoja oculta Archivos, en partes de 30.000 caracteres.
+  // Comprime con gzip cuando vale la pena (XML, PDF de texto…). Un .xlsx ya viene comprimido y se deja igual.
+  async function gzip(bytes) {
+    if (typeof CompressionStream === "undefined") return null;
+    try { const out = new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream("gzip"))).arrayBuffer()); return out.length < bytes.length * 0.85 ? out : null; } catch (e) { return null; }
+  }
+  async function gunzip(bytes) { return new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"))).arrayBuffer()); }
   async function guardarArchivo(id, bytes, nombre, tipo, etiqueta = "el archivo") {
+    const comp = await gzip(bytes);
+    if (comp) { bytes = comp; tipo = `gzip;${tipo || "application/octet-stream"}`; }
     const b64 = ACTAS.aBase64(bytes);
     const total = Math.max(1, Math.ceil(b64.length / TAM_PARTE));
     // Se sube, se verifica que estén todas las partes (una vez cada una) y, si no, se repite una vez.
     for (let intento = 1; intento <= 2; intento++) {
       await S.api.borrarArchivo(id);
-      for (let i = 0; i < total; i++) {
-        cargando(true, `Guardando ${etiqueta} en Excel… ${i + 1} de ${total}${intento > 1 ? " (reintento)" : ""}`);
-        await S.api.guardarParte({ ID_Archivo: id, Parte: i, Total: total, Nombre: nombre, Tipo: tipo || "application/octet-stream", Datos: b64.slice(i * TAM_PARTE, (i + 1) * TAM_PARTE) });
+      if (total === 1) await S.api.guardarParte({ ID_Archivo: id, Parte: 0, Total: 1, Nombre: nombre, Tipo: tipo || "application/octet-stream", Datos: b64 });
+      else {
+        // Las partes se pasan al panel (rápido) y se escriben en Excel de una sola vez, por lotes.
+        for (let i = 0; i < total; i++) {
+          if (i % 5 === 0) cargando(true, `Preparando ${etiqueta}… ${Math.round(((i + 1) / total) * 100)}%`);
+          await S.api.bufferParte({ ID_Archivo: id, Parte: i, Total: total, Nombre: nombre, Tipo: tipo || "application/octet-stream", Datos: b64.slice(i * TAM_PARTE, (i + 1) * TAM_PARTE) });
+        }
+        cargando(true, `Guardando ${etiqueta} en Excel${intento > 1 ? " (reintento)" : ""}…`);
+        await S.api.escribirPartes(id);
       }
       cargando(true, `Verificando ${etiqueta}…`);
       if (archivoCompleto(await S.api.partesArchivo(id), total)) { delete cacheArchivos[id]; return; }
@@ -1768,7 +1782,9 @@
     if (cacheArchivos[id]) return cacheArchivos[id];
     const b64 = await leerBase64(id, avance);
     const primera = b64.primera;
-    return (cacheArchivos[id] = { bytes: ACTAS.deBase64(b64.datos), nombre: primera.Nombre, tipo: primera.Tipo });
+    let bytes = ACTAS.deBase64(b64.datos), tipo = String(primera.Tipo || "");
+    if (tipo.startsWith("gzip;")) { bytes = await gunzip(bytes); tipo = tipo.slice(5); }
+    return (cacheArchivos[id] = { bytes, nombre: primera.Nombre, tipo });
   }
   // Lee todas las partes de un archivo; si faltan o están mezcladas, avisa con un error claro.
   async function leerBase64(id, avance) {
@@ -1792,8 +1808,9 @@
     $("#v-cerrar").addEventListener("click", cerrarModal);
     m.addEventListener("keydown", (e) => { if (e.key === "Escape") cerrarModal(); });
     try {
-      const { datos } = await leerBase64(idSeg, (i, n) => { const v = $("#v-paginas"); if (v) v.innerHTML = `<div class="vacio">Abriendo el acta… ${i} de ${n}</div>`; });
-      const bytes = ACTAS.deBase64(datos);
+      const { datos, primera } = await leerBase64(idSeg, (i, n) => { const v = $("#v-paginas"); if (v) v.innerHTML = `<div class="vacio">Abriendo el acta… ${i} de ${n}</div>`; });
+      let bytes = ACTAS.deBase64(datos);
+      if (primera && String(primera.Tipo || "").startsWith("gzip;")) bytes = await gunzip(bytes);
       const d = $("#v-descargar");
       if (d) { d.href = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" })); d.download = nombre || "acta.pdf"; d.hidden = false; }
       await ACTAS.mostrar(bytes, $("#v-paginas"));

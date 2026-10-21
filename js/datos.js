@@ -114,6 +114,7 @@
   }
 
   let estructuraRevisada = false;   // tablas y columnas faltantes: se revisan solo en la primera lectura
+  const bufferArchivos = new Map();
   const OpsExcel = {
     // Prueba rápida de conexión con el libro.
     async ping() {
@@ -219,6 +220,30 @@
         await ctx.sync();
         return true;
       });
+    },
+    // Archivos grandes: las partes se acumulan en memoria del panel (sin tocar Excel) y luego se escriben
+    // todas en una sola operación, por lotes. Antes era una operación de Excel por cada parte.
+    async bufferParte(fila) { const l = bufferArchivos.get(fila.ID_Archivo) || []; l[fila.Parte] = fila; bufferArchivos.set(fila.ID_Archivo, l); return true; },
+    async escribirPartes(id) {
+      const filas = (bufferArchivos.get(id) || []).filter(Boolean);
+      if (!filas.length) return 0;
+      const n = await Excel.run(async (ctx) => {
+        const t = ctx.workbook.tables.getItem("Archivos");
+        const h = t.getHeaderRowRange().load("values");
+        const cuerpo = t.getDataBodyRange().load("rowCount");
+        await ctx.sync();
+        const cols = h.values[0];
+        let vals = filas.map((f) => cols.map((k) => (f[k] === undefined ? "" : f[k])));
+        if (cuerpo.rowCount === 1) {
+          const r0 = cuerpo.getRow(0).load("values"); await ctx.sync();
+          if (r0.values[0].every((c) => c === "" || c === null)) { cuerpo.getRow(0).values = [vals[0]]; vals = vals.slice(1); }
+        }
+        const LOTE = 25;   // ~750 KB por envío
+        for (let i = 0; i < vals.length; i += LOTE) { if (vals.slice(i, i + LOTE).length) t.rows.add(null, vals.slice(i, i + LOTE)); await ctx.sync(); }
+        return filas.length;
+      });
+      bufferArchivos.delete(id);
+      return n;
     },
     async _filasArchivo(ctx, id) {
       const t = ctx.workbook.tables.getItem("Archivos");
@@ -358,6 +383,8 @@
       async leerTodo() { const r = copia(db); SOLO_BAJO_DEMANDA.forEach((n) => delete r[n]); return r; },
       async leerTabla(nombre) { return copia(db[nombre] || []); },
       async guardarParte(f) { (archivos[f.ID_Archivo] = archivos[f.ID_Archivo] || [])[f.Parte] = copia(f); return true; },
+      async bufferParte(f) { (archivos[f.ID_Archivo] = archivos[f.ID_Archivo] || [])[f.Parte] = copia(f); return true; },
+      async escribirPartes(id) { return (archivos[id] || []).filter(Boolean).length; },
       async borrarArchivo(id) { delete archivos[id]; return true; },
       async borrarArchivos(ids) { ids.forEach((id) => delete archivos[id]); return ids.length; },
       async partesArchivo(id) { return (archivos[id] || []).filter(Boolean).map((f) => ({ parte: Number(f.Parte), total: Number(f.Total) })); },
@@ -385,7 +412,7 @@
   // Las operaciones contra Excel se ejecutan de a una (en fila): varias a la vez hacían que Excel en la web se quedara pegado.
   let cola = Promise.resolve();
   function enCola(op, fn) {
-    const limite = op === "leerTodo" || op === "leerTabla" ? 120000 : 60000;
+    const limite = op === "leerTodo" || op === "leerTabla" || op === "escribirPartes" ? 180000 : 60000;
     const p = cola.then(() => new Promise((res, rej) => {
       const t = setTimeout(() => rej(new Error("Excel tardó demasiado en responder. Intente de nuevo; si persiste, cierre y abra el complemento.")), limite);
       Promise.resolve().then(fn).then((v) => { clearTimeout(t); res(v); }, (e) => { clearTimeout(t); rej(e); });
@@ -393,7 +420,7 @@
     cola = p.catch(() => {});
     return p;
   }
-  const OPERACIONES = ["ping", "leerTodo", "leerTabla", "agregarFila", "agregarFilas", "actualizarPorId", "actualizarVarios", "eliminarFila", "eliminarFilas", "guardarParte", "borrarArchivo", "borrarArchivos", "partesArchivo", "leerParte"];
+  const OPERACIONES = ["ping", "leerTodo", "leerTabla", "agregarFila", "agregarFilas", "actualizarPorId", "actualizarVarios", "eliminarFila", "eliminarFilas", "guardarParte", "bufferParte", "escribirPartes", "borrarArchivo", "borrarArchivos", "partesArchivo", "leerParte"];
 
   async function puente() {
     let seq = 0;
@@ -414,7 +441,7 @@
       const t = setTimeout(() => {
         pendientes.delete(id);
         rej(new Error("Excel no respondió. Usa «Reconectar con Excel»; si sigue igual, abre de nuevo el portafolio desde el panel lateral."));
-      }, ms || (op === "leerTodo" || op === "leerTabla" ? 150000 : 90000));
+      }, ms || (op === "leerTodo" || op === "leerTabla" || op === "escribirPartes" ? 200000 : 90000));
       pendientes.set(id, { res, rej, t });
       try { Office.context.ui.messageParent(JSON.stringify({ id, op, args })); }
       catch (e) { clearTimeout(t); pendientes.delete(id); rej(new Error("Se perdió la conexión con el panel lateral de Excel.")); }
