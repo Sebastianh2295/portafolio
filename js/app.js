@@ -728,8 +728,8 @@
       return `<tr class="clic" data-pid="${esc(s.ID_Proyecto)}">
         <td><b>${esc(p.Nombre)}</b><div class="sub">${esc(nombreUsuario(p.PM))} · ${fecha(s.Fecha_Corte)}</div>${s.Acta_Archivo || esURL(s.URL_Acta) ? `<div class="celda-acta">${celdaActa(s, false)}</div>` : ""}</td>
         <td>${pct(s.Avance_Real)}<div class="${v > 0 ? "sube" : v < 0 ? "baja" : "sub"}">${v === null ? "primer reporte" : (v > 0 ? "+" : "") + v + " pts"}</div></td>
-        <td>${chipSemaforo(s.Semaforo)}</td><td>${esc(s.Logros)}</td><td class="opc">${esc(s.Proximos_Pasos)}</td>
-        <td class="${s.Bloqueos ? "bloqueo" : ""}">${esc(s.Bloqueos || "—")}</td>
+        <td>${chipSemaforo(s.Semaforo)}</td><td${edSeg(s, "Logros", "Logros")}>${esc(s.Logros || "—")}</td><td class="opc"${edSeg(s, "Proximos_Pasos", "Próximos pasos")}>${esc(s.Proximos_Pasos || "—")}</td>
+        <td class="${s.Bloqueos ? "bloqueo" : ""}"${edSeg(s, "Bloqueos", "Bloqueos")}>${esc(s.Bloqueos || "—")}</td>
         <td class="opc">${comps.length ? `<ul class="mini">${comps.map((c) => `<li>${esc(c.Compromiso)} <span class="sub">(${esc(c.Responsable)}, ${fecha(c.Fecha_Compromiso)})</span></li>`).join("")}</ul>` : "—"}</td></tr>`;
     }).join("");
     const reportaron = new Set(deSemana.map((s) => s.ID_Proyecto));
@@ -749,6 +749,8 @@
     $("#sel-semana").addEventListener("change", (e) => { S.semana = e.target.value; render(); });
   }
 
+  // Logros, próximos pasos y bloqueos de una sesión, editables en la tabla.
+  const edSeg = (s, campo, etiqueta) => ed({ puede: R.puedeEditar(S.usuario, proyecto(s.ID_Proyecto) || {}, "seguimiento"), tabla: "Seguimientos", idCol: "ID_Seguimiento", id: s.ID_Seguimiento, campo, tipo: "textarea", valor: s[campo] ?? "", etiqueta });
   // ---------- Seguimiento y compromisos ----------
   function vSeguimiento(el) {
     const orden = { Vencido: 0, "Por vencer": 1, "Al día": 2 };
@@ -769,7 +771,7 @@
       <div class="card"><h2>Control de seguimiento</h2><div class="tabla-scroll"><table>
         <thead><tr><th>Proyecto</th><th>Frecuencia</th><th>Último</th><th>Próximo</th><th>Estado</th><th class="opc">En 90 días</th><th></th></tr></thead>
         <tbody>${filas.map(({ p, e }) => `<tr class="clic" data-pid="${esc(p.ID_Proyecto)}">
-          <td><b>${esc(p.Nombre)}</b><div class="sub">${esc(nombreUsuario(p.PM))}</div></td><td>${esc(p.Frecuencia_Seguimiento)}</td>
+          <td><b>${esc(p.Nombre)}</b><div class="sub">${esc(nombreUsuario(p.PM))}</div></td><td${ed({ puede: R.puedeEditar(S.usuario, p, "editarFrecuencia"), tabla: "Proyectos", idCol: "ID_Proyecto", id: p.ID_Proyecto, campo: "Frecuencia_Seguimiento", tipo: "select", opciones: Object.keys(R.DIAS_FRECUENCIA), valor: p.Frecuencia_Seguimiento, extra: () => sello(), etiqueta: "Frecuencia" })}>${esc(p.Frecuencia_Seguimiento)}</td>
           <td>${e.ultimaFecha ? fecha(e.ultimaFecha) : "Sin reportes"}</td><td>${fecha(e.proximo)}</td>
           <td>${pill(e.estado)}<div class="sub">${e.faltan < 0 ? `${-e.faltan} día(s) de retraso` : `faltan ${e.faltan} día(s)`}</div></td>
           <td class="opc">${e.en90}</td>
@@ -867,9 +869,9 @@
         const coms = comentariosDe(c.ID_Compromiso);
         const ult = coms[coms.length - 1];
         return `<tr>${conProyecto ? `<td><button class="btn enlace" data-pid="${esc(c.ID_Proyecto)}" title="Ir al proyecto"><b>${esc(p.Nombre)}</b></button></td>` : ""}
-          <td${ed({ puede: R.puedeEditar(S.usuario, p, "compromisos"), tabla: "Compromisos", idCol: "ID_Compromiso", id: c.ID_Compromiso, campo: "Compromiso", tipo: "textarea", valor: c.Compromiso, requerido: true, etiqueta: "Compromiso" })}>${esc(c.Compromiso)}<div class="sub">${esc(origen(c))}</div></td><td>${celdaResp(c, R.puedeEditar(S.usuario, p, "compromisos"))}</td>
-          <td class="nowrap"${ed({ puede: R.puedeEditar(S.usuario, p, "compromisos"), tabla: "Compromisos", idCol: "ID_Compromiso", id: c.ID_Compromiso, campo: "Fecha_Compromiso", tipo: "date", valor: c.Fecha_Compromiso, etiqueta: "Fecha del compromiso" })}>${fecha(c.Fecha_Compromiso)}</td>
-          <td>${pillComp(c)}${e === "Cerrado" && c.Fecha_Cierre ? `<div class="sub">${fecha(c.Fecha_Cierre)}</div>` : ""}</td>
+          <td${edCompTexto(c)}>${esc(c.Compromiso)}<div class="sub">${esc(origen(c))}</div></td><td>${celdaResp(c, R.puedeEditar(S.usuario, p, "compromisos"))}</td>
+          <td class="nowrap"${edCompFecha(c)}>${c.Fecha_Compromiso ? fecha(c.Fecha_Compromiso) : `<span class="sub">—</span>`}</td>
+          <td${edCompEstado(c)}>${pillComp(c)}${e === "Cerrado" && c.Fecha_Cierre ? `<div class="sub">${fecha(c.Fecha_Cierre)}</div>` : ""}</td>
           <td class="opc">${ult ? `<span class="ult-com">${esc(resumenCom(ult))}</span><div class="sub">${esc(nombreUsuario(ult.Autor))} · ${fechaHora(ult.Fecha_Hora)}</div>` : `<span class="sub">Sin comentarios</span>`}</td>
           <td class="derecha nowrap"><button class="btn chico ${coms.length ? "" : "primario-suave"}" data-abrir-comp="${esc(c.ID_Compromiso)}">${coms.length ? `Comentarios (${coms.length})` : "Abrir"}</button>
             ${R.puedeEditar(S.usuario, p, "compromisos") ? botonesEstado(c) : ""}</td></tr>`;
@@ -1120,11 +1122,11 @@
     const fila = ({ c, e }) => {
       const coms = comentariosDe(c.ID_Compromiso);
       const ult = coms[coms.length - 1];
-      return `<tr><td>${esc(c.Compromiso)}${ult ? `<div class="sub ult-com">💬 ${esc(resumenCom(ult))}</div>` : ""}</td>
-        <td class="nowrap">${fechaCreacion(c) ? fecha(fechaCreacion(c)) : `<span class="sub">—</span>`}</td>
-        <td>${c.ID_Seguimiento ? `Sesión ${fecha(fSes(c))}` : `<span class="sub">Sin sesión</span>`}</td>
-        <td>${celdaResp(c, puede)}</td><td class="nowrap">${fecha(c.Fecha_Compromiso)}</td>
-        <td>${pillComp(c)}${e === "Cerrado" && c.Fecha_Cierre ? `<div class="sub">${fecha(c.Fecha_Cierre)}</div>` : ""}</td>
+      return `<tr><td${edCompTexto(c)}>${esc(c.Compromiso)}${ult ? `<div class="sub ult-com">💬 ${esc(resumenCom(ult))}</div>` : ""}</td>
+        <td class="nowrap"${edCompCreado(c)}>${fechaCreacion(c) ? fecha(fechaCreacion(c)) : `<span class="sub">—</span>`}</td>
+        <td${edCompSesion(c)}>${c.ID_Seguimiento ? `Sesión ${fecha(fSes(c))}` : `<span class="sub">Sin sesión</span>`}</td>
+        <td>${celdaResp(c, puede)}</td><td class="nowrap"${edCompFecha(c)}>${c.Fecha_Compromiso ? fecha(c.Fecha_Compromiso) : `<span class="sub">—</span>`}</td>
+        <td${edCompEstado(c)}>${pillComp(c)}${e === "Cerrado" && c.Fecha_Cierre ? `<div class="sub">${fecha(c.Fecha_Cierre)}</div>` : ""}</td>
         <td class="derecha nowrap"><button class="btn chico ${coms.length ? "" : "primario-suave"}" data-abrir-comp="${esc(c.ID_Compromiso)}">${coms.length ? `Comentarios (${coms.length})` : "Abrir"}</button>
           ${puede ? botonesEstado(c) : ""}</td></tr>`;
     };
@@ -1171,6 +1173,14 @@
     if (b === "En curso") return `<button class="btn chico" data-cestado="${esc(c.ID_Compromiso)}" data-a="Cerrado">✓ Cerrar</button>`;
     return "";
   }
+  // Celdas editables de compromisos (texto, fecha, estado, sesión, creación) con constancia en el hilo.
+  const edComp = (c, campo, o = {}) => ed({ puede: R.puedeEditar(S.usuario, proyecto(c.ID_Proyecto) || {}, "compromisos"), tabla: "Compromisos", idCol: "ID_Compromiso", id: c.ID_Compromiso, campo, valor: c[campo] ?? "", ...o });
+  const edCompTexto = (c) => edComp(c, "Compromiso", { tipo: "textarea", requerido: true, etiqueta: "Compromiso" });
+  const edCompFecha = (c) => edComp(c, "Fecha_Compromiso", { tipo: "date", etiqueta: "Fecha límite", despues: (v) => S.api.agregarFila("Comentarios", nuevoComentario(c, `Fecha límite: ${c.Fecha_Compromiso ? fecha(c.Fecha_Compromiso) : "sin fecha"} → ${v ? fecha(v) : "sin fecha"}.`)) });
+  const edCompEstado = (c) => edComp(c, "Estado", { tipo: "select", opciones: R.ESTADOS_COMPROMISO, valor: R.estadoBase(c), etiqueta: "Estado del compromiso",
+    extra: (v) => ({ Fecha_Cierre: v === "Cerrado" ? R.hoyISO() : "" }), despues: (v) => S.api.agregarFila("Comentarios", nuevoComentario(c, TEXTO_ESTADO[v])) });
+  const edCompSesion = (c) => edComp(c, "ID_Seguimiento", { tipo: "select", opciones: opcionesSesion(c.ID_Proyecto), vacio: "Sin sesión (registrado en el proyecto)", etiqueta: "Sesión" });
+  const edCompCreado = (c) => edComp(c, "Fecha_Creacion", { tipo: "date", valor: c.Fecha_Creacion || "", validar: (v) => (v && v > R.hoyISO() ? "La fecha de creación no puede ser futura." : ""), etiqueta: "Fecha de creación" });
   const TEXTO_ESTADO = { Pendiente: "Compromiso reabierto: queda Pendiente.", "En curso": "Compromiso en curso.", Cerrado: "Compromiso cerrado." };
   // Cambia el estado, maneja la fecha de cierre y deja constancia en el hilo.
   async function cambiarEstado(c, nuevo, texto) {
@@ -1411,7 +1421,7 @@
           const acordados = S.datos.Compromisos.filter((c) => c.ID_Seguimiento === s.ID_Seguimiento).sort(porCreacion);
           if (R.esSesion(s)) return `<tr class="fila-sesion"><td><b>${fecha(s.Fecha_Corte)}</b> <span class="pill sesion">Sesión</span>${s.Nombre_Sesion ? `<div><b>${esc(s.Nombre_Sesion)}</b></div>` : ""}<div class="sub">${esc(nombreUsuario(s.Reportado_Por))}</div></td>
           <td><span class="sub">No reporta avance</span></td>
-          <td>${esc(s.Logros)}${s.Proximos_Pasos ? `<div class="sub">Sigue: ${esc(s.Proximos_Pasos)}</div>` : ""}</td><td>${esc(s.Bloqueos || "—")}</td>
+          <td${edSeg(s, "Logros", "Logros")}>${esc(s.Logros || "—")}${s.Proximos_Pasos ? `<div class="sub">Sigue: ${esc(s.Proximos_Pasos)}</div>` : ""}</td><td${edSeg(s, "Bloqueos", "Bloqueos")}>${esc(s.Bloqueos || "—")}</td>
           <td>${acordados.length ? `<details class="acordados" data-seg-det="${esc(s.ID_Seguimiento)}" ${(S.segAbiertos || new Set()).has(s.ID_Seguimiento) ? "open" : ""}><summary><b>${acordados.length} compromiso(s)</b> <span class="sub">· ${acordados.filter((c) => !R.cerrado(c)).length} abierto(s)</span></summary>
             <ul class="mini">${acordados.map((c) => `<li><button class="btn enlace" data-abrir-comp="${esc(c.ID_Compromiso)}">${esc(c.Compromiso)}</button> <span class="sub">${esc(c.Responsable)} · ${fecha(c.Fecha_Compromiso)}</span> ${pillComp(c)}</li>`).join("")}</ul></details>` : `<span class="sub">Sin compromisos</span>`}
             ${puedeP("compromisos") ? `<div><button class="btn chico" data-comp-seg="${esc(s.ID_Seguimiento)}">+ Compromiso de esta sesión</button></div>` : ""}</td>
@@ -1419,7 +1429,7 @@
             ${puedeP("seguimiento") ? `<button class="btn chico enlace-edicion" data-edit-seg="${esc(s.ID_Seguimiento)}">Editar sesión</button>` : ""}</td></tr>`;
           return `<tr><td><b>${fecha(s.Fecha_Corte)}</b> <span class="pill encurso">Seguimiento</span><div class="sub">${esc(s.Semana)} · ${esc(nombreUsuario(s.Reportado_Por))}</div></td>
           <td>${pct(s.Avance_Real)}${s.Avance_Planeado !== "" && s.Avance_Planeado != null ? ` <span class="sub">/ ${pct(s.Avance_Planeado)}</span>` : ""}<div>${chipSemaforo(s.Semaforo)}</div>${(() => { const v = (S.datos.Cronogramas || []).find((x) => x.ID_Seguimiento === s.ID_Seguimiento); return v ? `<button class="btn enlace" data-ir-crv="${esc(v.ID_Version)}" title="Ver el cronograma de esta sesión">📅 V${esc(v.Numero)}</button>` : ""; })()}</td>
-          <td>${esc(s.Logros)}<div class="sub">Sigue: ${esc(s.Proximos_Pasos || "—")}</div></td><td>${esc(s.Bloqueos || "—")}</td>
+          <td${edSeg(s, "Logros", "Logros")}>${esc(s.Logros || "—")}<div class="sub">Sigue: ${esc(s.Proximos_Pasos || "—")}</div></td><td${edSeg(s, "Bloqueos", "Bloqueos")}>${esc(s.Bloqueos || "—")}</td>
           <td>${acordados.length ? (() => {
             const ab = acordados.filter((c) => !R.cerrado(c)).length, ve = acordados.filter((c) => R.estadoCompromiso(c) === "Vencido").length;
             return `<details class="acordados" data-seg-det="${esc(s.ID_Seguimiento)}" ${(S.segAbiertos || new Set()).has(s.ID_Seguimiento) ? "open" : ""}>
@@ -1656,9 +1666,9 @@
       <div class="card" id="cat-proveedores"><div class="titulo-fila"><h2>Proveedores</h2><button class="btn primario" id="b-nuevo-prov">+ Proveedor</button></div>
         <p class="sub">Se guardan en la tabla Proveedores. Luego los asignas a cada proyecto con «Editar proyecto».</p>
         <div class="tabla-scroll"><table><thead><tr><th>Proveedor</th><th>Servicio</th><th>Contacto</th><th>Proyectos</th><th>Activo</th><th></th></tr></thead>
-          <tbody>${proveedores().map((x) => `<tr><td><b>${esc(x.Nombre)}</b>${x.NIT ? `<div class="sub">NIT ${esc(x.NIT)}</div>` : ""}</td><td>${esc(x.Servicio || "—")}</td>
-            <td>${esc(x.Contacto || "")}${x.Contacto ? "<br>" : ""}${contacto(x.Correo, x.Telefono)}</td><td>${usosProv(x.ID_Proveedor)}</td><td>${esc(x.Activo || "Sí")}</td>
-            <td class="derecha"><button class="btn chico" data-prov="${esc(x.ID_Proveedor)}">Editar</button></td></tr>`).join("") || `<tr><td colspan="6">${vacio("Aún no hay proveedores. Crea el primero con «+ Proveedor».")}</td></tr>`}</tbody></table></div>
+          <tbody>${proveedores().map((x) => { const EV = (campo, o) => ed({ puede: true, tabla: "Proveedores", idCol: "ID_Proveedor", id: x.ID_Proveedor, campo, valor: x[campo] ?? "", ...o }); return `<tr><td${EV("Nombre", { tipo: "text", requerido: true, etiqueta: "Proveedor" })}><b>${esc(x.Nombre)}</b>${x.NIT ? `<div class="sub">NIT ${esc(x.NIT)}</div>` : ""}</td><td${EV("Servicio", { tipo: "text", etiqueta: "Servicio" })}>${esc(x.Servicio || "—")}</td>
+            <td${EV("Contacto", { tipo: "text", etiqueta: "Contacto" })}>${esc(x.Contacto || "")}${x.Contacto ? "<br>" : ""}${contacto(x.Correo, x.Telefono)}</td><td>${usosProv(x.ID_Proveedor)}</td><td${EV("Activo", { tipo: "select", opciones: ["Sí", "No"], valor: x.Activo || "Sí", etiqueta: "Activo" })}>${esc(x.Activo || "Sí")}</td>
+            <td class="derecha"><button class="btn chico" data-prov="${esc(x.ID_Proveedor)}">Editar</button></td></tr>`; }).join("") || `<tr><td colspan="6">${vacio("Aún no hay proveedores. Crea el primero con «+ Proveedor».")}</td></tr>`}</tbody></table></div>
       </div>
       <div class="card"><h2>Listas fijas</h2>
         <p class="sub">Estas listas controlan reglas de la app (colores, días de seguimiento, permisos), por eso no se editan aquí. Si necesitas cambiarlas, pídelo como una mejora.</p>
@@ -1731,10 +1741,11 @@
         <thead><tr><th>Usuario</th><th>Roles</th><th>Proyectos como PM</th><th>Consulta (Lector)</th><th>Activo</th><th></th></tr></thead>
         <tbody>${S.datos.Usuarios.slice().sort((a, b) => String(a.Nombre).localeCompare(String(b.Nombre), "es")).map((u) => {
           const pm = comoPM(u);
-          return `<tr><td><b>${esc(u.Nombre)}</b><div class="sub">${esc(u.Correo)}</div></td>
-          <td>${R.roles(u).map((r) => `<span class="pill rol">${esc(r)}</span>`).join(" ") || `<span class="pill vencido">Sin rol</span>`}</td>
+          const EU = (campo, o) => ed({ puede: R.puede(S.usuario, "usuarios"), tabla: "Usuarios", idCol: "Correo", id: u.Correo, campo, valor: u[campo] ?? "", ...o });
+          return `<tr><td${EU("Nombre", { tipo: "text", requerido: true, etiqueta: "Nombre" })}><b>${esc(u.Nombre)}</b><div class="sub">${esc(u.Correo)}</div></td>
+          <td${EU("Rol", { tipo: "multi", opciones: R.ROLES, valor: R.roles(u).join(", "), etiqueta: "Roles", validar: (v) => (lc(u.Correo) === lc(S.usuario.Correo) && !/Admin/.test(v) && R.tieneRol(S.usuario, "Admin") ? "No puedes quitarte el rol Admin a ti mismo." : "") })}>${R.roles(u).map((r) => `<span class="pill rol">${esc(r)}</span>`).join(" ") || `<span class="pill vencido">Sin rol</span>`}</td>
           <td>${R.tieneRol(u, "PM") ? (pm.length ? esc(pm.join(", ")) : `<span class="sub">Sin proyectos</span>`) : "—"}</td>
-          <td>${R.tieneRol(u, "Lector") ? esc(u.Proyectos || "—") : "—"}</td><td>${esc(u.Activo)}</td>
+          <td>${R.tieneRol(u, "Lector") ? esc(u.Proyectos || "—") : "—"}</td><td${EU("Activo", { tipo: "select", opciones: ["Sí", "No"], etiqueta: "Activo", validar: (v) => (v === "No" && lc(u.Correo) === lc(S.usuario.Correo) ? "No puedes desactivarte a ti mismo." : "") })}>${esc(u.Activo)}</td>
           <td class="derecha"><button class="btn chico" data-u="${esc(u.Correo)}">Editar</button></td></tr>`;
         }).join("")}</tbody></table></div>
         <p class="sub">Los proyectos de un PM salen de la tabla Proyectos (columna PM). Para cambiarlos, edita el PM responsable en cada proyecto.</p></div>`;
@@ -2552,7 +2563,7 @@
       const corr = ant && ant.Fin && v.Fin ? R.difDias(v.Fin, ant.Fin) : null;
       const seg = v.ID_Seguimiento && S.datos.Seguimientos.find((s) => s.ID_Seguimiento === v.ID_Seguimiento);
       const desv = (Number(v.Avance_Real) || 0) - (Number(v.Avance_Plan) || 0);
-      return `<tr><td><span class="pill vnum">V${esc(v.Numero)}</span>${i === 0 ? ` <span class="pill aprobado">vigente</span>` : ""}</td><td class="nowrap">${fecha(v.Fecha_Corte)}</td>
+      return `<tr><td><span class="pill vnum">V${esc(v.Numero)}</span>${i === 0 ? ` <span class="pill aprobado">vigente</span>` : ""}</td><td class="nowrap"${ed({ puede, tabla: "Cronogramas", idCol: "ID_Version", id: v.ID_Version, campo: "Fecha_Corte", tipo: "date", requerido: true, valor: v.Fecha_Corte, validar: (x) => (x > R.hoyISO() ? "La fecha de corte no puede ser futura." : ""), etiqueta: "Fecha de corte" })}>${fecha(v.Fecha_Corte)}</td>
         <td>${seg ? `Sesión del ${fecha(seg.Fecha_Corte)}` : `<span class="sub">—</span>`}</td>
         <td class="nowrap"><b>${pct(v.Avance_Real)}</b> / ${pct(v.Avance_Plan)} <span class="${desv < -5 ? "texto-rojo" : "sub"}">(${desv > 0 ? "+" : ""}${desv})</span></td>
         <td class="nowrap">${fecha(v.Fin)}${corr ? ` <span class="gt-dif ${corr > 0 ? "mal" : "bien"}">${corr > 0 ? "+" : ""}${corr} d</span>` : ""}</td>
@@ -2894,9 +2905,11 @@ ${x.h}</section>`).join("")}
           ${lb.lista.length ? `<div class="tabla-scroll"><table class="no-orden tabla-lb"><thead><tr><th>Línea base</th><th>Fijada</th><th>Inicio</th><th>Fin</th><th>Presupuesto</th><th>Motivo</th><th></th></tr></thead><tbody>
             ${lb.lista.slice().reverse().map((x, i, arr) => { const prev = arr[i + 1]; const dd = prev && prev.Fecha_Fin && x.Fecha_Fin ? R.difDias(x.Fecha_Fin, prev.Fecha_Fin) : null;
               const cc = x.ID_Cambio && (S.datos.Cambios || []).find((c) => c.ID_Cambio === x.ID_Cambio);
-              return `<tr class="${x === lb.vig ? "lb-vigente" : ""}"><td><b>LB${esc(x.Numero)}</b>${x === lb.vig ? ` <span class="pill aprobado">vigente</span>` : Number(x.Numero) === 0 ? ` <span class="pill">original</span>` : ""}</td><td class="nowrap">${fecha(x.Fecha)}</td>
-                <td class="nowrap">${fecha(x.Fecha_Inicio)}</td><td class="nowrap">${fecha(x.Fecha_Fin)}${dd ? `<div class="sub">${dd > 0 ? "+" : ""}${dd} días vs LB${esc(prev.Numero)}</div>` : ""}</td><td class="nowrap">${num0(x.Presupuesto) !== null ? cop(x.Presupuesto) : "—"}</td>
-                <td>${esc(x.Motivo || "")}${cc ? `<div class="sub">Control de cambios ${esc(cc.Numero_CC || cc.ID_Cambio)}</div>` : ""}</td>
+              const ELB = (y, campo, tipo, etiqueta) => ed({ puede: puedeDecidir, tabla: "LineasBase", idCol: "ID_LB", id: y.ID_LB, campo, tipo, valor: y[campo] ?? "", etiqueta, min: tipo === "number" ? 0 : undefined,
+                despues: (v) => { const mapa = { Fecha_Inicio: "Fecha_Inicio_Base", Fecha_Fin: "Fecha_Fin_Base", Presupuesto: "Presupuesto_Base" }; return y === lb.vig && mapa[campo] ? S.api.actualizarPorId("Proyectos", "ID_Proyecto", p.ID_Proyecto, { [mapa[campo]]: v }) : null; } });
+              return `<tr class="${x === lb.vig ? "lb-vigente" : ""}"><td><b>LB${esc(x.Numero)}</b>${x === lb.vig ? ` <span class="pill aprobado">vigente</span>` : Number(x.Numero) === 0 ? ` <span class="pill">original</span>` : ""}</td><td class="nowrap"${ELB(x, "Fecha", "date", "Fecha en que se fijó")}>${fecha(x.Fecha)}</td>
+                <td class="nowrap"${ELB(x, "Fecha_Inicio", "date", "Inicio de la línea base")}>${fecha(x.Fecha_Inicio)}</td><td class="nowrap"${ELB(x, "Fecha_Fin", "date", "Fin de la línea base")}>${fecha(x.Fecha_Fin)}${dd ? `<div class="sub">${dd > 0 ? "+" : ""}${dd} días vs LB${esc(prev.Numero)}</div>` : ""}</td><td class="nowrap"${ELB(x, "Presupuesto", "number", "Presupuesto de la línea base")}>${num0(x.Presupuesto) !== null ? cop(x.Presupuesto) : "—"}</td>
+                <td${ELB(x, "Motivo", "textarea", "Motivo")}>${esc(x.Motivo || "—")}${cc ? `<div class="sub">Control de cambios ${esc(cc.Numero_CC || cc.ID_Cambio)}</div>` : ""}</td>
                 <td class="derecha">${puedeDecidir ? `<button class="btn chico" data-lb="${esc(x.ID_LB)}">Editar</button>` : ""}</td></tr>`; }).join("")}</tbody></table></div>` : ""}`
         : `<p class="sub">Aún no hay línea base. Se fija sola con el primer cambio aprobado (toma el inicio, el fin y el presupuesto de ese momento)${puedeDecidir ? ", o puedes fijarla y editarla ahora con «Fijar línea base»" : ""}.</p>`}
       </div>
@@ -2905,7 +2918,7 @@ ${x.h}</section>`).join("")}
         ${lista.length ? `<div class="cc-resumen">${IMPACTOS_CC.map((i) => { const n = lista.filter((c) => c.Estado === "Aprobado" && impactosDe(c).includes(i)).length; return n ? `<span class="pill cc-imp">${esc(i)}: ${n} aprobado${n > 1 ? "s" : ""}</span>` : ""; }).join(" ")}</div>
           <div class="tabla-scroll"><table><thead><tr><th>Fecha</th><th>Impacta en</th><th>Cambio</th><th>Efecto</th><th>Estado</th><th></th></tr></thead><tbody>
           ${lista.map((c) => `<tr><td class="nowrap">${c.Numero_CC ? `<b>${esc(c.Numero_CC)}</b><br>` : ""}${fecha(c.Fecha)}<div class="sub">${esc(nombreUsuario(c.Solicitado_Por))}</div></td><td>${impactosDe(c).map((i) => `<span class="pill cc-imp">${esc(i)}</span>`).join(" ") || "—"}</td>
-            <td><b>${esc(c.Descripcion)}</b>${c.Justificacion ? `<div class="sub">Por qué: ${esc(c.Justificacion)}</div>` : ""}${c.URL_Documento && esURL(c.URL_Documento) ? `<div><a class="cc-doc" href="${esc(c.URL_Documento)}" target="_blank" rel="noopener">📄 Documento del control de cambios ↗</a></div>` : ""}</td>
+            <td${ed({ puede: c.Estado === "Solicitado" && (puedeSolicitar || puedeDecidir), tabla: "Cambios", idCol: "ID_Cambio", id: c.ID_Cambio, campo: "Descripcion", tipo: "textarea", requerido: true, valor: c.Descripcion, etiqueta: "Cambio" })}><b>${esc(c.Descripcion)}</b>${c.Justificacion ? `<div class="sub">Por qué: ${esc(c.Justificacion)}</div>` : ""}${c.URL_Documento && esURL(c.URL_Documento) ? `<div><a class="cc-doc" href="${esc(c.URL_Documento)}" target="_blank" rel="noopener">📄 Documento del control de cambios ↗</a></div>` : ""}</td>
             <td>${esc(c.Impacto || "")}${c.Nueva_Fecha_Fin ? `<div class="sub">Nueva fecha fin: ${fecha(c.Nueva_Fecha_Fin)}</div>` : ""}${num0(c.Nuevo_Presupuesto) !== null ? `<div class="sub">Nuevo presupuesto: ${cop(c.Nuevo_Presupuesto)}</div>` : ""}</td>
             <td>${pill(c.Estado || "Solicitado")}${c.Fecha_Decision ? `<div class="sub">${fecha(c.Fecha_Decision)} · ${esc(nombreUsuario(c.Decidido_Por))}</div>` : ""}${c.Comentario_Decision ? `<div class="sub">${esc(c.Comentario_Decision)}</div>` : ""}</td>
             <td class="derecha nowrap">${c.Estado === "Solicitado" && puedeDecidir ? `<button class="btn chico primario" data-decidir="${esc(c.ID_Cambio)}">Decidir</button> ` : ""}${puedeSolicitar || puedeDecidir ? `<button class="btn chico" data-cambio="${esc(c.ID_Cambio)}">${c.Estado === "Solicitado" ? "Editar" : "Editar / documento"}</button>` : ""}</td></tr>`).join("")}
@@ -3674,8 +3687,8 @@ ${x.h}</section>`).join("")}
         <ul class="lista">${dups.map((g, i) => `<li>${g.map((r) => `<b>${esc(r.Nombre)}</b>${r.Correo ? ` <span class="sub">${esc(r.Correo)}</span>` : ""}`).join(" · ")} <button class="btn chico" data-fusionar="${i}">Fusionar</button></li>`).join("")}</ul></div>` : ""}
       <div class="card"><p class="sub">Directorio único de personas del portafolio. En stakeholders, equipo y responsables de compromisos se eligen de aquí y sus datos se llenan solos; a alguien nuevo lo agregas con «+ Agregar como recurso nuevo» o con «+ Recurso».</p>
         ${lista.length ? `<div class="tabla-scroll"><table><thead><tr><th>Persona</th><th>Proyectos</th><th>Empresa</th><th>Área</th><th>Contacto</th><th>Asignado</th><th></th></tr></thead><tbody>
-          ${lista.map((r) => { const a = asig(r), c = num0(r.Capacidad) ?? 100; return `<tr class="${r.Activo === "No" ? "inactivo" : ""}"><td>${persona(r.Nombre, r.Cargo)}${r.Activo === "No" ? ` <span class="pill noaplica">Inactivo</span>` : ""}</td>
-            <td class="rec-proys">${etiquetasProy(r)}</td><td>${esc(empresaDe(r))}</td><td${ed({ puede, tabla: "Recursos", idCol: "ID_Recurso", id: r.ID_Recurso, campo: "Area", tipo: "select", opciones: S.cat.Cliente_Area, vacio: "—", valor: r.Area, etiqueta: "Área" })}>${esc(r.Area || "—")}</td><td>${contacto(r.Correo, r.Telefono)}</td>
+          ${lista.map((r) => { const a = asig(r), c = num0(r.Capacidad) ?? 100; return `<tr class="${r.Activo === "No" ? "inactivo" : ""}"><td${ed({ puede, tabla: "Recursos", idCol: "ID_Recurso", id: r.ID_Recurso, campo: "Nombre", tipo: "text", requerido: true, valor: r.Nombre, etiqueta: "Nombre", despues: (v) => propagarRecurso(r, { ...r, Nombre: v }) })}>${persona(r.Nombre, r.Cargo)}${r.Activo === "No" ? ` <span class="pill noaplica">Inactivo</span>` : ""}</td>
+            <td class="rec-proys">${etiquetasProy(r)}</td><td${ed({ puede, tabla: "Recursos", idCol: "ID_Recurso", id: r.ID_Recurso, campo: "ID_Proveedor", tipo: "select", opciones: [["", "Interno (FSFB)"], ...proveedoresActivos(r.ID_Proveedor).map((v) => [v.ID_Proveedor, v.Nombre])], valor: r.ID_Proveedor || "", etiqueta: "Empresa", despues: (v) => propagarRecurso(r, { ...r, ID_Proveedor: v }) })}>${esc(empresaDe(r))}</td><td${ed({ puede, tabla: "Recursos", idCol: "ID_Recurso", id: r.ID_Recurso, campo: "Area", tipo: "select", opciones: S.cat.Cliente_Area, vacio: "—", valor: r.Area, etiqueta: "Área" })}>${esc(r.Area || "—")}</td><td>${contacto(r.Correo, r.Telefono)}</td>
             <td class="nowrap"${ed({ puede, tabla: "Recursos", idCol: "ID_Recurso", id: r.ID_Recurso, campo: "Capacidad", tipo: "number", min: 0, max: 100, requerido: true, valor: r.Capacidad ?? "", etiqueta: "Capacidad" })}>${a ? `${a.total}% de ${c}%${a.total > c ? ` <span class="baja">⚠</span>` : ""}<div class="sub">${a.asign.length} asignación(es)</div>` : `<span class="sub">— de ${c}%</span>`}</td>
             <td class="derecha">${puede ? `<button class="btn chico" data-rec="${esc(r.ID_Recurso)}">Editar</button>` : ""}</td></tr>`; }).join("")}</tbody></table></div>`
         : vacio(q ? "Nadie coincide con la búsqueda." : "Aún no hay recursos. Se crean solos con las personas que ya existen o con «+ Recurso».")}</div>`;
@@ -4393,15 +4406,20 @@ ${x.h}</section>`).join("")}
       const ops = cfg.opciones || [];
       const todas = v0 !== "" && !ops.some((o) => String(Array.isArray(o) ? o[0] : o) === String(v0)) ? [String(v0), ...ops] : ops;
       ctl = `<select class="ed-ctl">${cfg.vacio !== undefined ? `<option value="">${esc(cfg.vacio)}</option>` : ""}${todas.map((o) => { const [val, t] = Array.isArray(o) ? o : [o, o]; return `<option value="${esc(val)}" ${String(val) === String(v0) ? "selected" : ""}>${esc(t)}</option>`; }).join("")}</select>`;
+    } else if (cfg.tipo === "multi") {
+      const sel = String(v0).split(/[,;]\s*/).map((x) => x.trim()).filter(Boolean);
+      ctl = `<div class="ed-ctl ed-multi" tabindex="-1">${(cfg.opciones || []).map((o) => { const [val, t] = Array.isArray(o) ? o : [o, o]; return `<label class="check"><input type="checkbox" value="${esc(val)}" ${sel.includes(String(val)) ? "checked" : ""}> ${esc(t)}</label>`; }).join("")}<button type="button" class="btn chico primario ed-listo">Listo</button></div>`;
     } else if (cfg.tipo === "textarea") ctl = `<textarea class="ed-ctl" rows="3">${esc(v0)}</textarea>`;
     else ctl = `<input class="ed-ctl" type="${cfg.tipo === "number" ? "number" : cfg.tipo === "date" ? "date" : "text"}" value="${esc(v0)}" ${cfg.min !== undefined ? `min="${cfg.min}"` : ""} ${cfg.max !== undefined ? `max="${cfg.max}"` : ""}>`;
-    td.innerHTML = `<div class="ed-caja">${ctl}<span class="ed-ayuda">Enter guarda · Esc cancela</span></div>`;
+    td.innerHTML = `<div class="ed-caja">${ctl}<span class="ed-ayuda">${cfg.tipo === "multi" ? "Marca y pulsa Listo · Esc cancela" : cfg.tipo === "textarea" ? "Ctrl+Enter guarda · Esc cancela" : "Enter guarda · Esc cancela"}</span></div>`;
+    td.querySelector(".ed-caja").addEventListener("click", (e) => e.stopPropagation());
     const i = td.querySelector(".ed-ctl");
     let hecho = false;
+    const valorCtl = () => (cfg.tipo === "multi" ? [...i.querySelectorAll("input:checked")].map((x) => x.value).join(", ") : i.value);
     const cerrar = () => { td.classList.remove("editando"); td.innerHTML = previo; };
     const confirmarValor = () => {
       if (hecho) return; hecho = true;
-      let v = String(i.value).trim();
+      let v = String(valorCtl()).trim();
       if (String(v) === String(v0)) return cerrar();
       if (cfg.tipo === "number") {
         if (v === "" && cfg.requerido) { toast("Este campo no puede quedar vacío.", true); return cerrar(); }
@@ -4419,9 +4437,13 @@ ${x.h}</section>`).join("")}
       else if (e.key === "Enter" && cfg.tipo === "textarea" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); confirmarValor(); }
     });
     if (cfg.tipo === "select") i.addEventListener("change", confirmarValor);
-    i.addEventListener("blur", () => setTimeout(() => { if (!hecho && document.activeElement !== i) confirmarValor(); }, 120));
+    if (cfg.tipo === "multi") {
+      i.querySelector(".ed-listo").addEventListener("click", (e) => { e.stopPropagation(); confirmarValor(); });
+      const fuera = (e) => { if (!td.contains(e.target)) { document.removeEventListener("mousedown", fuera, true); if (!hecho) confirmarValor(); } };
+      document.addEventListener("mousedown", fuera, true);
+    } else i.addEventListener("blur", () => setTimeout(() => { if (!hecho && document.activeElement !== i) confirmarValor(); }, 120));
     i.focus();
-    if (i.select && cfg.tipo !== "select" && cfg.tipo !== "date") i.select();
+    if (i.select && cfg.tipo !== "select" && cfg.tipo !== "date" && cfg.tipo !== "multi") i.select();
   }
   async function guardarCelda(td, cfg, v, previo) {
     td.innerHTML = `<span class="ed-guardando">Guardando…</span>`;
@@ -4456,9 +4478,11 @@ ${x.h}</section>`).join("")}
     document.addEventListener("click", (e) => {
       const td = e.target.closest && e.target.closest("[data-ed]");
       if (!td) return;
+      if (td.classList.contains("editando")) return;   // clics dentro del editor: el editor los atiende (y no dejan pasar a la fila)
+      // Un enlace o botón dentro de la celda sigue funcionando (abrir documento, comentarios…); el resto de la celda edita.
+      const accion = e.target.closest("a, button, input, select, textarea, summary");
+      if (accion && td.contains(accion) && accion !== td) return;
       e.stopPropagation();
-      if (td.classList.contains("editando")) return;
-      if (e.target.closest("a, button:not([data-ed])")) { e.preventDefault(); }
       abrirEditor(td);
     }, true);
     document.addEventListener("keydown", (e) => {
@@ -4727,7 +4751,7 @@ ${x.h}</section>`).join("")}
         <div class="bn-pie"><span class="sub">${b.Dueno ? `Dueño: ${esc(b.Dueno)} · ` : ""}Medición ${esc(String(b.Frecuencia_Medicion || "Mensual").toLowerCase())} desde ${fecha(b.Medir_Desde || b.Fecha_Registro)} · próxima ${fecha(e.proxima)}</span>
           ${puede ? `<span class="acciones"><button class="btn chico primario" data-bn-medir="${esc(b.ID_Beneficio)}">Registrar medición</button><button class="btn chico" data-bn-edit="${esc(b.ID_Beneficio)}">Editar</button></span>` : ""}</div>
         ${e.ms.length ? `<details class="bn-hist"><summary>Historial de mediciones (${e.ms.length})</summary><table class="no-orden"><thead><tr><th>Fecha</th><th>Valor</th><th>Comentario</th><th>Registró</th><th></th></tr></thead><tbody>
-          ${e.ms.slice().reverse().map((m) => `<tr><td>${fecha(m.Fecha)}</td><td><b>${fmtValor(b, m.Valor)}</b></td><td>${esc(m.Comentario || "—")}</td><td>${esc(nombreUsuario(m.Registrado_Por))}</td><td>${puede ? `<button class="btn chico" data-bn-med="${esc(m.ID_Medicion)}">Editar</button>` : ""}</td></tr>`).join("")}</tbody></table></details>` : ""}
+          ${e.ms.slice().reverse().map((m) => { const EM = (campo, o) => ed({ puede, tabla: "Mediciones", idCol: "ID_Medicion", id: m.ID_Medicion, campo, valor: m[campo] ?? "", ...o }); return `<tr><td${EM("Fecha", { tipo: "date", requerido: true, etiqueta: "Fecha de la medición" })}>${fecha(m.Fecha)}</td><td${EM("Valor", b.Tipo_Medida === "Cualitativo" ? { tipo: "select", opciones: ["Cumplido", "Parcial", "Pendiente"], etiqueta: "Resultado" } : { tipo: "number", requerido: true, etiqueta: "Valor medido" })}><b>${fmtValor(b, m.Valor)}</b></td><td${EM("Comentario", { tipo: "textarea", etiqueta: "Comentario" })}>${esc(m.Comentario || "—")}</td><td>${esc(nombreUsuario(m.Registrado_Por))}</td><td>${puede ? `<button class="btn chico" data-bn-med="${esc(m.ID_Medicion)}">Editar</button>` : ""}</td></tr>`; }).join("")}</tbody></table></details>` : ""}
       </div>`;
     return `<div class="card vl-prop"><div class="titulo-fila"><h2>Propuesta de valor para la FSFB</h2>${puede ? `<button class="btn chico" id="b-vl-prop">Editar propuesta</button>` : ""}</div>
         <div class="vl-grid">
@@ -4855,7 +4879,7 @@ ${x.h}</section>`).join("")}
       <div class="card"><h2>Valor por proyecto</h2>
         ${lista.length ? `<div class="tabla-scroll"><table><thead><tr><th>Proyecto</th><th>PM</th><th>Nivel de valor</th><th>Dimensiones con impacto alto</th><th>Índice de valor</th><th>Beneficios</th><th>En riesgo</th><th>Próxima medición</th></tr></thead><tbody>
           ${lista.map(({ p, V }) => { const prox = V.bs.map((x) => x.e.proxima).filter(Boolean).sort()[0]; return `<tr class="clic" data-vl-pid="${esc(p.ID_Proyecto)}"><td><b>${esc(p.Nombre)}</b><div class="sub">${esc(p.ID_Proyecto)} · ${esc(p.Estado)}</div>${p.Valor_FSFB ? `<div class="sub vl-frase">${esc(p.Valor_FSFB)}</div>` : ""}</td><td>${persona(nombreUsuario(p.PM))}</td>
-            <td>${chipNivel(V.nivel, !V.manual && !!V.nivel)}</td><td>${Object.entries(V.imp).filter(([, v]) => v === "Alto").map(([d]) => `<span class="chip-act">${ICO_DIM[d] || "•"} ${esc(d)}</span>`).join(" ") || `<span class="sub">—</span>`}</td>
+            <td${ed({ puede: R.puedeEditar(S.usuario, p, "editarProyecto"), tabla: "Proyectos", idCol: "ID_Proyecto", id: p.ID_Proyecto, campo: "Nivel_Valor", tipo: "select", opciones: NIVELES_VALOR, vacio: `Automático (${V.sugerido || "sin datos"})`, valor: p.Nivel_Valor || "", extra: () => sello(), etiqueta: "Nivel de valor" })}>${chipNivel(V.nivel, !V.manual && !!V.nivel)}</td><td>${Object.entries(V.imp).filter(([, v]) => v === "Alto").map(([d]) => `<span class="chip-act">${ICO_DIM[d] || "•"} ${esc(d)}</span>`).join(" ") || `<span class="sub">—</span>`}</td>
             <td class="nowrap">${barraLogro(V.indice)}</td><td>${V.bs.length}</td><td>${V.riesgo ? `<b class="baja">${V.riesgo}</b>` : "—"}</td><td class="nowrap">${prox ? `${fecha(prox)}${V.pendientes ? ` <span class="baja">⚠</span>` : ""}` : "—"}</td></tr>`; }).join("")}</tbody></table></div>`
         : vacio("No hay proyectos con estos filtros.")}</div>
       ${pend.length || riesgo.length ? `<div class="card"><h2>Para atender</h2><div class="tabla-scroll"><table class="no-orden"><thead><tr><th>Beneficio</th><th>Proyecto</th><th>PM</th><th>Importancia</th><th>Situación</th></tr></thead><tbody>
@@ -5841,7 +5865,7 @@ ${x.h}</section>`).join("")}
       <div class="dem-pie">${d.PM_Asignado ? persona(nombreUsuario(d.PM_Asignado)) : `<span class="sub">Sin PM</span>`}<span class="sub ${antiguedad(d) > 30 && ABIERTOS_DEMANDA.includes(d.Estado || "Recibida") ? "baja" : ""}" title="Días desde que llegó">${antiguedad(d)} d</span></div></div>`; };
     const ranking = lista.length ? `<div class="tabla-scroll"><table><thead><tr><th>#</th><th>Almera</th><th>Iniciativa</th><th>Tipificación</th><th>Estado</th><th>Puntaje</th><th>PM</th><th>Antigüedad</th></tr></thead><tbody>
       ${lista.map((d, i) => { const pts = puntajeDemanda(d); return `<tr class="clic" data-dem="${esc(d.ID_Demanda)}"><td>${i + 1}</td><td><b>${esc(d.Codigo_Almera)}</b></td>
-        <td><b>${esc(d.Nombre)}</b><div class="sub">${esc(d.Solicitante ? `Solicita: ${d.Solicitante}` : "")}${d.Sponsor ? ` · Sponsor: ${esc(d.Sponsor)}` : ""}</div></td>
+        <td${ed({ puede: R.puede(S.usuario, "verTodo") && d.Estado !== "Convertida", tabla: "Demandas", idCol: "ID_Demanda", id: d.ID_Demanda, campo: "Nombre", tipo: "text", requerido: true, valor: d.Nombre, etiqueta: "Iniciativa" })}><b>${esc(d.Nombre)}</b><div class="sub">${esc(d.Solicitante ? `Solicita: ${d.Solicitante}` : "")}${d.Sponsor ? ` · Sponsor: ${esc(d.Sponsor)}` : ""}</div></td>
         <td>${esc(d.Tipo || "—")}<div class="sub">${esc([d.Categoria, d.Area, d.Tamano ? `Talla ${d.Tamano}` : ""].filter(Boolean).join(" · "))}</div>${obligatoria(d) ? `<span class="pill materializado">Obligatorio</span>` : ""}</td>
         <td>${pill(d.Estado || "Recibida")}${d.ID_Proyecto ? `<div><button class="btn enlace" data-pid="${esc(d.ID_Proyecto)}">Ver proyecto</button></div>` : ""}</td>
         <td class="nowrap">${pts === null ? `<span class="sub">Sin calificar</span>` : `<span class="cap-barra"><span class="cap-lleno" style="width:${pts}%;background:var(--azul)"></span></span> <b>${pts}</b>`}</td>
@@ -6074,7 +6098,8 @@ ${x.h}</section>`).join("")}
         <div class="seg doc-tipos"><button class="btn chico primario" data-doc-tipo="">Todos (${docs.length})</button>${tipos.map((t) => `<button class="btn chico" data-doc-tipo="${esc(t)}">${esc(t)} (${docs.filter((d) => (d.Tipo || "Otro") === t).length})</button>`).join("")}</div>
         <div class="tabla-scroll"><table class="tabla-docs"><thead><tr><th>Documento</th><th>Tipo</th><th class="opc">Descripción</th><th class="opc">Registrado</th><th></th></tr></thead><tbody>
         ${docs.map((d) => `<tr data-doc="${esc(d.ID_Documento)}" data-buscar="${esc(normTxt(`${d.Nombre} ${d.Tipo} ${d.Descripcion} ${d.URL}`))}" data-tipo="${esc(d.Tipo || "Otro")}">
-          <td>${icoDoc(d)} <a href="${esc(d.URL)}" target="_blank" rel="noopener" data-doc-ir>${esc(d.Nombre || nombreDeURL(d.URL))}</a></td><td>${pill(d.Tipo || "Otro")}</td><td class="opc">${esc(d.Descripcion || "")}</td>
+          <td${ed({ puede, tabla: "Documentos", idCol: "ID_Documento", id: d.ID_Documento, campo: "Nombre", tipo: "text", valor: d.Nombre || "", etiqueta: "Nombre del documento" })}>${icoDoc(d)} <a href="${esc(d.URL)}" target="_blank" rel="noopener" data-doc-ir>${esc(d.Nombre || nombreDeURL(d.URL))}</a></td>
+          <td${ed({ puede, tabla: "Documentos", idCol: "ID_Documento", id: d.ID_Documento, campo: "Tipo", tipo: "select", opciones: S.cat.Tipo_Documento, valor: d.Tipo || "Otro", etiqueta: "Tipo" })}>${pill(d.Tipo || "Otro")}</td><td class="opc"${ed({ puede, tabla: "Documentos", idCol: "ID_Documento", id: d.ID_Documento, campo: "Descripcion", tipo: "textarea", valor: d.Descripcion || "", etiqueta: "Descripción" })}>${esc(d.Descripcion || "—")}</td>
           <td class="opc sub nowrap">${d.Fecha_Registro ? fecha(d.Fecha_Registro) : ""}<br>${esc(nombreUsuario(d.Registrado_Por))}</td>
           <td class="derecha nowrap"><button class="btn chico" data-doc-copiar="${esc(d.URL)}" title="Copiar el enlace">Copiar enlace</button>${puede ? ` <button class="btn chico" data-doc-editar="${esc(d.ID_Documento)}">Editar</button>` : ""}</td></tr>`).join("")}</tbody></table></div>
         <p class="sub" id="doc-nada" hidden>Ningún documento coincide.</p>`
@@ -6358,10 +6383,10 @@ ${x.h}</section>`).join("")}
       ${faltan.length ? `<div class="faltan-stk"><span class="sub">Sin asignar:</span> ${faltan.map((r) => puede ? `<button class="btn chico" data-rol-stk="${esc(r)}">+ ${esc(r)}</button>` : `<span class="pill noaplica">${esc(r)}</span>`).join(" ")}</div>` : ""}
       <div class="tabla-scroll"><table><thead><tr><th>Rol</th><th>Nombre</th><th>Cargo / área</th><th>Empresa</th><th>Contacto</th><th>Dedicación</th><th></th></tr></thead>
         <tbody><tr class="fila-pm"><td><b>PM</b></td><td>${persona(nombreUsuario(p.PM))}</td><td>Gerente del proyecto</td><td>Interno</td><td>${contacto(p.PM, "")}</td>
-          <td>${celdaDedicacion(p.PM, nombreUsuario(p.PM), p.Dedicacion_PM)}</td><td class="derecha sub">${puede ? "en «Editar proyecto»" : ""}</td></tr>
-        ${lista.map((x) => `<tr><td><b>${esc(x.Rol)}</b></td><td>${persona(x.Nombre)}</td><td>${esc([x.Cargo, x.Area].filter(Boolean).join(" · ") || "—")}</td>
+          <td${ed({ puede, tabla: "Proyectos", idCol: "ID_Proyecto", id: p.ID_Proyecto, campo: "Dedicacion_PM", tipo: "number", min: 0, max: 100, valor: p.Dedicacion_PM ?? "", extra: () => sello(), etiqueta: "Dedicación del PM" })}>${celdaDedicacion(p.PM, nombreUsuario(p.PM), p.Dedicacion_PM)}</td><td class="derecha sub"></td></tr>
+        ${lista.map((x) => `<tr><td${ed({ puede, tabla: "Stakeholders", idCol: "ID_Stakeholder", id: x.ID_Stakeholder, campo: "Rol", tipo: "select", opciones: S.cat.Rol_Stakeholder, valor: x.Rol, etiqueta: "Rol" })}><b>${esc(x.Rol)}</b></td><td>${persona(x.Nombre)}</td><td>${esc([x.Cargo, x.Area].filter(Boolean).join(" · ") || "—")}</td>
           <td>${x.ID_Proveedor ? esc((proveedor(x.ID_Proveedor) || {}).Nombre || x.ID_Proveedor) : "Interno"}</td><td>${contacto(x.Correo, x.Telefono)}</td>
-          <td>${celdaDedicacion(x.Correo, x.Nombre, x.Dedicacion)}</td>
+          <td${ed({ puede, tabla: "Stakeholders", idCol: "ID_Stakeholder", id: x.ID_Stakeholder, campo: "Dedicacion", tipo: "number", min: 0, max: 100, valor: x.Dedicacion ?? "", etiqueta: "Dedicación" })}>${celdaDedicacion(x.Correo, x.Nombre, x.Dedicacion)}</td>
           <td class="derecha">${puede ? `<button class="btn chico" data-stk="${esc(x.ID_Stakeholder)}">Editar</button>` : ""}</td></tr>`).join("")}</tbody></table></div>
       <div class="provs"><b>Proveedor(es):</b> ${provs.length ? provs.map((x) => `<span class="prov">${esc(x.Nombre)}${x.Servicio ? ` <span class="sub">· ${esc(x.Servicio)}</span>` : ""}${x.Contacto || x.Correo ? ` <span class="sub">· ${esc(x.Contacto || "")} ${x.Correo ? `<a href="mailto:${esc(x.Correo)}">${esc(x.Correo)}</a>` : ""}</span>` : ""}</span>`).join("")
         : `<span class="sub">Ninguno${puede ? " — asígnalos con «Editar proyecto»." : "."}</span>`}</div></div>`;
@@ -7483,8 +7508,9 @@ ${x.h}</section>`).join("")}
           <td class="nowrap"><b>${esc(x.ID_Sugerencia)}</b><div class="sub">${fecha(String(x.Fecha_Hora).slice(0, 10))}</div></td>
           <td>${esc(x.Modulo)}${x.Contexto ? `<div class="sub">${esc(x.Contexto)}</div>` : ""}</td>
           <td class="sg-txt">${esc(String(x.Descripcion || "").slice(0, 220))}${String(x.Descripcion || "").length > 220 ? "…" : ""}${adjuntosDe(x).length ? ` <span class="sub">📎 ${adjuntosDe(x).length}</span>` : ""}${x.Respuesta ? `<div class="sub">↳ ${esc(String(x.Respuesta).slice(0, 140))}</div>` : ""}</td>
-          <td>${pill(x.Tipo || "Mejora")}</td><td>${pill(x.Prioridad || "Media")}</td>
-          <td>${pill(x.Estado || "Nueva")}${x.Version_Implementada ? `<div class="sub">v${esc(x.Version_Implementada)}</div>` : ""}</td>
+          <td${ed({ puede: gest, tabla: "Sugerencias", idCol: "ID_Sugerencia", id: x.ID_Sugerencia, campo: "Tipo", tipo: "select", opciones: TIPOS_SUG, valor: x.Tipo || "Mejora", extra: () => ({ Actualizado_Por: S.usuario.Correo, Actualizado_El: R.hoyISO() }), etiqueta: "Tipo" })}>${pill(x.Tipo || "Mejora")}</td>
+          <td${ed({ puede: gest, tabla: "Sugerencias", idCol: "ID_Sugerencia", id: x.ID_Sugerencia, campo: "Prioridad", tipo: "select", opciones: PRIOS_SUG, valor: x.Prioridad || "Media", extra: () => ({ Actualizado_Por: S.usuario.Correo, Actualizado_El: R.hoyISO() }), etiqueta: "Prioridad" })}>${pill(x.Prioridad || "Media")}</td>
+          <td${ed({ puede: gest, tabla: "Sugerencias", idCol: "ID_Sugerencia", id: x.ID_Sugerencia, campo: "Estado", tipo: "select", opciones: ESTADOS_SUG, valor: x.Estado || "Nueva", extra: (v) => ({ Actualizado_Por: S.usuario.Correo, Actualizado_El: R.hoyISO(), ...(v === "Hecha" && !x.Version_Implementada ? { Version_Implementada: window.APP_VERSION || "" } : {}) }), etiqueta: "Estado" })}>${pill(x.Estado || "Nueva")}${x.Version_Implementada ? `<div class="sub">v${esc(x.Version_Implementada)}</div>` : ""}</td>
           <td class="opc">${esc(nombreUsuario(x.Usuario))}</td>
           <td class="derecha nowrap"><button class="btn chico" data-sg-ver="${esc(x.ID_Sugerencia)}">Ver</button>${gest ? ` <button class="btn chico" data-sg-gest="${esc(x.ID_Sugerencia)}">Gestionar</button>` : ""}</td></tr>`).join("")}</tbody></table></div>`
         : vacio(todas.length ? "No hay sugerencias con estos filtros." : "Aún no hay sugerencias. Usa «💡 Sugerir mejora» en cualquier pantalla.")}</div>`;

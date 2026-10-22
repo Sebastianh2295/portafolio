@@ -1300,3 +1300,8 @@ textarea.ed-ctl { min-width: 220px; }
 .ra-fila .pill { grid-column: 2 / -1; justify-self: start; }
 .ra-fila textarea { min-height: 42px; }
 @media (max-width: 760px) { .ra-fila { grid-template-columns: 26px minmax(0, 1fr); } .ra-fila > :nth-child(n+3) { grid-column: 2; } }
+/* v84 — edición en tabla: selección múltiple */
+.ed-multi { display: flex; flex-direction: column; gap: 4px; padding: 6px 8px; min-width: 150px; }
+.ed-multi .check { display: flex; gap: 6px; align-items: center; font-size: 13px; }
+.ed-multi .check input { width: auto; }
+.ed-multi .ed-listo { align-self: flex-start; margin-top: 4px; }
