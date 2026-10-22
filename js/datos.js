@@ -69,6 +69,7 @@
     Riesgos: ["ID_Seguimiento", "Origen", "Fecha_Identificacion"],
     Seguimientos: ["Fecha_Acta", "URL_Acta", "Acta_Archivo", "Ejecutado", "Avance_Planeado", "Tipo_Sesion", "Nombre_Sesion", "Duracion_Min", "Preparacion_Min", "ID_Sesion"],
     Recursos: ["Tarifa_Hora"],
+    Agenda: ["Correo", "Titulo", "Fila"],
     Compromisos: ["Correo_Responsable", "Dias_Alerta", "ID_Recurso", "Fecha_Creacion"],
     Comentarios: ["Adjuntos", "Editado_El"],
     Cambios: ["Numero_CC", "URL_Documento"],

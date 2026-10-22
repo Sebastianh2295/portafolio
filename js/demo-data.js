@@ -69,6 +69,7 @@ window.DEMO_DATA.Agenda = [
   const FEST = ["2026-10-12", "2026-11-02", "2026-11-16", "2026-12-08", "2026-12-25", "2027-01-01", "2027-01-11"];
   const habil = (d) => { const w = new Date(d + "T12:00:00").getDay(); return w > 0 && w < 6 && !FEST.includes(d); };
   D.Esfuerzo = []; D.HorasSemana = []; D.CierresSemana = [];
+  D.Agenda.push({ ID_Sesion: "AGD-G-0001", ID_Proyecto: "", Correo: "pm1@empresa.com", Titulo: "Reunión semanal de la PMO", Tipo: "Comité", Fila: "_GEST", Dias: "L", Frecuencia: "Semanal", Hora: "07:30", Duracion_Min: 60, Lugar: "Teams", Participantes: "PMs y jefe de la PMO", Desde: "2026-09-01", Hasta: "", Activa: "Sí" });
   let n = 0;
   const esf = (o) => D.Esfuerzo.push({ ID_Esfuerzo: `ESF-DEMO${++n}`, Nota: "", ID_Sesion: "", Registrado_Por: o.Correo, Fecha_Registro: o.Fecha, ...o });
   [-21, -14, -7, 0].forEach((off) => {

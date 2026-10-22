@@ -1393,3 +1393,4 @@ textarea.ed-ctl { min-width: 220px; }
 .jr-anio { margin-bottom: 10px; } .jr-anio td, .jr-anio th { padding: 3px 8px; }
 .jr-fest { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
 #f-festivo { display: flex; gap: 8px; flex-wrap: wrap; } #f-festivo input[type=date] { max-width: 170px; } #f-festivo input[type=text] { flex: 1; min-width: 180px; }
+.ag-ev.ag-gen, .pill.ag-gen { background: #efe9f8; color: #5b3f8f; border-style: dashed; border-color: #b9a6dc; }
