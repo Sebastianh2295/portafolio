@@ -47,6 +47,11 @@
     Mediciones: ["ID_Medicion", "ID_Beneficio", "ID_Proyecto", "Fecha", "Valor", "Comentario", "Registrado_Por"],
     // Agenda de seguimiento: sesiones recurrentes de cada proyecto (días L-V, hora, duración).
     Agenda: ["ID_Sesion", "ID_Proyecto", "Tipo", "Dias", "Frecuencia", "Hora", "Duracion_Min", "Lugar", "Participantes", "Desde", "Hasta", "Activa", "Registrado_Por"],
+    // Esfuerzo: dailies ✓/✕ y registros rápidos (reuniones no agendadas, gestiones). Minutos por persona, día y proyecto (vacío = gestión general).
+    Esfuerzo: ["ID_Esfuerzo", "Fecha", "Correo", "Nombre", "ID_Proyecto", "Tipo", "Minutos", "Origen", "ID_Sesion", "Nota", "Registrado_Por", "Fecha_Registro"],
+    // «Mi semana»: horas por persona, semana (lunes) y fila (proyecto, _GEST o _OTRAS). Solo se guardan las editadas y, al cerrar, toda la semana.
+    HorasSemana: ["ID_Fila", "Fecha_Semana", "Correo", "Nombre", "Fila", "L", "M", "X", "J", "V", "Editadas", "Actualizado_Por", "Actualizado_El"],
+    CierresSemana: ["ID_Cierre", "Fecha_Semana", "Correo", "Nombre", "Horas", "Disponible", "Cerrada_El", "Cerrada_Por"],
     // Sugerencias de mejora de la app (cualquier usuario las registra; Admin/PMO las gestionan).
     Sugerencias: ["ID_Sugerencia", "Fecha_Hora", "Usuario", "Modulo", "Contexto", "ID_Proyecto", "Tipo", "Prioridad", "Descripcion", "URL_Referencia", "Adjuntos", "Estado", "Respuesta", "Version_App", "Version_Implementada", "Actualizado_Por", "Actualizado_El"],
     // Registro de auditoría: quién cambió qué y cuándo.
@@ -62,7 +67,8 @@
     Proyectos: ["URL_Repositorio", "URL_Documentos", "Proveedores", "Codigo_Almera", "Dedicacion_PM", "Fecha_Fin_Base", "Presupuesto_Base", "Fecha_Inicio_Base", "Valor", "Urgencia", "Riesgo_Prio", "Esfuerzo", "Alineacion", "Impacto_Paciente", "Cronograma_Origen", "Cronograma_Archivo", "Cronograma_Fecha", "Cronograma_Por", "Beneficio_Esperado", "Valor_FSFB", "Nivel_Valor", "Impacto_Valor"],
     Stakeholders: ["Dedicacion", "ID_Recurso"],
     Riesgos: ["ID_Seguimiento", "Origen", "Fecha_Identificacion"],
-    Seguimientos: ["Fecha_Acta", "URL_Acta", "Acta_Archivo", "Ejecutado", "Avance_Planeado", "Tipo_Sesion", "Nombre_Sesion"],
+    Seguimientos: ["Fecha_Acta", "URL_Acta", "Acta_Archivo", "Ejecutado", "Avance_Planeado", "Tipo_Sesion", "Nombre_Sesion", "Duracion_Min", "Preparacion_Min", "ID_Sesion"],
+    Recursos: ["Tarifa_Hora"],
     Compromisos: ["Correo_Responsable", "Dias_Alerta", "ID_Recurso", "Fecha_Creacion"],
     Comentarios: ["Adjuntos", "Editado_El"],
     Cambios: ["Numero_CC", "URL_Documento"],

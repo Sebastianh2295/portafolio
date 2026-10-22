@@ -58,3 +58,50 @@ window.DEMO_DATA.Agenda = [
   { ID_Sesion: "AGD-0001-2", ID_Proyecto: "PRY-0001", Tipo: "Seguimiento", Dias: "M", Frecuencia: "Semanal", Hora: "14:00", Duracion_Min: 60, Lugar: "Sala 2", Participantes: "", Desde: "2026-09-01", Hasta: "", Activa: "Sí" },
   { ID_Sesion: "AGD-0002-1", ID_Proyecto: "PRY-0002", Tipo: "Mesa técnica", Dias: "J", Frecuencia: "Semanal", Hora: "11:00", Duracion_Min: 60, Lugar: "Teams", Participantes: "Proveedor", Desde: "2026-09-01", Hasta: "", Activa: "Sí" },
 ];
+
+// Esfuerzo de prueba (relativo a hoy): dailies ✓/✕, registros rápidos, sesiones con duración y semanas cerradas.
+(function () {
+  const D = window.DEMO_DATA;
+  const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const mas = (s, n) => { const [y, m, d] = s.split("-").map(Number); return iso(new Date(y, m - 1, d + n)); };
+  const hoy = iso(new Date());
+  const dw = (new Date().getDay() + 6) % 7, lun0 = mas(hoy, -dw);
+  const FEST = ["2026-10-12", "2026-11-02", "2026-11-16", "2026-12-08", "2026-12-25", "2027-01-01", "2027-01-11"];
+  const habil = (d) => { const w = new Date(d + "T12:00:00").getDay(); return w > 0 && w < 6 && !FEST.includes(d); };
+  D.Esfuerzo = []; D.HorasSemana = []; D.CierresSemana = [];
+  let n = 0;
+  const esf = (o) => D.Esfuerzo.push({ ID_Esfuerzo: `ESF-DEMO${++n}`, Nota: "", ID_Sesion: "", Registrado_Por: o.Correo, Fecha_Registro: o.Fecha, ...o });
+  [-21, -14, -7, 0].forEach((off) => {
+    for (let i = 0; i < 5; i++) {
+      const d = mas(lun0, off + i);
+      if (d > hoy || !habil(d)) continue;
+      esf({ Fecha: d, Correo: "pm1@empresa.com", Nombre: "PM de prueba 1", ID_Proyecto: "PRY-0001", Tipo: "Daily", Minutos: (i + off) % 5 === 3 ? 0 : 15, Origen: "daily", ID_Sesion: "AGD-0001-1" });
+      if (off >= -14) esf({ Fecha: d, Correo: "pm3@empresa.com", Nombre: "PM de prueba 3", ID_Proyecto: "PRY-0006", Tipo: "Daily", Minutos: i % 2 ? 0 : 15, Origen: "daily", ID_Sesion: "AGD-0006-1" });
+    }
+  });
+  const rap = (off, i, o) => { const d = mas(lun0, off + i); if (d <= hoy && habil(d)) esf({ Fecha: d, Origen: "rapido", Correo: "pm1@empresa.com", Nombre: "PM de prueba 1", ...o }); };
+  rap(0, 0, { ID_Proyecto: "PRY-0001", Tipo: "Reunión no agendada", Minutos: 45, Nota: "Revisión urgente de la interfaz contable con el proveedor" });
+  rap(0, 1, { ID_Proyecto: "", Tipo: "Correos y llamadas", Minutos: 60, Nota: "Bandeja y coordinación con áreas" });
+  rap(0, 2, { ID_Proyecto: "PRY-0004", Tipo: "Documentación e informes", Minutos: 90, Nota: "Informe para el comité" });
+  rap(-7, 1, { ID_Proyecto: "", Tipo: "Gestión y coordinación", Minutos: 120, Nota: "Planeación de la PMO" });
+  rap(-7, 3, { ID_Proyecto: "PRY-0001", Tipo: "Revisión con proveedor", Minutos: 60 });
+  // Sesiones de seguimiento registradas con duración y preparación (martes 2 p. m. de Migración ERP).
+  [-14, -7, 0].forEach((off, j) => {
+    const d = mas(lun0, off + 1);
+    if (d > hoy) return;
+    D.Seguimientos.push({ ID_Seguimiento: `SEG-0001-D${j + 1}`, ID_Proyecto: "PRY-0001", Fecha_Corte: d, Semana: "", Avance_Real: 46, Avance_Planeado: 43, Semaforo: "Verde", Logros: "Seguimiento semanal con el equipo ERP", Proximos_Pasos: "Continuar pruebas", Bloqueos: "", Reportado_Por: "pm1@empresa.com",
+      Fecha_Acta: d, URL_Acta: "", Ejecutado: 201700000, Tipo_Sesion: "Seguimiento", Duracion_Min: j === 1 ? 90 : 60, Preparacion_Min: 30, ID_Sesion: "AGD-0001-2" });
+  });
+  // Semana cerrada hace dos semanas (PM 1) y la pasada (PM 2).
+  const cerrar = (correo, nombre, off, filas) => {
+    const lun = mas(lun0, off);
+    let tot = 0;
+    Object.entries(filas).forEach(([f, v]) => {
+      const vals = v.map((h, i) => (habil(mas(lun, i)) ? h : 0)); tot += vals.reduce((a, b) => a + b, 0);
+      D.HorasSemana.push({ ID_Fila: `${lun}|${correo}|${f}`, Fecha_Semana: lun, Correo: correo, Nombre: nombre, Fila: f, L: vals[0], M: vals[1], X: vals[2], J: vals[3], V: vals[4], Editadas: f === "_GEST" ? "L,M,X,J,V" : "M", Actualizado_Por: correo, Actualizado_El: mas(lun, 4) });
+    });
+    D.CierresSemana.push({ ID_Cierre: `${lun}|${correo}`, Fecha_Semana: lun, Correo: correo, Nombre: nombre, Horas: tot, Disponible: 42, Cerrada_El: mas(lun, 4), Cerrada_Por: correo });
+  };
+  cerrar("pm1@empresa.com", "PM de prueba 1", -14, { "PRY-0001": [4.5, 6, 4.25, 4.5, 4], "PRY-0004": [3.5, 3, 3.5, 3.5, 3], "PRY-0007": [1, 1, 0.5, 1, 1], _GEST: [1, 1.5, 1, 1, 0.5], _OTRAS: [3, 3, 3, 3, 3] });
+  cerrar("pm2@empresa.com", "PM de prueba 2", -7, { "PRY-0002": [3.5, 3.5, 3.5, 4.5, 3], "PRY-0005": [2, 2, 2.5, 2, 2], _GEST: [1, 1, 1, 1, 1], _OTRAS: [1.5, 1.5, 1.5, 1.5, 1.5] });
+})();

@@ -14,6 +14,7 @@
     { id: "avances", t: "Avances de la semana" },
     { id: "seguimiento", t: "Seguimiento y compromisos" },
     { id: "agenda", t: "Agenda semanal" },
+    { id: "misemana", t: "Mi semana" },
     { id: "backlog", t: "Backlog de demanda" },
     { id: "proyectos", t: "Proyectos" },
     { id: "cronograma", t: "Cronograma" },
@@ -55,10 +56,13 @@
     catalogos: ["Valores de los desplegables de los formularios.",
       "Agrega o quita valores; los proyectos que ya usan un valor lo conservan.",
       "Aquí también configuras los roles de stakeholder (Sponsor, Líder funcional, Product Owner…) y el maestro de proveedores."],
+    misemana: ["Tus horas de la semana por proyecto, de lunes a viernes, ya llenas con la agenda, los dailies (✓/✕), las sesiones registradas, la dedicación y tus registros rápidos.",
+      "Si algo no cuadra, escribe las horas reales en la celda (queda marcada; ↺ la devuelve al valor automático). Lo que no es de un proyecto va en «Gestión general».",
+      "El viernes cierra la semana: lo cerrado cuenta como real en Capacidad del equipo y en el esfuerzo de cada proyecto; lo no cerrado, como estimado."],
     capacidad: ["Cuánto está dedicada cada persona sumando sus proyectos activos o en pausa y sus otras actividades (operación, comités, demanda, ausencias…).",
       "La dedicación del PM se pone en «Editar proyecto»; la de cada stakeholder, en su ficha o en la sección Equipo del formulario.",
-      "Las otras actividades se registran abajo en «Otras actividades»; las ausencias bajan la capacidad mientras duran.",
-      "Más de 100% = sobreasignado. Cambia la fecha de corte para ver la carga de otro momento."],
+      "«Semanal» y «Mensual» muestran horas: disponibles (jornada sin festivos ni ausencias), planeadas (dedicación + agenda) y reales (lo cerrado en «Mi semana»; sin cerrar = estimado). Usa el zoom Semana / Mes / Trimestre / Año y haz clic en una celda para ver el detalle.",
+      "Las otras actividades se registran en su pestaña; las ausencias bajan la capacidad mientras duran. Más de 100% = sobreasignado."],
     backlog: ["Iniciativas que asigna Gestión de la Demanda en Almera, antes de ser proyectos. El código Almera es la llave.",
       "Flujo: Recibida → En análisis → Priorizada → En comité → (Aprobada / Aplazada / Rechazada) → Convertida en proyecto.",
       "Ranking: obligatorias primero y luego por puntaje. En el tablero arrastras las tarjetas entre estados; la decisión la registra el comité."],
@@ -154,6 +158,14 @@
     Categoria_Leccion: ["Planeación", "Técnica", "Proveedores", "Comunicación", "Equipo", "Calidad", "Gestión del cambio"],
     Tipo_Sesion_Agenda: ["Daily", "Seguimiento", "Comité", "Mesa técnica"],
     Dimension_Valor: ["Seguridad del paciente", "Eficiencia operacional", "Experiencia del paciente", "Cumplimiento / acreditación", "Estratégico", "Financiero"],
+    Tipo_Esfuerzo: ["Reunión no agendada", "Gestión y coordinación", "Correos y llamadas", "Documentación e informes", "Revisión con proveedor", "Preparación de sesión", "Otro"],
+    Jornada: ["Lun=07:00-16:30", "Mar=07:00-16:30", "Mie=07:00-16:30", "Jue=07:00-16:30", "Vie=07:00-16:00", "Almuerzo=60"],
+    Festivo: ["2026-01-01 Año Nuevo", "2026-01-12 Reyes Magos", "2026-03-23 San José", "2026-04-02 Jueves Santo", "2026-04-03 Viernes Santo", "2026-05-01 Día del Trabajo", "2026-05-18 Ascensión del Señor",
+      "2026-06-08 Corpus Christi", "2026-06-15 Sagrado Corazón", "2026-06-29 San Pedro y San Pablo", "2026-07-13 Virgen de Chiquinquirá", "2026-07-20 Día de la Independencia", "2026-08-07 Batalla de Boyacá",
+      "2026-08-17 Asunción de la Virgen", "2026-10-12 Día de la Raza", "2026-11-02 Todos los Santos", "2026-11-16 Independencia de Cartagena", "2026-12-08 Inmaculada Concepción", "2026-12-25 Navidad",
+      "2027-01-01 Año Nuevo", "2027-01-11 Reyes Magos", "2027-03-22 San José", "2027-03-25 Jueves Santo", "2027-03-26 Viernes Santo", "2027-05-01 Día del Trabajo", "2027-05-10 Ascensión del Señor",
+      "2027-05-31 Corpus Christi", "2027-06-07 Sagrado Corazón", "2027-07-05 San Pedro y San Pablo", "2027-07-12 Virgen de Chiquinquirá", "2027-07-20 Día de la Independencia", "2027-08-07 Batalla de Boyacá",
+      "2027-08-16 Asunción de la Virgen", "2027-10-18 Día de la Raza", "2027-11-01 Todos los Santos", "2027-11-15 Independencia de Cartagena", "2027-12-08 Inmaculada Concepción", "2027-12-25 Navidad"],
     Tipo_Actividad: ["Operación / soporte", "Comités y reuniones recurrentes", "Gestión de demanda", "Administrativo / informes", "Capacitación", "Ausencia (vacaciones, incapacidad, permiso)", "Otro"] };
   let sembrado = false;
   // La primera vez, deja en el Excel los roles de stakeholder base para poder editarlos desde Catálogos.
@@ -293,6 +305,7 @@
   // ---------- Estructura ----------
   function render() {
     ED.clear();
+    invalidarEsf();
     S.charts.forEach((c) => c.destroy());
     S.charts = [];
     if (!S.usuario) return pantallaLogin();
@@ -314,6 +327,7 @@
           <button class="ab-buscar" id="b-buscar" title="Búsqueda global (Ctrl+K)">${ico("buscar")}<span>Buscar proyectos, personas, riesgos…</span><kbd>Ctrl K</kbd></button>
           <div class="ab-der">
             <button class="modo ${S.modo} ${S.conexion === "error" ? "desconectado" : ""}" id="b-conexion" title="${S.modo === "demo" ? esc(etiquetaModo) : S.conexion === "error" ? "Sin conexión con Excel · clic para reconectar" : "Conectado con Excel · clic para reconectar si algo se queda pegado"}"><span class="punto-con"></span>${S.modo === "demo" ? "Demo" : "Excel"}</button>
+            ${R.puede(u, "seguimiento") ? `<button class="btn chico primario ab-esf" id="b-esf" title="Registrar una reunión no agendada o una gestión (correos, coordinación, informes)">+ <span>Esfuerzo</span></button>` : ""}
             <button class="ab-btn campana ${al.vencidos.length ? "roja" : nAl ? "ambar" : ""}" id="b-alertas" title="Compromisos vencidos o por vencer">${ico("campana")}${nAl ? `<span class="ab-badge">${nAl}</span>` : ""}</button>
             <button class="ab-btn" id="b-ayuda" title="Mostrar la ayuda de esta pantalla">${ico("ayuda")}</button>
             <div class="ab-usuario"><button class="ab-avatar" id="b-usuario" aria-haspopup="true" aria-expanded="false" title="${esc(u.Nombre || u.Correo)}">${avatar(u.Nombre || u.Correo)}</button>
@@ -352,6 +366,12 @@
     $("#b-tema").addEventListener("click", () => { aplicarTema(oscuro ? "claro" : "oscuro"); render(); });
     $("#b-salir").addEventListener("click", () => { S.usuario = null; S.avisoAlertas = false; guardarSesion(""); render(); });
     $("#b-alertas").addEventListener("click", panelAlertas);
+    if ($("#b-esf")) $("#b-esf").addEventListener("click", () => formEsfuerzo());
+    if (!S.avisoSemana && S.datos) {
+      S.avisoSemana = true;
+      const lp = semanaPorCerrar(clavePersona(u.Correo));
+      if (lp) setTimeout(() => toast(`🗓️ ¿Cerramos tu semana? La del ${fecha(lp)} aún no está cerrada: revísala en Inicio › Mi semana.`), 2600);
+    }
     if (!S.avisoAlertas) {
       S.avisoAlertas = true;
       const a = alertas();
@@ -370,7 +390,7 @@
       cargando(true, "Leyendo Excel…");
       try { await recargar(); render(); toast("Datos actualizados"); } catch (e) { toast(e.message, true); } finally { cargando(false); }
     });
-    const vistas = { dashboard: vDashboard, avances: vAvances, seguimiento: vSeguimiento, proyectos: vProyectos, ficha: vFicha, backlog: vBacklog, recursos: vRecursos, capacidad: vCapacidad, priorizacion: vPriorizacion, valor: vValor, agenda: vAgenda, lecciones: vLecciones, sugerencias: vSugerencias, auditoria: vAuditoria, cronograma: vCronograma, riesgos: vRiesgos, catalogos: vCatalogos, usuarios: vUsuarios };
+    const vistas = { dashboard: vDashboard, avances: vAvances, seguimiento: vSeguimiento, proyectos: vProyectos, ficha: vFicha, backlog: vBacklog, recursos: vRecursos, capacidad: vCapacidad, priorizacion: vPriorizacion, valor: vValor, agenda: vAgenda, misemana: vMiSemana, lecciones: vLecciones, sugerencias: vSugerencias, auditoria: vAuditoria, cronograma: vCronograma, riesgos: vRiesgos, catalogos: vCatalogos, usuarios: vUsuarios };
     const el = $("#vista");
     (vistas[S.vista] || vDashboard)(el);
     el.insertAdjacentHTML("afterbegin", ayuda(S.vista));
@@ -381,6 +401,7 @@
     });
     enlazarClics(el);
     enlazarActas(el);
+    enlazarEsfuerzo(el);
     animarVista(el);
   }
   // Entrada suave de la pantalla y contadores que suben en los indicadores (se respeta «reducir movimiento»).
@@ -665,6 +686,7 @@
           const spi = pv > 0 ? ev / pv : null, cpi = ac > 0 ? evc / ac : null, f = (x) => (x === null ? "—" : x.toFixed(2).replace(".", ","));
           return tarjeta("Desempeño (valor ganado)", `${f(spi)} · ${f(cpi)}`, "SPI cronograma · CPI costo (1 = según plan)", (spi !== null && spi < 0.9) || (cpi !== null && cpi < 0.9), "activos"); })()}
       </div>
+      ${cardAlertasEsfuerzo(ps)}
 
       <div class="card"><div class="titulo-fila"><h2>Salud del portafolio</h2><span class="sub">${activos.length} proyecto(s) activos por semáforo · clic para ver</span></div>${activos.length ? salud : vacio("No hay proyectos activos en la selección.")}</div>
 
@@ -1338,7 +1360,7 @@
         <span class="sub">${lista.length} resultado(s)</span>
       </div>
       <div class="card"><div class="tabla-scroll"><table>
-        <thead><tr><th>Proyecto</th><th class="opc">Área</th><th>PM</th><th class="opc">Metodología</th><th class="opc">Fase</th><th>Estado</th><th>Semáforo</th><th>Avance real / plan</th><th class="opc">Fin plan</th><th class="opc">Valor FSFB</th><th>Seguimiento</th></tr></thead>
+        <thead><tr><th>Proyecto</th><th class="opc">Área</th><th>PM</th><th class="opc">Metodología</th><th class="opc">Fase</th><th>Estado</th><th>Semáforo</th><th>Avance real / plan</th><th class="opc">Fin plan</th><th class="opc">Valor FSFB</th><th class="opc" title="Horas reales o estimadas del mes a la fecha / planeadas a la fecha">Horas del mes</th><th>Seguimiento</th></tr></thead>
         <tbody>${lista.map((p) => `<tr class="clic ${["Cerrado", "Cancelado"].includes(p.Estado) ? "fila-inactiva" : ""}" data-pid="${esc(p.ID_Proyecto)}" tabindex="0">
           <td><b>${esc(p.Nombre)}</b><div class="sub">${esc(p.ID_Proyecto)} · prioridad ${esc(String(p.Prioridad).toLowerCase())}</div></td><td class="opc"${EP(p, "Cliente_Area", { tipo: "select", opciones: S.cat.Cliente_Area, etiqueta: "Área" })}>${esc(p.Cliente_Area)}</td>
           <td${EP(p, "PM", { tipo: "select", opciones: pmsEd, puede: R.puede(S.usuario, "verTodo"), etiqueta: "PM" })}>${persona(nombreUsuario(p.PM))}</td><td class="opc"${EP(p, "Metodologia", { tipo: "select", opciones: S.cat.Metodologia, etiqueta: "Metodología" })}>${esc(p.Metodologia)}</td>
@@ -1346,7 +1368,7 @@
           <td${EP(p, "Semaforo", { tipo: "select", opciones: S.cat.Semaforo, vacio: "—", etiqueta: "Semáforo" })}>${p.Estado === "Activo" || p.Semaforo ? chipSemaforo(p.Semaforo) : `<span class="sub">—</span>`}</td>
           <td class="celda-avance"${EP(p, "Avance_Real", { tipo: "number", min: 0, max: 100, requerido: true, etiqueta: "Avance real" })}>${barraAvance(p.Avance_Real, p.Avance_Planeado)}</td><td class="opc"${EP(p, "Fecha_Fin_Plan", { tipo: "date", requerido: true, antes: edFin(p), validar: (v) => (p.Fecha_Inicio && v < p.Fecha_Inicio ? "El fin no puede ser anterior al inicio." : ""), etiqueta: "Fin planeado" })}>${fecha(p.Fecha_Fin_Plan)}</td>
           <td class="opc"${EP(p, "Nivel_Valor", { tipo: "select", opciones: NIVELES_VALOR, vacio: `Automático (${valorProyecto(p).sugerido || "sin datos"})`, etiqueta: "Nivel de valor" })}>${(() => { const V = valorProyecto(p); return V.nivel ? `${chipNivel(V.nivel)}${V.indice !== null ? `<div class="sub">logro ${V.indice}%</div>` : ""}` : `<span class="sub">—</span>`; })()}</td>
-          <td>${pill(R.estadoSeguimiento(p, S.datos.Seguimientos).estado)}</td></tr>`).join("") || `<tr><td colspan="11">${vacio(visibles().length ? "No hay proyectos con estos filtros. Prueba «Limpiar filtros»." : "Aún no tienes proyectos. Registra el primero con «+ Nueva iniciativa».")}</td></tr>`}</tbody>
+          <td class="opc">${CUENTAN(p) ? celdaHorasMes(p) : `<span class="sub">—</span>`}</td><td>${pill(R.estadoSeguimiento(p, S.datos.Seguimientos).estado)}</td></tr>`).join("") || `<tr><td colspan="12">${vacio(visibles().length ? "No hay proyectos con estos filtros. Prueba «Limpiar filtros»." : "Aún no tienes proyectos. Registra el primero con «+ Nueva iniciativa».")}</td></tr>`}</tbody>
       </table></div></div>`;
     enlazarFiltros();
     $("#f-texto").addEventListener("change", (e) => { FL.texto = e.target.value; render(); });
@@ -1396,6 +1418,7 @@
         <div class="dato ancho"><div class="dato-k">Comentario de estado</div><div class="dato-v">${esc(p.Comentario_Estado || "—")}</div></div>
       </div>
       ${cardDesempeno(p)}
+      ${cardEsfuerzo(p)}
       ${(() => { const cc = cambiosDe(p.ID_Proyecto); const ap = cc.filter((c) => c.Estado === "Aprobado"), pe = cc.filter((c) => c.Estado === "Solicitado");
         return `<div class="card"><div class="titulo-fila"><h2>Control de cambios <span class="contador">${cc.length}</span></h2><div class="acciones">${puedeP("editarProyecto") ? `<button class="btn chico primario" id="b-cambio-res">+ Control de cambios</button>` : ""}<button class="btn chico" data-ir-tab="cambios">Ver todos</button></div></div>
           ${cc.length ? `<div class="cc-resumen">${ap.length ? `<span class="pill aprobado">${ap.length} aprobado(s)</span>` : ""}${pe.length ? `<span class="pill solicitado">${pe.length} por decidir</span>` : ""}${IMPACTOS_CC.map((i) => { const n = ap.filter((c) => impactosDe(c).includes(i)).length; return n ? `<span class="pill cc-imp">${esc(i)}: ${n}</span>` : ""; }).join("")}</div>
@@ -1631,6 +1654,7 @@
     { lista: "Tipo_Cambio", t: "Tipo de cambio", campo: "Tipo", tabla: "Cambios", idCol: "ID_Cambio" },
     { lista: "Categoria_Leccion", t: "Categoría de lección aprendida", campo: "Categoria", tabla: "Lecciones", idCol: "ID_Leccion" },
     { lista: "Tipo_Actividad", t: "Tipo de otra actividad (capacidad)", campo: "Tipo", tabla: "Actividades", idCol: "ID_Actividad" },
+    { lista: "Tipo_Esfuerzo", t: "Tipo de esfuerzo (+ Esfuerzo)", campo: "Tipo", tabla: "Esfuerzo", idCol: "ID_Esfuerzo" },
     { lista: "Tipo_Sesion_Agenda", t: "Tipo de sesión (agenda de seguimiento)", campo: "Tipo", tabla: "Agenda", idCol: "ID_Sesion" },
     { lista: "Dimension_Valor", t: "Dimensión de valor (beneficios)", campo: "Dimension", tabla: "Beneficios", idCol: "ID_Beneficio" },
     { lista: "Tipo_Demanda", t: "Tipo de demanda", campo: "Tipo", tabla: "Demandas", idCol: "ID_Demanda" },
@@ -1664,6 +1688,7 @@
           </div>`;
         }).join("")}
       </div>
+      ${cardJornada()}
       <div class="card" id="cat-proveedores"><div class="titulo-fila"><h2>Proveedores</h2><button class="btn primario" id="b-nuevo-prov">+ Proveedor</button></div>
         <p class="sub">Se guardan en la tabla Proveedores. Luego los asignas a cada proyecto con «Editar proyecto».</p>
         <div class="tabla-scroll"><table><thead><tr><th>Proveedor</th><th>Servicio</th><th>Contacto</th><th>Proyectos</th><th>Activo</th><th></th></tr></thead>
@@ -1677,6 +1702,7 @@
           <tbody>${Object.entries(CATALOGOS_FIJOS).map(([k, t]) => `<tr><td>${esc(t)}</td><td>${esc((S.cat[k] || []).join(", "))}</td></tr>`).join("")}</tbody></table></div>
       </div>`;
     $("#b-nuevo-prov").addEventListener("click", () => formProveedor());
+    enlazarJornada(el);
     el.querySelectorAll("[data-prov]").forEach((b) => b.addEventListener("click", () => formProveedor(proveedor(b.dataset.prov))));
     el.querySelectorAll(".cat-agregar").forEach((f) => {
       const lista = f.dataset.lista;
@@ -2739,6 +2765,7 @@
           ...(V.valorFin ? [fila("Valor financiero (meta)", `${cop(V.valorFin)}${V.roi ? ` · ROI ${V.roi.toFixed(1).replace(".", ",")}x · payback ${V.payback} meses` : ""}`)] : [])].join("")}</table>
         ${tabla(["Importancia", "Dimensión", "Beneficio esperado / valor para la FSFB", "Indicador", "Base → meta", "Actual", "Logro", "Estado"], V.bs.map(({ b, e }) => `<tr><td>${t(b.Importancia)}</td><td>${t(b.Dimension)}</td><td>${t(b.Beneficio_Esperado)}${b.Valor_FSFB ? `<br><small>${t(b.Valor_FSFB)}</small>` : ""}</td><td>${t(b.Indicador)}</td>
           <td class="hv-nw">${b.Tipo_Medida === "Cualitativo" ? "Cualitativo" : `${esc(fmtValor(b, b.Linea_Base))} → ${esc(fmtValor(b, b.Meta))}`}</td><td class="hv-nw">${e.ult ? `${esc(fmtValor(b, e.ult.Valor))}<br><small>${fecha(e.ult.Fecha)}</small>` : "—"}</td><td>${e.logro === null ? "—" : `${e.logro}%`}</td><td>${t(e.estado)}</td></tr>`), "Sin beneficios registrados.")}` }; })(),
+      seccionEsfuerzoHV(p, { fila, tabla }),
       { t: "Equipo: stakeholders y proveedores", d: `${plural(stks.length, "persona", "personas")} · ${plural(provs.length, "proveedor", "proveedores")}`, h: `      ${tabla(["Rol", "Nombre", "Cargo / área", "Empresa", "Correo"], stks.map((x) => `<tr><td>${t(x.Rol)}</td><td>${t(x.Nombre)}</td><td>${t([x.Cargo, x.Area].filter(Boolean).join(" · "))}</td><td>${x.ID_Proveedor ? t((proveedor(x.ID_Proveedor) || {}).Nombre) : "Interno"}</td><td>${t(x.Correo)}</td></tr>`), "Sin stakeholders registrados.")}
       <p class="hv-p"><b>Proveedores:</b> ${provs.length ? provs.map((x) => `${esc(x.Nombre)}${x.Servicio ? ` (${esc(x.Servicio)})` : ""}`).join(" · ") : "ninguno"}</p>` },
       { t: "Hitos", d: `${hitos.length} · ${hitos.filter((h) => h.Estado === "Cumplido").length} cumplidos`, h: `      ${tabla(["Hito", "Fecha plan", "Fecha real", "Estado"], hitos.map((h) => `<tr><td>${t(h.Hito)}</td><td>${fecha(h.Fecha_Plan)}</td><td>${h.Fecha_Real ? fecha(h.Fecha_Real) : "—"}</td><td>${t(h.Estado)}</td></tr>`), "Sin hitos.")}` },
@@ -3256,9 +3283,9 @@ ${x.h}</section>`).join("")}
 
   // ---------- Auditoría ----------
   const ID_COLS = { Proyectos: "ID_Proyecto", Hitos: "ID_Hito", Seguimientos: "ID_Seguimiento", Riesgos: "ID_Riesgo", Usuarios: "Correo", Compromisos: "ID_Compromiso",
-    Comentarios: "ID_Comentario", Stakeholders: "ID_Stakeholder", Proveedores: "ID_Proveedor", Recursos: "ID_Recurso", Demandas: "ID_Demanda", Sugerencias: "ID_Sugerencia", Documentos: "ID_Documento", LineasBase: "ID_LB", Tareas: "ID_Tarea", Cronogramas: "ID_Version", Tickets: "ID_Ticket", Cambios: "ID_Cambio", Lecciones: "ID_Leccion", RACI: "ID_RACI", Dependencias: "ID_Dependencia" };
+    Comentarios: "ID_Comentario", Stakeholders: "ID_Stakeholder", Proveedores: "ID_Proveedor", Recursos: "ID_Recurso", Demandas: "ID_Demanda", Sugerencias: "ID_Sugerencia", Documentos: "ID_Documento", LineasBase: "ID_LB", Tareas: "ID_Tarea", Cronogramas: "ID_Version", Tickets: "ID_Ticket", Cambios: "ID_Cambio", Lecciones: "ID_Leccion", RACI: "ID_RACI", Dependencias: "ID_Dependencia", Esfuerzo: "ID_Esfuerzo", HorasSemana: "ID_Fila", CierresSemana: "ID_Cierre" };
   const CAMPO_DESC = ["Nombre", "Compromiso", "Titulo", "Hito", "Descripcion", "Entregable", "Leccion", "Texto", "Valor", "Logros"];
-  const NO_AUDITAR = new Set(["Auditoria", "Archivos", "Filtros", "Tareas"]);   // el cronograma se audita como un cambio del proyecto
+  const NO_AUDITAR = new Set(["Auditoria", "Archivos", "Filtros", "Tareas", "Esfuerzo", "HorasSemana", "CierresSemana"]);   // el cronograma se audita como un cambio del proyecto
   const IGNORAR_CAMPOS = new Set(["Actualizado_Por", "Actualizado_El"]);
   // Qué está haciendo Excel ahora (para el aviso de espera).
   const EN_CURSO = new Map();
@@ -3626,6 +3653,7 @@ ${x.h}</section>`).join("")}
       { k: "Area", label: "Área", tipo: "select", opciones: S.cat.Cliente_Area },
       { k: "ID_Proveedor", label: "Empresa", tipo: "select", opciones: empresas, ayuda: "Interno o el proveedor al que pertenece." },
       { k: "Capacidad", label: "Capacidad disponible (%)", tipo: "number", min: 0, max: 100, def: 100, ayuda: "100 = tiempo completo; 50 = medio tiempo. Se usa en «Capacidad del equipo»." },
+      ...(R.puede(S.usuario, "verTodo") ? [{ k: "Tarifa_Hora", label: "Tarifa por hora (COP, opcional)", tipo: "number", min: 0, ayuda: "Para estimar el costo del esfuerzo de cada proyecto (horas × tarifa). Solo lo ven PMO y Admin." }] : []),
       { k: "Activo", label: "¿Activo?", tipo: "select", opciones: ["Sí", "No"], def: "Sí" },
     ];
     modal(nuevo ? "Nuevo recurso" : `Editar ${r.Nombre}`, campos, nuevo ? {} : r, (fd) => {
@@ -4109,6 +4137,7 @@ ${x.h}</section>`).join("")}
     cronograma: '<path d="M3 3v18h18"/><rect x="7" y="6" width="9" height="3" rx="1"/><rect x="10" y="11" width="8" height="3" rx="1"/><rect x="6" y="16" width="6" height="3" rx="1"/>',
     riesgos: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
     recursos: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+    misemana: '<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/><path d="m9 15 2 2 4-4"/>',
     capacidad: '<path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/>',
     priorizacion: '<path d="M3 3v18h18"/><path d="M7 16h4"/><path d="M7 11h8"/><path d="M7 6h12"/>',
     valor: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
@@ -4153,7 +4182,7 @@ ${x.h}</section>`).join("")}
 
   // Menú agrupado como en las suites empresariales.
   const GRUPOS_NAV = [
-    ["Inicio", ["dashboard", "avances", "seguimiento", "agenda"]],
+    ["Inicio", ["dashboard", "avances", "seguimiento", "agenda", "misemana"]],
     ["Portafolio", ["backlog", "proyectos", "cronograma", "riesgos", "priorizacion", "valor"]],
     ["Personas", ["recursos", "capacidad"]],
     ["Conocimiento", ["lecciones", "sugerencias"]],
@@ -4638,6 +4667,20 @@ ${x.h}</section>`).join("")}
     const evHTML = (e) => `<button type="button" class="ag-ev ag-${normTxt(e.a.Tipo || "sesion").replace(/[^a-z]/g, "")} ${e.choque ? "choque" : ""} ${e.falta ? "falta" : ""} ${e.reg ? "hecho" : ""}" data-ag-ev="${esc(e.p.ID_Proyecto)}|${esc(e.a.ID_Sesion)}|${e.f}"
         title="${esc(`${e.p.Nombre} · ${e.a.Tipo} · ${horaTxt(e.a.Hora)} · ${e.a.Duracion_Min || 30} min · PM ${nombreUsuario(e.p.PM)}${e.choque ? " · cruce de horario del PM" : ""}${e.falta ? " · sin registro" : ""}`)}">
         <b>${esc(corta(e.p.Nombre, 26))}</b><span>${esc(e.a.Tipo || "Sesión")}${e.reg ? " ✓" : ""}${e.choque ? " · cruce" : ""}${e.falta ? " · sin registro" : ""}</span></button>`;
+    // Dailies: ✓ se hizo / ✕ no se hizo (suma o quita su tiempo en las horas del PM).
+    ev.forEach((e) => { if (esDaily(e.a)) { const m = marcaDaily(e.p, e.a, e.f); e.dl = m ? (Number(m.Minutos) ? "si" : "no") : ""; e.reg = e.dl === "si"; } });
+    const puedeDl = (e) => e.f <= hoy && horasDia(e.f) > 0 && R.puedeEditar(S.usuario, e.p, "seguimiento");
+    const evCaja = (e) => (!esDaily(e.a) ? evHTML(e) : `<div class="ag-evw ${e.dl ? "dl-" + e.dl : ""}">${evHTML(e)}${puedeDl(e) ? `<span class="ag-ck"><button class="dl-b si ${e.dl === "si" ? "on" : ""}" data-dl="${esc(e.p.ID_Proyecto)}|${esc(e.a.ID_Sesion)}|${e.f}|1" title="Se hizo (suma ${e.a.Duracion_Min || 15} min)">✓</button><button class="dl-b no ${e.dl === "no" ? "on" : ""}" data-dl="${esc(e.p.ID_Proyecto)}|${esc(e.a.ID_Sesion)}|${e.f}|0" title="No se hizo">✕</button></span>` : ""}</div>`);
+    // Totales de la semana por PM: plan (agenda) vs real (dailies ✓ + sesiones registradas con su duración).
+    const totPM = {};
+    ev.forEach((e) => {
+      const k = lc(e.p.PM), t = (totPM[k] = totPM[k] || { plan: 0, real: 0, si: 0, no: 0, sin: 0, n: 0, reg: 0, falta: 0 });
+      const dur = Number(e.a.Duracion_Min) || 30;
+      t.plan += dur; t.n += 1;
+      if (esDaily(e.a)) { if (e.dl === "si") { t.si += 1; t.real += dur; } else if (e.dl === "no") t.no += 1; else if (e.f <= hoy) t.sin += 1; }
+      else if (e.reg) { const sg = R.seguimientosDe(e.p.ID_Proyecto, S.datos.Seguimientos).find((x) => x.Fecha_Corte === e.f); t.real += sg ? minSeg(sg, e.a) : dur; t.reg += 1; }
+      else if (e.falta) t.falta += 1;
+    });
     el.innerHTML = `<h1>Agenda semanal</h1>${barraFiltros()}
       <div class="filtros ag-nav"><button class="btn chico" id="ag-ant">← Semana anterior</button><b>Semana del ${fecha(dias[0].f)} al ${fecha(dias[4].f)}</b><button class="btn chico" id="ag-sig">Semana siguiente →</button>${lun !== lunesDe(hoy) ? `<button class="btn chico" id="ag-hoy">Esta semana</button>` : ""}</div>
       <div class="kpis kpis-3">
@@ -4647,9 +4690,16 @@ ${x.h}</section>`).join("")}
         <div class="kpi estatico"><span class="kpi-t">Horas en sesiones por PM</span><span class="kpi-v kpi-chico">${Object.entries(porPM).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([k, m]) => `${esc(corta(nombreUsuario(k), 22))} ${durTxt(m)}`).join(" · ") || "—"}</span></div>
       </div>
       <div class="card">${ev.length ? `<div class="ag-grid"><div class="ag-h"></div>${dias.map((d) => `<div class="ag-h ${d.f === hoy ? "hoy" : ""}">${d.t} ${d.f.slice(8, 10)}</div>`).join("")}
-        ${horas.map((h) => `<div class="ag-hora">${horaTxt(h)}</div>${dias.map((d) => `<div class="ag-celda ${d.f === hoy ? "hoy" : ""}">${ev.filter((e) => e.f === d.f && hhmm(e.a.Hora) === h).sort((a, b) => String(a.p.Nombre).localeCompare(String(b.p.Nombre), "es")).map(evHTML).join("")}</div>`).join("")}`).join("")}</div>
-        <div class="ag-leyenda"><span class="ag-ev ag-daily">Daily</span><span class="ag-ev ag-seguimiento">Seguimiento</span><span class="ag-ev ag-comite">Comité</span><span class="ag-ev ag-mesatecnica">Mesa técnica</span><span class="ag-ev choque">Cruce de horario</span><span class="ag-ev falta">Sin registro</span><span class="sub">✓ = registrado. Clic en una sesión para registrarla.</span></div>`
-        : vacio("No hay sesiones programadas esta semana. Agrégalas en la pestaña «Seguimientos» de cada proyecto (Agenda de seguimiento).")}</div>`;
+        ${horas.map((h) => `<div class="ag-hora">${horaTxt(h)}</div>${dias.map((d) => `<div class="ag-celda ${d.f === hoy ? "hoy" : ""}">${ev.filter((e) => e.f === d.f && hhmm(e.a.Hora) === h).sort((a, b) => String(a.p.Nombre).localeCompare(String(b.p.Nombre), "es")).map(evCaja).join("")}</div>`).join("")}`).join("")}</div>
+        <div class="ag-leyenda"><span class="ag-ev ag-daily">Daily</span><span class="ag-ev ag-seguimiento">Seguimiento</span><span class="ag-ev ag-comite">Comité</span><span class="ag-ev ag-mesatecnica">Mesa técnica</span><span class="ag-ev choque">Cruce de horario</span><span class="ag-ev falta">Sin registro</span><span class="sub">✓ = registrado. En los daily marca ✓ si se hizo o ✕ si no (suma o quita su tiempo). Clic en una sesión para registrarla.</span></div>`
+        : vacio("No hay sesiones programadas esta semana. Agrégalas en la pestaña «Seguimientos» de cada proyecto (Agenda de seguimiento).")}</div>
+      ${Object.keys(totPM).length ? `<div class="card"><div class="titulo-fila"><h2>Totales de la semana por PM</h2><button class="btn chico" data-ir-vista="misemana">Ver Mi semana</button></div>
+        <p class="sub">Planeado = lo que dice la agenda. Real = dailies marcados ✓ más las sesiones registradas con su duración y preparación.</p>
+        <div class="tabla-scroll"><table><thead><tr><th>PM</th><th>Sesiones</th><th>Planeado</th><th>Real</th><th>Dailies</th><th>Otras sesiones</th></tr></thead><tbody>
+        ${Object.entries(totPM).sort((a, b) => b[1].plan - a[1].plan).map(([k, t]) => `<tr><td>${persona(nombreUsuario(k))}</td><td>${t.n}</td><td><b>${durTxt(t.plan)}</b></td><td><b class="${t.real > t.plan ? "texto-rojo" : ""}">${durTxt(t.real)}</b></td>
+          <td class="nowrap">${t.si || t.no || t.sin ? `<span class="dl-est si">✓ ${t.si}</span> <span class="dl-est no">✕ ${t.no}</span>${t.sin ? ` <span class="sub">${t.sin} sin marcar</span>` : ""}` : `<span class="sub">—</span>`}</td>
+          <td class="nowrap">${t.reg ? `${t.reg} registrada(s)` : ""}${t.falta ? ` <span class="pill vencido">${t.falta} sin registro</span>` : ""}${!t.reg && !t.falta ? `<span class="sub">—</span>` : ""}</td></tr>`).join("")}</tbody>
+        <tfoot><tr><th>Total</th><th>${sumaA(Object.values(totPM).map((t) => t.n))}</th><th>${durTxt(sumaA(Object.values(totPM).map((t) => t.plan)))}</th><th>${durTxt(sumaA(Object.values(totPM).map((t) => t.real)))}</th><th></th><th></th></tr></tfoot></table></div></div>` : ""}`;
     enlazarFiltros();
     $("#ag-ant").addEventListener("click", () => { S.agLunes = R.sumarDias(lun, -7); render(); });
     $("#ag-sig").addEventListener("click", () => { S.agLunes = R.sumarDias(lun, 7); render(); });
@@ -4658,9 +4708,7 @@ ${x.h}</section>`).join("")}
       const [pid, , f] = b.dataset.agEv.split("|"), p = proyecto(pid), a = agendaDe(pid).find((x) => x.ID_Sesion === b.dataset.agEv.split("|")[1]);
       if (!p) return;
       if (f > hoy || !R.puedeEditar(S.usuario, p, "seguimiento")) { S.fichaTab = "seguimientos"; S.fichaPid = pid; return ir("ficha", pid); }
-      formSeguimiento(p, a && /seguimiento/i.test(a.Tipo) && p.Estado === "Activo" ? "Seguimiento" : "Sesión");
-      const fc = document.querySelector('#m-form [name="Fecha_Corte"]'); if (fc) fc.value = f;
-      const nm = document.querySelector('#m-form [name="Nombre_Sesion"]'); if (nm && a && !nm.value) nm.value = a.Tipo;
+      formSeguimiento(p, a && /seguimiento/i.test(a.Tipo) && p.Estado === "Activo" ? "Seguimiento" : "Sesión", { fecha: f, sesion: a });
     }));
   }
 
@@ -5370,6 +5418,28 @@ ${x.h}</section>`).join("")}
         }
       }
 
+      // 6b. Capacidad real (horas de las últimas 4 semanas)
+      if (incluir.has("capacidad")) {
+        const D = datosCapacidadReal([...new Set([...cap.map((x) => x.k), ...[...gruposPM].map((g) => g.c).filter(Boolean)])], corte);
+        const s = lamina("Capacidad real del equipo", `Horas de las últimas 4 semanas a ${fecha(corte)} sobre las disponibles (jornada de ${hTxt(jornadaSemanal())} por semana, sin festivos ni ausencias). Real = semana cerrada en «Mi semana»; * = estimado, sin cerrar.`);
+        const T = D.T;
+        tile(s, 0.5, 1.5, 2.95, 1.3, "Disponible", hTxt(T.disp), `${D.filas.length} persona(s) · 4 semanas`);
+        tile(s, 3.6, 1.5, 2.95, 1.3, "Real / estimado", hTxt(T.pasado), `${pctDe(T.pasado, T.dispPas)}% de ocupación · ${pctDe(T.cerrado, T.pasado)}% cerrado`, pctDe(T.pasado, T.dispPas) > 100 ? PPT.Rojo : PPT.azul);
+        tile(s, 6.7, 1.5, 2.95, 1.3, "En reuniones", `${pctDe(T.reun, T.pasado)}%`, `${hTxt(T.reun)} en dailies, seguimientos y comités`, PPT.dorado);
+        tile(s, 9.8, 1.5, 2.95, 1.3, "Gestión no detallada", `${pctDe(T.gestGen, T.pasado)}%`, "sin proyecto asociado", pctDe(T.gestGen, T.pasado) > 25 ? PPT.Rojo : PPT.gris);
+        if (!D.filas.length) vacioTxt(s, "Aún no hay horas para mostrar.", 3.6);
+        else {
+          const color = (o) => (o === null ? { fill: { color: PPT.blanco }, color: PPT.sec } : o > 100 ? { fill: { color: "F6D5D1" }, color: PPT.Rojo, bold: true } : o >= 85 ? { fill: { color: "FBEFC9" }, color: "8A6100", bold: true } : { fill: { color: "DFF0E5" }, color: "1E5E3A" });
+          const filas = [[cab("Persona"), ...D.semanas.map((l) => cab(`Sem. ${fechaCorta(l)}`, { align: "center" })), cab("4 semanas", { align: "center" })]];
+          D.filas.sort((a, b) => sumaA(b.sem.map((z) => z.a.carga)) / Math.max(1, sumaA(b.sem.map((z) => z.a.disp))) - sumaA(a.sem.map((z) => z.a.carga)) / Math.max(1, sumaA(a.sem.map((z) => z.a.disp)))).slice(0, 11).forEach((f, i) => {
+            const tc = sumaA(f.sem.map((z) => z.a.carga)), td = sumaA(f.sem.map((z) => z.a.disp)), ot = td ? pctDe(tc, td) : null;
+            filas.push([celda(corta(f.x.nombre, 30), i), ...f.sem.map((z) => ({ text: z.o === null ? "—" : `${z.o}%${z.cerr ? "" : "*"}\n${hTxt(z.a.carga)}`, options: { align: "center", fontSize: 9, valign: "middle", ...color(z.o) } })),
+              { text: ot === null ? "—" : `${ot}%`, options: { align: "center", fontSize: 10, valign: "middle", ...color(ot) } }]);
+          });
+          tabla(s, filas, [3.6, 1.85, 1.85, 1.85, 1.85, 1.33], 3.0, { rowH: 0.34 });
+        }
+      }
+
       // 7. Seguimientos
       if (incluir.has("seguimientos")) {
         const s = lamina("Seguimientos", "Seguimientos de avance y sesiones registradas · estado frente a la frecuencia definida de cada proyecto");
@@ -5649,6 +5719,7 @@ ${x.h}</section>`).join("")}
   ];
   // Qué exporta cada pantalla.
   const EXPORTADORES = {
+    misemana: () => exportarMiSemana(),
     sugerencias: () => exportarExcel("Sugerencias de mejora", [{ nombre: "Sugerencias", columnas: [
       { t: "ID", v: (x) => x.ID_Sugerencia, ancho: 11 }, { t: "Fecha", v: (x) => String(x.Fecha_Hora).slice(0, 10), tipo: "fecha" }, { t: "Sugerida por", v: (x) => nombreUsuario(x.Usuario) },
       { t: "Módulo", v: (x) => x.Modulo }, { t: "Dónde", v: (x) => x.Contexto, ancho: 26 }, { t: "Tipo", v: (x) => x.Tipo, ancho: 11 }, { t: "Prioridad", v: (x) => x.Prioridad, ancho: 10 },
@@ -5754,7 +5825,7 @@ ${x.h}</section>`).join("")}
         { nombre: "Detalle por proyecto", columnas: [{ t: "Persona", v: (d) => d.x.nombre, ancho: 30 }, { t: "Proyecto", v: (d) => d.a.p.Nombre, ancho: 32 }, { t: "Rol", v: (d) => d.a.rol }, { t: "Dedicación", v: (d) => d.a.ded, tipo: "pct" }], filas: det },
         { nombre: "Otras actividades", columnas: [{ t: "Persona", v: (a) => a.Nombre || a.Correo, ancho: 30 }, { t: "Tipo", v: (a) => a.Tipo, ancho: 24 }, { t: "Descripción", v: (a) => a.Descripcion, ancho: 40 },
           { t: "Dedicación", v: (a) => num0(a.Dedicacion) || 0, tipo: "pct" }, { t: "Desde", v: (a) => a.Fecha_Inicio, tipo: "fecha" }, { t: "Hasta", v: (a) => a.Fecha_Fin || "Permanente", ancho: 12 }, { t: "Estado", v: (a) => estadoAct(a, corteCap()), ancho: 12 }],
-          filas: actividades().filter((a) => R.puede(S.usuario, "verTodo") || lista.some((x) => x.k === clavePersona(a.Correo, a.Nombre))) }],
+          filas: actividades().filter((a) => R.puede(S.usuario, "verTodo") || lista.some((x) => x.k === clavePersona(a.Correo, a.Nombre))) }, ...hojasHoras()],
         [...filtrosGenerales(), S.capVer && S.capVer !== "todos" ? `Estado: ${S.capVer}` : ""].filter(Boolean));
     },
     lecciones: () => {
@@ -6197,7 +6268,6 @@ ${x.h}</section>`).join("")}
   const vigenteAct = (a, corte) => (!a.Fecha_Inicio || String(a.Fecha_Inicio) <= corte) && (!a.Fecha_Fin || String(a.Fecha_Fin) >= corte);
   const estadoAct = (a, corte = R.hoyISO()) => (a.Fecha_Inicio && String(a.Fecha_Inicio) > corte ? "Programada" : a.Fecha_Fin && String(a.Fecha_Fin) < corte ? "Finalizada" : "Vigente");
   const nuevoIdAct = () => `ACT-${String(actividades().reduce((m, a) => Math.max(m, parseInt(String(a.ID_Actividad).slice(4), 10) || 0), 0) + 1).padStart(4, "0")}`;
-  const JORNADA_SEMANAL = 42;   // horas/semana para convertir horas → %
   const corteCap = () => S.capCorte || R.hoyISO();
 
   // Carga de cada persona a la fecha de corte: proyectos activos o en pausa + otras actividades vigentes.
@@ -6220,7 +6290,7 @@ ${x.h}</section>`).join("")}
     const minPM = {};
     S.datos.Proyectos.filter(CUENTAN).forEach((p) => agendaDe(p.ID_Proyecto).filter((a) => agendaActiva(a, corte)).forEach((a) => { if (p.PM) minPM[lc(p.PM)] = (minPM[lc(p.PM)] || 0) + minutosSemana(a); }));
     Object.entries(minPM).forEach(([correo, min]) => {
-      const ded = Math.round((min / 60 / JORNADA_SEMANAL) * 100);
+      const ded = Math.round((min / 60 / jornadaSemanal()) * 100);
       if (!ded) return;
       const k = clavePersona(correo, "");
       const x = (personas[k] = personas[k] || { k, nombre: nombreUsuario(correo), correo, total: 0, asign: [] });
@@ -6249,6 +6319,16 @@ ${x.h}</section>`).join("")}
   const barraCap = (t, cap = 100, otras = 0) => `<span class="cap-barra" title="${otras ? `${t - otras}% proyectos + ${otras}% otras actividades = ${t}%` : `${t}%`} de ${cap}%"><span class="cap-lleno ${t > cap ? "rojo" : t >= cap * 0.85 ? "ambar" : ""}" style="width:${Math.min(100, (t / 150) * 100)}%">${otras && t ? `<span class="cap-otras" style="width:${Math.min(100, (otras / t) * 100)}%"></span>` : ""}</span><span class="cap-100" style="left:${(cap / 150) * 100}%"></span></span> <b>${t}%</b>${cap !== 100 ? ` <span class="sub">de ${cap}%</span>` : ""}`;
 
   function vCapacidad(el) {
+    const tabC = S.capTab || "dedicacion";
+    const tabsCap = `<div class="pestanas" role="tablist">${[["dedicacion", "Dedicación"], ["semanal", "Semanal"], ["mensual", "Mensual"], ["otras", "Otras actividades"]].map(([id, t]) => `<button class="pestana ${id === tabC ? "activa" : ""}" role="tab" aria-selected="${id === tabC}" data-captab="${id}">${t}</button>`).join("")}</div>`;
+    const enlazarTabs = () => el.querySelectorAll("[data-captab]").forEach((b) => b.addEventListener("click", () => { S.capTab = b.dataset.captab; if (S.capTab === "semanal") S.capZoom = "semana"; if (S.capTab === "mensual" && (!S.capZoom || S.capZoom === "semana")) S.capZoom = "mes"; render(); }));
+    if (tabC === "semanal" || tabC === "mensual") {
+      const zoom = tabC === "semanal" ? "semana" : S.capZoom && S.capZoom !== "semana" ? S.capZoom : "mes";
+      el.innerHTML = `<h1>Capacidad del equipo</h1>${barraFiltros()}${tabsCap}${htmlHoras(zoom)}`;
+      enlazarFiltros(); enlazarTabs(); enlazarHoras(el, zoom);
+      el.querySelectorAll("button[data-pid]").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); ir("ficha", b.dataset.pid); }));
+      return;
+    }
     const u = S.usuario, todo = R.puede(u, "verTodo");
     const ids = new Set(visibles().map((p) => p.ID_Proyecto));
     const idsF = new Set(filtrados().map((p) => p.ID_Proyecto));
@@ -6273,8 +6353,8 @@ ${x.h}</section>`).join("")}
     const tipos = [...new Set([...(S.cat.Tipo_Actividad || []), ...actividades().map((a) => a.Tipo).filter(Boolean)])];
     el.innerHTML = `
       <h1>Capacidad del equipo</h1>
-      ${barraFiltros()}
-      <div class="filtros"><label class="filtro"><span>Fecha de corte</span><input type="date" id="cap-corte" value="${esc(corte)}"></label>
+      ${barraFiltros()}${tabsCap}
+      ${tabC === "dedicacion" ? `<div class="filtros"><label class="filtro"><span>Fecha de corte</span><input type="date" id="cap-corte" value="${esc(corte)}"></label>
         ${corte !== hoy ? `<button class="btn chico" id="cap-hoy">Volver a hoy</button>` : ""}<span class="sub cap-corte-ay">Las otras actividades y ausencias cuentan si están vigentes en esta fecha.</span></div>
       <div class="kpis kpis-3">
         <div class="kpi estatico ${n("Sobreasignado") ? "alerta" : ""}"><span class="kpi-t">Sobreasignados (sobre su capacidad)</span><span class="kpi-v">${n("Sobreasignado")}</span></div>
@@ -6291,9 +6371,9 @@ ${x.h}</section>`).join("")}
               ? `<button class="chip-proy" data-pid="${esc(a.p.ID_Proyecto)}">${esc(a.p.Nombre)} · ${esc(a.rol)} · <b>${a.ded}%</b></button>`
               : `<span class="chip-proy">Otro proyecto · <b>${a.ded}%</b></span>`).join("") || `<span class="sub">—</span>`}</div></td>
             <td><div class="cap-asign">${x.otras.map((a) => `<span class="chip-act ${esAusencia(a) ? "aus" : ""}" title="${esc([a.Descripcion, a.Fecha_Fin ? `hasta ${fecha(a.Fecha_Fin)}` : "permanente"].filter(Boolean).join(" · "))}">${esc(a.Tipo || "Actividad")} · <b>${num0(a.Dedicacion)}%</b></span>`).join("") || `<span class="sub">—</span>`}</div></td></tr>`).join("")}</tbody></table></div>`
-        : vacio("Aún no hay dedicaciones registradas. Pon el % de dedicación del PM en «Editar proyecto», el de cada stakeholder en su ficha y las otras actividades abajo.")}
-      </div>
-      <div class="card" id="otras-actividades"><div class="titulo-fila"><h2>Otras actividades <span class="sub">${acts.length}</span></h2>${puedeAct ? `<button class="btn primario" id="b-act">+ Actividad</button>` : ""}</div>
+        : vacio("Aún no hay dedicaciones registradas. Pon el % de dedicación del PM en «Editar proyecto», el de cada stakeholder en su ficha y las otras actividades en su pestaña.")}
+      </div>` : ""}
+      ${tabC === "otras" ? `<div class="card" id="otras-actividades"><div class="titulo-fila"><h2>Otras actividades <span class="sub">${acts.length}</span></h2>${puedeAct ? `<button class="btn primario" id="b-act">+ Actividad</button>` : ""}</div>
         <p class="sub">Lo que no es proyecto pero consume tiempo: operación y soporte, comités, gestión de demanda, informes, capacitación y ausencias. Sin fecha de fin = permanente.</p>
         <div class="filtros"><label class="filtro"><span>Tipo</span><select id="act-tipo"><option value="">Todos</option>${tipos.map((t) => `<option ${t === AF.tipo ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></label>
           <label class="filtro"><span>Estado</span><select id="act-estado">${[["Vigente", "Vigentes"], ["Programada", "Programadas"], ["Finalizada", "Finalizadas"], ["", "Todas"]].map(([v, t]) => `<option value="${v}" ${v === AF.estado ? "selected" : ""}>${t}</option>`).join("")}</select></label></div>
@@ -6303,14 +6383,14 @@ ${x.h}</section>`).join("")}
             <td class="nowrap"${ed({ puede: editable(a), tabla: "Actividades", idCol: "ID_Actividad", id: a.ID_Actividad, campo: "Dedicacion", tipo: "number", min: 1, max: 100, requerido: true, valor: num0(a.Dedicacion) ?? "", etiqueta: "Dedicación" })}><b>${num0(a.Dedicacion) ?? "—"}%</b></td><td class="nowrap">${fecha(a.Fecha_Inicio)} → ${a.Fecha_Fin ? fecha(a.Fecha_Fin) : "Permanente"}</td><td>${pill(estadoAct(a, corte))}</td>
             <td class="derecha">${editable(a) ? `<button class="btn chico" data-act="${esc(a.ID_Actividad)}">Editar</button>` : ""}</td></tr>`).join("")}</tbody></table></div>`
         : vacio(AF.estado || AF.tipo ? "No hay actividades con ese filtro." : "Aún no hay otras actividades registradas.")}
-      </div>`;
-    enlazarFiltros();
+      </div>` : ""}`;
+    enlazarFiltros(); enlazarTabs();
     el.querySelectorAll("[data-capver]").forEach((b) => b.addEventListener("click", () => { S.capVer = b.dataset.capver; render(); }));
     el.querySelectorAll(".chip-proy[data-pid]").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); ir("ficha", b.dataset.pid); }));
-    $("#cap-corte").addEventListener("change", (e) => { S.capCorte = /^\d{4}-\d{2}-\d{2}$/.test(e.target.value) ? e.target.value : ""; render(); });
+    if ($("#cap-corte")) $("#cap-corte").addEventListener("change", (e) => { S.capCorte = /^\d{4}-\d{2}-\d{2}$/.test(e.target.value) ? e.target.value : ""; render(); });
     if ($("#cap-hoy")) $("#cap-hoy").addEventListener("click", () => { S.capCorte = ""; render(); });
-    $("#act-tipo").addEventListener("change", (e) => { S.actF = { ...AF, tipo: e.target.value }; render(); });
-    $("#act-estado").addEventListener("change", (e) => { S.actF = { ...AF, estado: e.target.value }; render(); });
+    if ($("#act-tipo")) $("#act-tipo").addEventListener("change", (e) => { S.actF = { ...AF, tipo: e.target.value }; render(); });
+    if ($("#act-estado")) $("#act-estado").addEventListener("change", (e) => { S.actF = { ...AF, estado: e.target.value }; render(); });
     if ($("#b-act")) $("#b-act").addEventListener("click", () => formActividad());
     el.querySelectorAll("[data-act]").forEach((b) => b.addEventListener("click", () => formActividad(actividades().find((a) => a.ID_Actividad === b.dataset.act))));
   }
@@ -6334,7 +6414,7 @@ ${x.h}</section>`).join("")}
       { k: "_Persona", label: "Persona", tipo: "select", ancho: true, opciones: lista.map((x) => [x.k, `${x.nombre}${x.correo ? ` · ${x.correo}` : ""}`]), def: actual },
       { k: "Tipo", label: "Tipo de actividad", tipo: "select", opciones: S.cat.Tipo_Actividad || [] },
       { k: "Dedicacion", label: "Dedicación (%)", tipo: "number", min: 1, max: 100, ayuda: "Del tiempo total de la persona. Ausencia: 100 si está fuera todo el periodo." },
-      { k: "_Horas", label: "…o en horas por semana", tipo: "number", min: 0, max: JORNADA_SEMANAL, placeholder: `de ${JORNADA_SEMANAL} h`, ayuda: `Opcional: calcula el % con una jornada de ${JORNADA_SEMANAL} h.` },
+      { k: "_Horas", label: "…o en horas por semana", tipo: "number", min: 0, max: jornadaSemanal(), placeholder: `de ${jornadaSemanal()} h`, ayuda: `Opcional: calcula el % con una jornada de ${jornadaSemanal()} h.` },
       { k: "Descripcion", label: "Descripción", tipo: "textarea", placeholder: "Ej.: Soporte de segundo nivel a Kardex; comité de cambios semanal; vacaciones." },
       { k: "Fecha_Inicio", label: "Desde", tipo: "date", def: R.hoyISO() },
       { k: "Fecha_Fin", label: "Hasta (opcional)", tipo: "date", ayuda: "Vacío = permanente." },
@@ -6354,11 +6434,732 @@ ${x.h}</section>`).join("")}
     }, {
       init: (m) => {
         const h = m.querySelector('[name="_Horas"]'), d = m.querySelector('[name="Dedicacion"]');
-        h.addEventListener("input", () => { const v = Number(h.value); if (h.value !== "" && v >= 0) d.value = Math.max(1, Math.min(100, Math.round((v / JORNADA_SEMANAL) * 100))); });
+        h.addEventListener("input", () => { const v = Number(h.value); if (h.value !== "" && v >= 0) d.value = Math.max(1, Math.min(100, Math.round((v / jornadaSemanal()) * 100))); });
       },
       ...(nuevo ? {} : { eliminar: { texto: "Eliminar actividad", mensaje: `Se eliminará «${a.Tipo}${a.Descripcion ? `: ${a.Descripcion}` : ""}» de ${a.Nombre || a.Correo}. Si ya terminó, mejor pon la fecha «Hasta» para conservar el histórico.`,
         accion: () => guardar(() => S.api.eliminarFilas("Actividades", "ID_Actividad", [a.ID_Actividad]), "Actividad eliminada") } }),
     });
+  }
+
+  // ======================= Esfuerzo y capacidad en horas =======================
+  // Jornada laboral y festivos (Catálogos), horas reales por persona/proyecto/día:
+  //  · Plan = dedicación % × horas hábiles del día (sin festivos ni ausencias) + sesiones de la agenda.
+  //  · Estimado (semana sin cerrar) = dedicación + sesiones reales (dailies ✓/✕, sesiones registradas con su duración)
+  //    + registros rápidos («+ Esfuerzo») + gestión general + otras actividades.
+  //  · Real = lo que la persona deja al cerrar su semana en «Mi semana» (puede ajustar cada celda).
+  const DIAS_EF = ["L", "M", "X", "J", "V"];
+  const GEST = "_GEST", OTRAS = "_OTRAS";
+  const DIA_COD = { dom: 0, lun: 1, mar: 2, mie: 3, jue: 4, vie: 5, sab: 6 };
+  const NOM_DIA = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+  const ES_REUNION = /reuni|sesi|comit|daily|mesa|proveedor/i;
+  const esfuerzos = () => S.datos.Esfuerzo || [];
+  const horasSem = () => S.datos.HorasSemana || [];
+  const cierres = () => S.datos.CierresSemana || [];
+  const hTxt = (h, suf = " h") => `${String(Math.round((Number(h) || 0) * 10) / 10).replace(".", ",")}${suf}`;
+  const pctDe = (a, b) => (b > 0 ? Math.round((a / b) * 100) : 0);
+  const nivelOc = (p) => (p > 100 ? "rojo" : p >= 85 ? "ambar" : "verde");
+  const idUnico = (pre) => `${pre}-${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).slice(2, 5).toUpperCase()}`;
+  const nombreFila = (f) => (f === GEST ? "Gestión general (sin proyecto)" : f === OTRAS ? "Otras actividades" : (proyecto(f) || {}).Nombre || f);
+  const sumaA = (a) => a.reduce((t, v) => t + (Number(v) || 0), 0);
+  const r2 = (v) => Math.round((Number(v) || 0) * 100) / 100;
+  const push = (m, k, v) => { const l = m.get(k); if (l) l.push(v); else m.set(k, [v]); };
+  const isoDe = (y, m, d) => `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  const finDeMesISO = (iso) => { const [y, m] = iso.split("-").map(Number); return isoDe(y, m, new Date(y, m, 0).getDate()); };
+  const sumarMeses = (iso, n) => { const [y, m] = iso.split("-").map(Number); const d = new Date(y, m - 1 + n, 1); return isoDe(d.getFullYear(), d.getMonth() + 1, 1); };
+  const fechaCorta = (iso) => `${Number(iso.slice(8, 10))} ${MES_CORTO[Number(iso.slice(5, 7)) - 1]}`;
+
+  // ---------- Jornada laboral (Catálogos › Jornada) y festivos (Catálogos › Festivo) ----------
+  let _jorn = null;
+  function jornada() {
+    const firma = `${(S.cat.Jornada || []).join("|")}#${(S.cat.Festivo || []).join("|")}`;
+    if (_jorn && _jorn.firma === firma) return _jorn;
+    const horario = {}; let alm = 60;
+    (S.cat.Jornada || []).forEach((v) => {
+      const [k0, val = ""] = String(v).split("=");
+      const k = normTxt(k0).slice(0, 3);
+      if (k === "alm") { alm = Math.max(0, Number(val) || 0); return; }
+      const m = val.match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
+      if (m && DIA_COD[k] !== undefined) horario[DIA_COD[k]] = { ini: `${m[1].padStart(2, "0")}:${m[2]}`, fin: `${m[3].padStart(2, "0")}:${m[4]}`, min: (+m[3] * 60 + +m[4]) - (+m[1] * 60 + +m[2]) };
+    });
+    const min = {};
+    Object.entries(horario).forEach(([d, h]) => { min[d] = Math.max(0, h.min - alm); });
+    const fest = new Map();
+    (S.cat.Festivo || []).forEach((v) => { const m = String(v).trim().match(/^(\d{4}-\d{2}-\d{2})\s*[-–·:]?\s*(.*)$/); if (m) fest.set(m[1], m[2] || "Festivo"); });
+    return (_jorn = { firma, horario, min, alm, fest });
+  }
+  const horasDia = (iso) => (jornada().fest.has(iso) ? 0 : (jornada().min[diaSemana(iso)] || 0) / 60);
+  const horasPeriodo = (ini, fin) => { let t = 0; for (let d = ini; d <= fin; d = R.sumarDias(d, 1)) t += horasDia(d); return t; };
+  const jornadaSemanal = () => [1, 2, 3, 4, 5].reduce((t, d) => t + (jornada().min[d] || 0), 0) / 60 || 42;
+
+  // ---------- Índice (se rehace en cada render) ----------
+  let _ief = null;
+  function idxEsf() {
+    if (_ief) return _ief;
+    const X = { personas: new Map(), esf: new Map(), segs: new Map(), segsDia: new Map(), hs: new Map(), hsSem: new Map(), cie: new Map(), acts: new Map(), porProy: new Map(), sem: new Map() };
+    const enProy = (pid, k) => { if (!pid) return; let s = X.porProy.get(pid); if (!s) X.porProy.set(pid, (s = new Set())); s.add(k); };
+    const per = (correo, nombre) => {
+      if (!correo && !nombre) return null;
+      const k = clavePersona(correo, nombre);
+      let x = X.personas.get(k);
+      if (!x) {
+        const r = recursoPor({ correo, nombre });
+        x = { k, correo: correo || (r && r.Correo) || "", nombre: (r && r.Nombre) || nombre || nombreUsuario(correo), asign: [], r };
+        X.personas.set(k, x);
+      }
+      if (!x.correo && correo) x.correo = correo;
+      return x;
+    };
+    S.datos.Proyectos.forEach((p) => {
+      if (p.PM) { const x = per(p.PM, nombreUsuario(p.PM)); x.asign.push({ p, ded: dedPM(p) || 0, pm: true, rol: "PM" }); enProy(p.ID_Proyecto, x.k); }
+      stakeholdersDe(p.ID_Proyecto).filter((s) => !esPMdeProy(p, s)).forEach((s) => {
+        const d = num0(s.Dedicacion); if (!d) return;
+        const x = per(s.Correo, s.Nombre); if (!x) return;
+        x.asign.push({ p, ded: d, pm: false, rol: s.Rol }); enProy(p.ID_Proyecto, x.k);
+      });
+    });
+    actividades().forEach((a) => { const x = per(a.Correo, a.Nombre); if (x) push(X.acts, x.k, a); });
+    esfuerzos().forEach((e) => { const x = per(e.Correo, e.Nombre); if (!x || !e.Fecha) return; push(X.esf, `${x.k}|${e.Fecha}`, e); enProy(e.ID_Proyecto, x.k); });
+    S.datos.Seguimientos.forEach((s) => {
+      if (!s.Fecha_Corte) return;
+      push(X.segs, `${s.ID_Proyecto}|${s.Fecha_Corte}`, s);
+      if (s.Reportado_Por && (num0(s.Duracion_Min) || num0(s.Preparacion_Min))) { const x = per(s.Reportado_Por, nombreUsuario(s.Reportado_Por)); push(X.segsDia, `${x.k}|${s.Fecha_Corte}`, s); enProy(s.ID_Proyecto, x.k); }
+    });
+    horasSem().forEach((h) => { const x = per(h.Correo, h.Nombre); if (!x) return; X.hs.set(`${x.k}|${h.Fecha_Semana}|${h.Fila}`, h); push(X.hsSem, `${x.k}|${h.Fecha_Semana}`, h); if (!String(h.Fila).startsWith("_")) enProy(h.Fila, x.k); });
+    cierres().forEach((c) => { const x = per(c.Correo, c.Nombre); if (x) X.cie.set(`${x.k}|${c.Fecha_Semana}`, c); });
+    return (_ief = X);
+  }
+  const invalidarEsf = () => { _ief = null; };
+  const infoPersona = (k) => idxEsf().personas.get(k) || (S.usuario && k === clavePersona(S.usuario.Correo) ? { k, correo: S.usuario.Correo, nombre: S.usuario.Nombre || S.usuario.Correo, asign: [] } : null);
+  const tarifaDe = (x) => (x && x.r ? num0(x.r.Tarifa_Hora) : null);
+
+  function proyActivoEn(p, d, hoy) {
+    if (p.Fecha_Inicio && d < String(p.Fecha_Inicio)) return false;
+    if (CUENTAN(p)) return d <= hoy || !p.Fecha_Fin_Plan || d <= String(p.Fecha_Fin_Plan);
+    if (p.Estado === "Cerrado" || p.Estado === "Cancelado") { const f = String(p.Actualizado_El || p.Fecha_Fin_Plan || "").slice(0, 10); return !!f && d <= f; }
+    return false;
+  }
+  // Minutos de una sesión registrada: duración + preparación/acta (si no se escribieron, lo programado en la agenda).
+  const minSeg = (s, a) => { const d = num0(s.Duracion_Min), p = num0(s.Preparacion_Min); return d === null && p === null ? (a ? Number(a.Duracion_Min) || 30 : 0) : (d || 0) + (p || 0); };
+
+  // Semana (L–V) de una persona: una fila por proyecto + gestión general + otras actividades.
+  function semanaPersona(k, lun) {
+    const X = idxEsf(), ck = `${k}|${lun}`;
+    if (X.sem.has(ck)) return X.sem.get(ck);
+    const x = X.personas.get(k), hoy = R.hoyISO();
+    const dias = DIAS_EF.map((c, i) => R.sumarDias(lun, i));
+    const filas = new Map();
+    const cero = () => [0, 0, 0, 0, 0];
+    const fila = (f) => { let r = filas.get(f); if (!r) { r = { f, plan: cero(), trab: cero(), reun: cero(), prep: cero(), gest: cero(), otras: cero(), det: [[], [], [], [], []], ded: 0, rol: "" }; filas.set(f, r); } return r; };
+    fila(GEST);
+    const capBase = (x && x.r && num0(x.r.Capacidad)) ?? 100;
+    const horas = [], disp = [], aus = [], fest = [];
+    dias.forEach((d, i) => {
+      const h = horasDia(d); horas[i] = h; fest[i] = jornada().fest.get(d) || "";
+      const acts = (X.acts.get(k) || []).filter((a) => vigenteAct(a, d) && num0(a.Dedicacion));
+      const ausPct = Math.min(100, acts.filter(esAusencia).reduce((t, a) => t + num0(a.Dedicacion), 0));
+      aus[i] = (h * ausPct) / 100;
+      const fac = h ? 1 - ausPct / 100 : 0;
+      disp[i] = h * fac * (capBase / 100);
+      if (!h) return;
+      const usados = new Set();
+      (x ? x.asign : []).forEach((as) => {
+        const p = as.p; if (!proyActivoEn(p, d, hoy)) return;
+        const r = fila(p.ID_Proyecto);
+        r.ded = Math.max(r.ded, as.ded); r.rol = r.rol || as.rol;
+        const tb = (h * as.ded / 100) * fac;
+        if (tb) { r.trab[i] += tb; r.plan[i] += tb; r.det[i].push({ t: `Trabajo del proyecto (${as.ded}% de ${hTxt(h)})`, h: tb }); }
+        if (!as.pm || !fac) return;
+        agendaDe(p.ID_Proyecto).filter((a) => tocaEn(a, d)).forEach((a) => {
+          const dur = (Number(a.Duracion_Min) || 30) / 60;
+          r.plan[i] += dur;
+          let real = dur, nota = d > hoy ? "programada" : "sin registro: se estima lo programado", prep = 0;
+          if (esDaily(a)) {
+            const m = (X.esf.get(`${k}|${d}`) || []).find((e) => e.Origen === "daily" && e.ID_Sesion === a.ID_Sesion);
+            if (m) { real = (Number(m.Minutos) || 0) / 60; nota = real ? "se hizo ✓" : "no se hizo ✕"; }
+          } else {
+            const libres = (X.segs.get(`${p.ID_Proyecto}|${d}`) || []).filter((s) => !usados.has(s.ID_Seguimiento));
+            const s = libres.find((z) => z.ID_Sesion === a.ID_Sesion) || libres.find((z) => !z.ID_Sesion);
+            if (s) {
+              usados.add(s.ID_Seguimiento);
+              const dd = num0(s.Duracion_Min), pp = num0(s.Preparacion_Min);
+              real = dd === null && pp === null ? dur : (dd || 0) / 60; prep = (pp || 0) / 60; nota = "registrada";
+            }
+          }
+          r.reun[i] += real; r.prep[i] += prep;
+          r.det[i].push({ t: `${a.Tipo || "Sesión"} ${horaTxt(a.Hora)} · ${nota}`, h: real });
+          if (prep) r.det[i].push({ t: "Preparación y acta", h: prep });
+        });
+      });
+      // Sesiones registradas por la persona que no estaban en su agenda.
+      (X.segsDia.get(`${k}|${d}`) || []).filter((s) => !usados.has(s.ID_Seguimiento)).forEach((s) => {
+        const r = fila(s.ID_Proyecto), dd = (num0(s.Duracion_Min) || 0) / 60, pp = (num0(s.Preparacion_Min) || 0) / 60;
+        r.reun[i] += dd; r.prep[i] += pp;
+        r.det[i].push({ t: `${R.esSesion(s) ? s.Nombre_Sesion || "Sesión" : "Seguimiento"} registrado (no agendado)`, h: dd });
+        if (pp) r.det[i].push({ t: "Preparación y acta", h: pp });
+      });
+      // Registros rápidos (+ Esfuerzo).
+      (X.esf.get(`${k}|${d}`) || []).filter((e) => e.Origen !== "daily").forEach((e) => {
+        const f = e.ID_Proyecto || GEST, r = fila(f), hh = (Number(e.Minutos) || 0) / 60;
+        if (f !== GEST && ES_REUNION.test(e.Tipo)) r.reun[i] += hh; else r.gest[i] += hh;
+        r.det[i].push({ t: `${e.Tipo || "Registro"}${e.Nota ? `: ${corta(e.Nota, 60)}` : ""}`, h: hh });
+      });
+      // Otras actividades (no ausencias).
+      acts.filter((a) => !esAusencia(a)).forEach((a) => {
+        const r = fila(OTRAS), hh = (h * num0(a.Dedicacion) / 100) * fac;
+        r.otras[i] += hh; r.plan[i] += hh; r.det[i].push({ t: `${a.Tipo}${a.Descripcion ? `: ${corta(a.Descripcion, 50)}` : ""} (${num0(a.Dedicacion)}%)`, h: hh });
+      });
+    });
+    (X.hsSem.get(ck) || []).forEach((hs) => fila(hs.Fila));
+    const cerrada = X.cie.get(ck) || null;
+    filas.forEach((r) => {
+      r.est = dias.map((d, i) => r.trab[i] + r.reun[i] + r.prep[i] + r.gest[i] + r.otras[i]);
+      const hs = X.hs.get(`${ck}|${r.f}`);
+      const ed = hs ? String(hs.Editadas || "").split(/[,;\s]+/).filter(Boolean) : [];
+      r.edit = DIAS_EF.map((c) => ed.includes(c));
+      r.val = r.est.map((v, i) => (cerrada ? (hs ? Number(hs[DIAS_EF[i]]) || 0 : 0) : hs && r.edit[i] ? Number(hs[DIAS_EF[i]]) || 0 : v));
+    });
+    const orden = (r) => (r.f === GEST ? 2 : r.f === OTRAS ? 3 : 1);
+    const lista = [...filas.values()].filter((r) => r.f === GEST || sumaA(r.plan) || sumaA(r.val) || sumaA(r.est) || (x && x.asign.some((a) => a.p.ID_Proyecto === r.f && CUENTAN(a.p))))
+      .sort((a, b) => orden(a) - orden(b) || String(nombreFila(a.f)).localeCompare(String(nombreFila(b.f)), "es"));
+    const estado = cerrada ? "Cerrada" : dias[4] < hoy ? "Sin cerrar" : lun <= hoy ? "En curso" : "Futura";
+    const w = { k, x, lun, dias, horas, disp, aus, fest, filas: lista, cerrada, estado };
+    X.sem.set(ck, w);
+    return w;
+  }
+
+  // Suma de un periodo para una persona (filtro opcional de filas). Pasado: real/estimado; futuro: plan.
+  function agregado(k, ini, fin, filtro) {
+    const hoy = R.hoyISO();
+    const a = { disp: 0, dispPas: 0, plan: 0, planPas: 0, carga: 0, pasado: 0, cerrado: 0, diasPas: 0, diasEst: 0, reun: 0, prep: 0, gest: 0, trab: 0, gestGen: 0, otras: 0, ajuste: 0, porFila: new Map(), porSemana: new Map() };
+    for (let lun = lunesDe(ini); lun <= fin; lun = R.sumarDias(lun, 7)) {
+      const w = semanaPersona(k, lun);
+      w.dias.forEach((d, i) => {
+        if (d < ini || d > fin || !w.horas[i]) return;
+        const fut = d > hoy;
+        a.disp += w.disp[i];
+        if (!fut) { a.dispPas += w.disp[i]; a.diasPas += 1; if (!w.cerrada) a.diasEst += 1; }
+        const sm = a.porSemana.get(lun) || { plan: 0, carga: 0, disp: 0, cerrada: !!w.cerrada }; sm.disp += w.disp[i]; a.porSemana.set(lun, sm);
+        w.filas.forEach((r) => {
+          if (filtro && !filtro(r.f)) return;
+          const v = fut ? r.plan[i] : r.val[i];
+          a.plan += r.plan[i]; a.carga += v; sm.plan += r.plan[i]; sm.carga += v;
+          const pf = a.porFila.get(r.f) || { plan: 0, carga: 0, pasado: 0, planPas: 0 }; pf.plan += r.plan[i]; pf.carga += v; a.porFila.set(r.f, pf);
+          if (fut) return;
+          a.planPas += r.plan[i]; a.pasado += v; pf.pasado += v; pf.planPas += r.plan[i];
+          if (w.cerrada) a.cerrado += v;
+          if (r.f === GEST) { a.gestGen += v; return; }
+          if (r.f === OTRAS) { a.otras += v; return; }
+          a.reun += r.reun[i]; a.prep += r.prep[i]; a.gest += r.gest[i]; a.trab += r.trab[i]; a.ajuste += v - r.est[i];
+        });
+      });
+    }
+    return a;
+  }
+  const sumarAgregados = (l) => l.reduce((t, a) => { Object.keys(t).forEach((k) => { if (typeof t[k] === "number") t[k] += a[k]; }); return t; },
+    { disp: 0, dispPas: 0, plan: 0, planPas: 0, carga: 0, pasado: 0, cerrado: 0, diasPas: 0, diasEst: 0, reun: 0, prep: 0, gest: 0, trab: 0, gestGen: 0, otras: 0, ajuste: 0 });
+  const TIPOS_EF = [["reun", "Reuniones (dailies, seguimientos, comités, no agendadas)", "#104994"], ["prep", "Preparación y actas", "#6BBAEF"], ["gest", "Gestión registrada del proyecto", "#D6964A"],
+    ["trab", "Trabajo del proyecto (según dedicación)", "#2E8B57"], ["gestGen", "Gestión general (sin proyecto)", "#8E6CC7"], ["otras", "Otras actividades", "#9AA5B1"], ["ajuste", "Ajuste en «Mi semana»", "#E0A800"]];
+
+  // Personas en el alcance (como en Capacidad: las de los proyectos filtrados; PMO/Admin ven también a quienes solo tienen otras actividades).
+  function personasAlcance() {
+    const u = S.usuario, todo = R.puede(u, "verTodo"), X = idxEsf();
+    const idsF = new Set(filtrados().map((p) => p.ID_Proyecto));
+    const filtroProy = S.filtros.pm || S.filtros.proyecto;
+    const yoK = u ? clavePersona(u.Correo) : "";
+    return [...X.personas.values()].filter((x) => x.asign.some((a) => idsF.has(a.p.ID_Proyecto) && CUENTAN(a.p)) || ((todo && !filtroProy) && ((X.acts.get(x.k) || []).length || [...X.esf.keys()].some((k) => k.startsWith(x.k + "|")))) || (x.k === yoK && (todo || !filtroProy)))
+      .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre), "es"));
+  }
+
+  // ---------- Formulario «+ Esfuerzo» (reuniones no agendadas y gestiones) ----------
+  function formEsfuerzo(pre = {}) {
+    const u = S.usuario, todo = R.puede(u, "verTodo"), hoy = R.hoyISO();
+    const yoK = clavePersona(u.Correo);
+    const gente = todo ? [...idxEsf().personas.values()].filter((x) => x.correo).sort((a, b) => String(a.nombre).localeCompare(String(b.nombre), "es")) : [];
+    if (!gente.some((x) => x.k === yoK)) gente.unshift(infoPersona(yoK));
+    const proys = visibles().filter(CUENTAN).sort((a, b) => String(a.Nombre).localeCompare(String(b.Nombre), "es"));
+    const tipos = S.cat.Tipo_Esfuerzo || CATALOGOS_BASE.Tipo_Esfuerzo;
+    const tipo0 = pre.Tipo || tipos[0];
+    const chips = (grupo, ops, sel) => `<div class="ef-chips" data-grupo="${grupo}" role="radiogroup">${ops.map(([v, t]) => `<button type="button" class="ef-chip ${String(v) === String(sel) ? "on" : ""}" data-v="${esc(v)}" role="radio" aria-checked="${String(v) === String(sel)}">${esc(t)}</button>`).join("")}</div>`;
+    const durs = [[15, "15 min"], [30, "30 min"], [60, "1 h"], [120, "2 h"], ["otra", "Otra…"]];
+    const campos = [
+      ...(gente.length > 1 ? [{ k: "_Persona", label: "Persona", tipo: "select", ancho: true, opciones: gente.map((x) => [x.k, `${x.nombre}${x.correo ? ` · ${x.correo}` : ""}`]), def: pre.k || yoK }] : []),
+      { k: "ID_Proyecto", label: "¿Para qué fue?", tipo: "select", ancho: true, textoVacio: "Elige…", opciones: [[GEST, "Gestión general (sin proyecto)"], ...proys.map((p) => [p.ID_Proyecto, `${p.Nombre} · ${p.ID_Proyecto}`])], def: pre.ID_Proyecto || (S.vista === "ficha" && S.pid ? S.pid : GEST) },
+      { html: `<span class="etq">Tipo</span>${chips("tipo", tipos.map((t) => [t, t]), tipo0)}` },
+      { html: `<span class="etq">Duración</span>${chips("dur", durs, pre.Minutos && ![15, 30, 60, 120].includes(Number(pre.Minutos)) ? "otra" : pre.Minutos || 30)}<input type="number" class="ef-otra" min="5" max="600" step="5" placeholder="Minutos" aria-label="Minutos" ${pre.Minutos && ![15, 30, 60, 120].includes(Number(pre.Minutos)) ? `value="${Number(pre.Minutos)}"` : "hidden"}>` },
+      { k: "Fecha", label: "Fecha", tipo: "date", def: pre.Fecha || hoy },
+      { k: "Nota", label: "Nota (opcional)", tipo: "textarea", placeholder: "Ej.: llamada con el proveedor por el retraso de la interfaz" },
+    ];
+    modal("Registrar esfuerzo", campos, {}, (fd, ex) => {
+      const k = fd._Persona || yoK, x = infoPersona(k) || {};
+      const fila = { ID_Esfuerzo: idUnico("ESF"), Fecha: fd.Fecha, Correo: x.correo || "", Nombre: x.nombre || "", ID_Proyecto: fd.ID_Proyecto === GEST ? "" : fd.ID_Proyecto, Tipo: ex.tipo, Minutos: ex.min, Origen: "rapido", ID_Sesion: "", Nota: fd.Nota, Registrado_Por: u.Correo, Fecha_Registro: hoy };
+      guardar(() => S.api.agregarFila("Esfuerzo", fila), `${durTxt(ex.min)} registrados${fila.ID_Proyecto ? ` en ${nombreFila(fila.ID_Proyecto)}` : " como gestión general"}`);
+    }, (fd) => {
+      if (!fd.ID_Proyecto) return "Elige el proyecto o «Gestión general».";
+      if (!fd.Fecha) return "Escribe la fecha.";
+      if (fd.Fecha > hoy) return "La fecha no puede ser futura.";
+      const k = fd._Persona || yoK;
+      if (idxEsf().cie.get(`${k}|${lunesDe(fd.Fecha)}`)) return `La semana del ${fecha(lunesDe(fd.Fecha))} ya está cerrada. Reábrela en «Mi semana» para sumar este registro.`;
+      return "";
+    }, {
+      textoBoton: "Registrar",
+      init: (m) => {
+        m.querySelectorAll(".ef-chips").forEach((g) => g.addEventListener("click", (e) => {
+          const b = e.target.closest(".ef-chip"); if (!b) return;
+          g.querySelectorAll(".ef-chip").forEach((c) => { c.classList.toggle("on", c === b); c.setAttribute("aria-checked", String(c === b)); });
+          if (g.dataset.grupo === "dur") { const o = m.querySelector(".ef-otra"); o.hidden = b.dataset.v !== "otra"; if (!o.hidden) o.focus(); }
+        }));
+      },
+      recoger: (m) => {
+        const tipo = (m.querySelector('[data-grupo="tipo"] .on') || {}).dataset;
+        const dur = (m.querySelector('[data-grupo="dur"] .on') || {}).dataset;
+        if (!tipo) return { error: "Elige el tipo." };
+        let min = dur && dur.v !== "otra" ? Number(dur.v) : Number(m.querySelector(".ef-otra").value);
+        if (!min || min < 1 || min > 720) return { error: "Escribe la duración en minutos (entre 1 y 720)." };
+        min = Math.round(min);
+        return { datos: { tipo: tipo.v, min } };
+      },
+    });
+  }
+
+  // ---------- Dailies: ✓ se hizo / ✕ no se hizo (se carga al PM del proyecto) ----------
+  const marcaDaily = (p, a, d) => esfuerzos().find((e) => e.Origen === "daily" && e.ID_Sesion === a.ID_Sesion && e.Fecha === d && clavePersona(e.Correo, e.Nombre) === clavePersona(p.PM));
+  async function marcarDaily(p, a, d, hecho) {
+    const ex = marcaDaily(p, a, d), min = hecho ? Number(a.Duracion_Min) || 15 : 0;
+    if (idxEsf().cie.get(`${clavePersona(p.PM)}|${lunesDe(d)}`)) { toast(`La semana del ${fecha(lunesDe(d))} de ${nombreUsuario(p.PM)} ya está cerrada.`, true); return; }
+    const y = window.scrollY;
+    try {
+      if (ex && Number(ex.Minutos) === min) await S.api.eliminarFilas("Esfuerzo", "ID_Esfuerzo", [ex.ID_Esfuerzo]);
+      else if (ex) await S.api.actualizarPorId("Esfuerzo", "ID_Esfuerzo", ex.ID_Esfuerzo, { Minutos: min });
+      else await S.api.agregarFila("Esfuerzo", { ID_Esfuerzo: idUnico("ESF"), Fecha: d, Correo: p.PM, Nombre: nombreUsuario(p.PM), ID_Proyecto: p.ID_Proyecto, Tipo: a.Tipo || "Daily", Minutos: min, Origen: "daily", ID_Sesion: a.ID_Sesion, Nota: "", Registrado_Por: S.usuario.Correo, Fecha_Registro: R.hoyISO() });
+      render(); window.scrollTo(0, y);
+    } catch (e) { toast("No se pudo guardar: " + e.message, true); }
+  }
+
+  // ---------- Mi semana ----------
+  function vMiSemana(el) {
+    const u = S.usuario, X = idxEsf(), hoy = R.hoyISO(), todo = R.puede(u, "verTodo");
+    const yoK = clavePersona(u.Correo);
+    const gente = todo ? [...X.personas.values()].filter((x) => x.asign.some((a) => CUENTAN(a.p)) || (X.acts.get(x.k) || []).length).sort((a, b) => String(a.nombre).localeCompare(String(b.nombre), "es")) : [];
+    if (!gente.some((x) => x.k === yoK)) gente.unshift(infoPersona(yoK));
+    let k = S.msK && gente.some((x) => x.k === S.msK) ? S.msK : yoK;
+    const lun = S.msLunes || lunesDe(hoy);
+    const w = semanaPersona(k, lun), x = infoPersona(k) || { nombre: k };
+    const propio = k === yoK, puede = !w.cerrada && (propio || todo);
+    const tot = (r) => sumaA(r.val), totDia = (i) => sumaA(w.filas.map((r) => r.val[i]));
+    const total = sumaA(DIAS_EF.map((c, i) => totDia(i))), dispT = sumaA(w.disp), planT = sumaA(w.filas.map((r) => sumaA(r.plan)));
+    const reunT = sumaA(w.filas.filter((r) => !r.f.startsWith("_")).map((r) => sumaA(r.reun))), gestT = sumaA((w.filas.find((r) => r.f === GEST) || { val: [] }).val);
+    const titulo = (r) => {
+      if (r.f === GEST) return `<b>Gestión general</b><div class="sub">sin proyecto · correos, coordinación, reuniones internas</div>`;
+      if (r.f === OTRAS) return `<b>Otras actividades</b><div class="sub">operación, comités, demanda (Capacidad del equipo)</div>`;
+      const p = proyecto(r.f);
+      return `<button class="btn enlace ms-proy" data-pid="${esc(r.f)}">${esc(p ? p.Nombre : r.f)}</button><div class="sub">${esc([r.rol, r.ded ? `dedicación ${r.ded}%` : ""].filter(Boolean).join(" · ") || r.f)}</div>`;
+    };
+    const celda = (r, i) => {
+      if (!w.horas[i]) return `<td class="ms-c fest" title="${esc(w.fest[i] || "No laborable")}">—</td>`;
+      const det = r.det[i].filter((z) => z.h).map((z) => `${z.t}: ${hTxt(z.h)}`).join("\n");
+      const tip = `${r.edit[i] ? `Editado (automático: ${hTxt(r.est[i])})` : "Automático"}${det ? `\n${det}` : ""}${r.plan[i] ? `\nPlan: ${hTxt(r.plan[i])}` : ""}`;
+      return `<td class="ms-c ${r.edit[i] ? "editada" : ""} ${lun > hoy || w.dias[i] > hoy ? "futuro" : ""}" title="${esc(tip)}"><input type="number" inputmode="decimal" min="0" max="16" step="0.25" value="${r2(r.val[i]) || ""}" placeholder="0" data-ms="${esc(r.f)}|${i}" ${puede ? "" : "disabled"} aria-label="${esc(nombreFila(r.f))} ${NOM_DIA[i + 1]}">${r.edit[i] && puede ? `<button type="button" class="ms-auto" data-ms-auto="${esc(r.f)}|${i}" title="Volver al valor automático (${hTxt(r.est[i])})">↺</button>` : ""}</td>`;
+    };
+    const ocup = pctDe(total, dispT);
+    const quick = esfuerzos().filter((e) => e.Origen !== "daily" && clavePersona(e.Correo, e.Nombre) === k && e.Fecha >= lun && e.Fecha <= w.dias[4]).sort((a, b) => String(a.Fecha).localeCompare(String(b.Fecha)));
+    const dailies = (x.asign || []).filter((a) => a.pm && CUENTAN(a.p)).flatMap((a) => agendaDe(a.p.ID_Proyecto).filter((s) => esDaily(s) && w.dias.some((d) => tocaEn(s, d))).map((s) => ({ p: a.p, s })));
+    const sesiones = (x.asign || []).filter((a) => a.pm && CUENTAN(a.p)).flatMap((a) => agendaDe(a.p.ID_Proyecto).filter((s) => !esDaily(s)).flatMap((s) => w.dias.filter((d) => tocaEn(s, d)).map((d) => ({ p: a.p, s, d }))));
+    const regDe = (p, s, d) => (S.datos.Seguimientos || []).find((z) => z.ID_Proyecto === p.ID_Proyecto && z.Fecha_Corte === d && (z.ID_Sesion === s.ID_Sesion || !z.ID_Sesion));
+    const recordar = !w.cerrada && (w.estado === "Sin cerrar" || (w.estado === "En curso" && diaSemana(hoy) === 5));
+    el.innerHTML = `<div class="titulo-fila"><h1>Mi semana</h1><div class="acciones"><button class="btn primario" id="ms-esf">+ Esfuerzo</button></div></div>
+      <div class="filtros ag-nav">${gente.length > 1 ? `<label class="filtro"><span>Persona</span><select id="ms-persona">${gente.map((g) => `<option value="${esc(g.k)}" ${g.k === k ? "selected" : ""}>${esc(g.nombre)}</option>`).join("")}</select></label>` : ""}
+        <button class="btn chico" id="ms-ant" aria-label="Semana anterior">‹</button><b>Semana del ${fecha(w.dias[0])} al ${fecha(w.dias[4])}</b><button class="btn chico" id="ms-sig" aria-label="Semana siguiente">›</button>${lun !== lunesDe(hoy) ? `<button class="btn chico" id="ms-hoy">Hoy</button>` : ""}
+        <span class="pill ms-${normTxt(w.estado).replace(/\s/g, "")}">${esc(w.estado)}</span></div>
+      ${recordar && (propio || todo) ? `<div class="ms-aviso">🗓️ <b>¿Cerramos ${propio ? "tu" : "la"} semana?</b> Revisa las horas de cada proyecto (ya vienen llenas con la agenda, los dailies, las sesiones y la dedicación), ajusta lo que no cuadre y ciérrala. Mientras no la cierres cuenta como <b>estimada</b>.</div>` : ""}
+      <div class="kpis kpis-3">
+        <div class="kpi estatico"><span class="kpi-t">Horas ${w.cerrada ? "reales" : lun > hoy ? "planeadas" : "registradas (estimado)"}</span><span class="kpi-v">${hTxt(total)}</span><span class="sub">plan ${hTxt(planT)}</span></div>
+        <div class="kpi estatico ${ocup > 100 ? "alerta" : ""}"><span class="kpi-t">Disponible</span><span class="kpi-v">${hTxt(dispT)}</span><span class="sub">ocupación <b class="oc-${nivelOc(ocup)}">${ocup}%</b>${sumaA(w.aus) ? ` · ausencia ${hTxt(sumaA(w.aus))}` : ""}</span></div>
+        <div class="kpi estatico"><span class="kpi-t">En reuniones</span><span class="kpi-v">${pctDe(reunT, total)}%</span><span class="sub">${hTxt(reunT)} en proyectos</span></div>
+        <div class="kpi estatico"><span class="kpi-t">Gestión no detallada por proyecto</span><span class="kpi-v">${pctDe(gestT, total)}%</span><span class="sub">${hTxt(gestT)}</span></div>
+      </div>
+      <div class="card"><div class="titulo-fila"><h2>Horas por proyecto y día</h2><div class="acciones">${w.cerrada
+        ? `<span class="sub">Cerrada el ${fecha(String(w.cerrada.Cerrada_El).slice(0, 10))}${w.cerrada.Cerrada_Por ? ` por ${esc(nombreUsuario(w.cerrada.Cerrada_Por))}` : ""}</span>${propio || todo ? `<button class="btn chico" id="ms-reabrir">Reabrir</button>` : ""}`
+        : lun <= hoy && (propio || todo) ? `<button class="btn primario" id="ms-cerrar">✓ Cerrar semana</button>` : ""}</div></div>
+        <p class="sub">Cada celda trae un valor automático (pasa el mouse para ver de dónde sale). Escribe las horas reales si no cuadran: la celda queda marcada como editada y ↺ la devuelve al automático. Usa «Gestión general» para lo que no es de un proyecto.</p>
+        <div class="tabla-scroll"><table class="ms-grid"><thead><tr><th>Proyecto</th>${w.dias.map((d, i) => `<th class="${d === hoy ? "hoy" : ""} ${w.horas[i] ? "" : "fest"}">${NOM_DIA[i + 1]} ${d.slice(8, 10)}<div class="sub">${w.horas[i] ? `${hTxt(w.disp[i])} disp.` : esc(corta(w.fest[i] || "No laborable", 18))}</div></th>`).join("")}<th>Total</th><th>Plan</th></tr></thead>
+          <tbody>${w.filas.map((r) => `<tr class="${r.f.startsWith("_") ? "ms-especial" : ""}"><td>${titulo(r)}</td>${DIAS_EF.map((c, i) => celda(r, i)).join("")}<td class="nowrap"><b>${hTxt(tot(r))}</b></td><td class="nowrap sub">${hTxt(sumaA(r.plan))}</td></tr>`).join("")}
+          ${sumaA(w.aus) ? `<tr class="ms-aus"><td><b>Ausencias</b><div class="sub">vacaciones, incapacidad, permisos</div></td>${w.aus.map((h) => `<td class="ms-c">${h ? hTxt(h) : ""}</td>`).join("")}<td><b>${hTxt(sumaA(w.aus))}</b></td><td></td></tr>` : ""}</tbody>
+          <tfoot><tr><th>Total</th>${DIAS_EF.map((c, i) => { const t = totDia(i), o = pctDe(t, w.disp[i]); return `<th class="nowrap">${hTxt(t)}${w.disp[i] ? `<div class="oc-${nivelOc(o)}">${o}%</div>` : ""}</th>`; }).join("")}<th class="nowrap">${hTxt(total)}<div class="oc-${nivelOc(ocup)}">${ocup}%</div></th><th class="sub">${hTxt(planT)}</th></tr></tfoot></table></div>
+      </div>
+      <div class="grid2">
+        <div class="card"><h2>Sesiones de la agenda</h2>${dailies.length || sesiones.length ? `
+          ${dailies.length ? `<table class="ms-dl"><thead><tr><th>Daily</th>${w.dias.map((d, i) => `<th>${NOM_DIA[i + 1]}</th>`).join("")}</tr></thead><tbody>${dailies.map(({ p, s }) => `<tr><td>${esc(corta(p.Nombre, 30))}<div class="sub">${horaTxt(s.Hora)} · ${s.Duracion_Min || 15} min</div></td>${w.dias.map((d) => {
+            if (!tocaEn(s, d) || !horasDia(d)) return `<td></td>`;
+            const m = marcaDaily(p, s, d), est = m ? (Number(m.Minutos) ? "si" : "no") : "";
+            return `<td class="nowrap">${d > hoy || !puede ? `<span class="dl-est ${est}">${est === "si" ? "✓" : est === "no" ? "✕" : "·"}</span>` : `<button class="dl-b si ${est === "si" ? "on" : ""}" data-dl="${esc(p.ID_Proyecto)}|${esc(s.ID_Sesion)}|${d}|1" title="Se hizo">✓</button><button class="dl-b no ${est === "no" ? "on" : ""}" data-dl="${esc(p.ID_Proyecto)}|${esc(s.ID_Sesion)}|${d}|0" title="No se hizo">✕</button>`}</td>`;
+          }).join("")}</tr>`).join("")}</tbody></table>` : ""}
+          ${sesiones.length ? `<ul class="lista ms-ses">${sesiones.map(({ p, s, d }) => { const g = regDe(p, s, d); return `<li><b>${NOM_DIA[diaSemana(d)]} ${d.slice(8, 10)}</b> · ${esc(s.Tipo || "Sesión")} de ${esc(corta(p.Nombre, 34))} · ${horaTxt(s.Hora)} ${g ? `<span class="pill aldía">Registrada · ${durTxt(minSeg(g, s))}</span>` : d > hoy ? `<span class="sub">programada</span>` : `<span class="pill vencido">Sin registro</span> ${R.puedeEditar(u, p, "seguimiento") ? `<button class="btn chico" data-ms-reg="${esc(p.ID_Proyecto)}|${esc(s.ID_Sesion)}|${d}">Registrar</button>` : ""}`}</li>`; }).join("")}</ul>` : ""}
+          <p class="sub">✓/✕ en los dailies suma o quita su tiempo. Las demás sesiones toman la duración y la preparación que escribas al registrarlas.</p>`
+          : `<p class="sub">No hay sesiones de agenda a tu cargo esta semana.</p>`}</div>
+        <div class="card"><div class="titulo-fila"><h2>Registros rápidos <span class="contador">${quick.length}</span></h2>${puede ? `<button class="btn chico" id="ms-esf2">+ Esfuerzo</button>` : ""}</div>
+          ${quick.length ? `<table><thead><tr><th>Día</th><th>Para</th><th>Tipo</th><th>Duración</th><th></th></tr></thead><tbody>${quick.map((e) => `<tr><td class="nowrap">${NOM_DIA[diaSemana(e.Fecha)]} ${String(e.Fecha).slice(8, 10)}</td><td>${esc(corta(nombreFila(e.ID_Proyecto || GEST), 30))}${e.Nota ? `<div class="sub">${esc(corta(e.Nota, 70))}</div>` : ""}</td><td>${esc(e.Tipo)}</td><td class="nowrap">${durTxt(Number(e.Minutos) || 0)}</td><td class="derecha">${puede ? `<button class="btn chico" data-ms-del="${esc(e.ID_Esfuerzo)}" title="Eliminar">✕</button>` : ""}</td></tr>`).join("")}</tbody></table>`
+          : `<p class="sub">Reuniones que no estaban agendadas y gestiones (correos, llamadas, informes). Regístralas con «+ Esfuerzo»: suman en el día y proyecto que elijas.</p>`}</div>
+      </div>`;
+    const sel = $("#ms-persona"); if (sel) sel.addEventListener("change", () => { S.msK = sel.value; render(); });
+    $("#ms-ant").addEventListener("click", () => { S.msLunes = R.sumarDias(lun, -7); render(); });
+    $("#ms-sig").addEventListener("click", () => { S.msLunes = R.sumarDias(lun, 7); render(); });
+    if ($("#ms-hoy")) $("#ms-hoy").addEventListener("click", () => { S.msLunes = ""; render(); });
+    [$("#ms-esf"), $("#ms-esf2")].filter(Boolean).forEach((b) => b.addEventListener("click", () => formEsfuerzo({ k, Fecha: w.dias.filter((d) => d <= hoy).pop() || hoy })));
+    el.querySelectorAll("input[data-ms]").forEach((inp) => inp.addEventListener("change", () => {
+      const [f, i] = inp.dataset.ms.split("|");
+      const v = inp.value.trim() === "" ? null : Math.max(0, Math.min(16, Number(inp.value.replace(",", "."))));
+      if (v !== null && Number.isNaN(v)) { toast("Escribe un número de horas (ej.: 1,5).", true); return; }
+      guardarCeldaSemana(k, lun, f, Number(i), v);
+    }));
+    el.querySelectorAll("[data-ms-auto]").forEach((b) => b.addEventListener("click", () => { const [f, i] = b.dataset.msAuto.split("|"); guardarCeldaSemana(k, lun, f, Number(i), null); }));
+    el.querySelectorAll("[data-ms-del]").forEach((b) => b.addEventListener("click", () => confirmar("Eliminar registro", "Se quitará este registro de esfuerzo.", "Eliminar", () => guardar(() => S.api.eliminarFilas("Esfuerzo", "ID_Esfuerzo", [b.dataset.msDel]), "Registro eliminado"))));
+    el.querySelectorAll("[data-ms-reg]").forEach((b) => b.addEventListener("click", () => { const [pid, sid, d] = b.dataset.msReg.split("|"); const p = proyecto(pid); const s = agendaDe(pid).find((a) => a.ID_Sesion === sid); if (p) formSeguimiento(p, s && /seguimiento/i.test(s.Tipo) && p.Estado === "Activo" ? "Seguimiento" : "Sesión", { fecha: d, sesion: s }); }));
+    if ($("#ms-cerrar")) $("#ms-cerrar").addEventListener("click", () => confirmar("Cerrar semana", `Quedarán como reales ${hTxt(total)} (${ocup}% de ${hTxt(dispT)} disponibles) de ${x.nombre} en la semana del ${fecha(w.dias[0])}. Puedes reabrirla si hace falta corregir.`, "Cerrar semana", () => guardar(() => cerrarSemana(k, lun), "Semana cerrada"), "primario"));
+    if ($("#ms-reabrir")) $("#ms-reabrir").addEventListener("click", () => guardar(() => S.api.eliminarFilas("CierresSemana", "ID_Cierre", [w.cerrada.ID_Cierre]), "Semana reabierta: las celdas no editadas vuelven a ser automáticas"));
+  }
+  async function guardarCeldaSemana(k, lun, f, i, v) {
+    const w = semanaPersona(k, lun), r = w.filas.find((z) => z.f === f), x = infoPersona(k) || {};
+    const id = `${lun}|${k}|${f}`;
+    const hs = horasSem().find((h) => h.ID_Fila === id);
+    const vals = r ? r.val.slice() : [0, 0, 0, 0, 0];
+    const edit = new Set(r ? DIAS_EF.filter((c, j) => r.edit[j]) : []);
+    if (v === null) { edit.delete(DIAS_EF[i]); vals[i] = r ? r.est[i] : 0; } else { edit.add(DIAS_EF[i]); vals[i] = v; }
+    const datos = { ...Object.fromEntries(DIAS_EF.map((c, j) => [c, r2(vals[j])])), Editadas: DIAS_EF.filter((c) => edit.has(c)).join(","), Actualizado_Por: S.usuario.Correo, Actualizado_El: R.hoyISO() };
+    const y = window.scrollY;
+    try {
+      if (hs) await S.api.actualizarPorId("HorasSemana", "ID_Fila", id, datos);
+      else await S.api.agregarFila("HorasSemana", { ID_Fila: id, Fecha_Semana: lun, Correo: x.correo || "", Nombre: x.nombre || "", Fila: f, ...datos });
+      render(); window.scrollTo(0, y);
+      toast(v === null ? "Celda de nuevo automática" : `${hTxt(v)} guardadas`);
+    } catch (e) { toast("No se pudo guardar: " + e.message, true); }
+  }
+  async function cerrarSemana(k, lun) {
+    const w = semanaPersona(k, lun), x = infoPersona(k) || {};
+    const nuevos = [], cambios = [];
+    w.filas.forEach((r) => {
+      const id = `${lun}|${k}|${r.f}`, hs = horasSem().find((h) => h.ID_Fila === id);
+      const datos = { ...Object.fromEntries(DIAS_EF.map((c, j) => [c, r2(r.val[j])])), Editadas: DIAS_EF.filter((c, j) => r.edit[j]).join(","), Actualizado_Por: S.usuario.Correo, Actualizado_El: R.hoyISO() };
+      if (hs) cambios.push({ id, cambios: datos });
+      else if (r.val.some((v) => v > 0)) nuevos.push({ ID_Fila: id, Fecha_Semana: lun, Correo: x.correo || "", Nombre: x.nombre || "", Fila: r.f, ...datos });
+    });
+    if (cambios.length) await S.api.actualizarVarios("HorasSemana", "ID_Fila", cambios);
+    if (nuevos.length) await S.api.agregarFilas("HorasSemana", nuevos);
+    const total = sumaA(w.filas.map((r) => sumaA(r.val)));
+    await S.api.agregarFila("CierresSemana", { ID_Cierre: `${lun}|${k}`, Fecha_Semana: lun, Correo: x.correo || "", Nombre: x.nombre || "", Horas: r2(total), Disponible: r2(sumaA(w.disp)), Cerrada_El: ahora(), Cerrada_Por: S.usuario.Correo });
+  }
+  // ¿Qué semana debería cerrar el usuario? (viernes: la actual; lunes a jueves: la anterior si quedó abierta).
+  function semanaPorCerrar(k) {
+    const hoy = R.hoyISO(), X = idxEsf();
+    const x = X.personas.get(k);
+    if (!x || !x.asign.some((a) => CUENTAN(a.p))) return null;
+    const lun = diaSemana(hoy) === 5 ? lunesDe(hoy) : R.sumarDias(lunesDe(hoy), -7);
+    return X.cie.get(`${k}|${lun}`) ? null : lun;
+  }
+
+  // ---------- Capacidad en horas: Semanal / Mensual (zoom), mapa de calor y detalle ----------
+  const ZOOMS = [["semana", "Semana"], ["mes", "Mes"], ["trimestre", "Trimestre"], ["anio", "Año"]];
+  function periodo(zoom, ref) {
+    const y = Number(ref.slice(0, 4)), m = Number(ref.slice(5, 7));
+    if (zoom === "semana") {
+      const l = lunesDe(ref), dias = DIAS_EF.map((c, i) => R.sumarDias(l, i));
+      return { ini: l, fin: dias[4], titulo: `Semana del ${fecha(l)} al ${fecha(dias[4])}`, cols: dias.map((d, i) => ({ ini: d, fin: d, t: `${NOM_DIA[i + 1]} ${d.slice(8, 10)}`, sub: jornada().fest.get(d) || "" })) };
+    }
+    const semanas = (ini, fin) => { const out = []; for (let l = lunesDe(ini); l <= fin; l = R.sumarDias(l, 7)) { const a = l < ini ? ini : l, b = R.sumarDias(l, 4) > fin ? fin : R.sumarDias(l, 4); if (a <= b) out.push({ ini: a, fin: b, t: `${fechaCorta(a)}`, sub: `al ${fechaCorta(b)}`, drill: ["semana", l] }); } return out; };
+    if (zoom === "mes") { const ini = isoDe(y, m, 1), fin = finDeMesISO(ini); return { ini, fin, titulo: `${MESES_LARGOS[m - 1].charAt(0).toUpperCase() + MESES_LARGOS[m - 1].slice(1)} de ${y}`, cols: semanas(ini, fin) }; }
+    if (zoom === "trimestre") { const q = Math.floor((m - 1) / 3), ini = isoDe(y, q * 3 + 1, 1), fin = finDeMesISO(isoDe(y, q * 3 + 3, 1)); return { ini, fin, titulo: `Trimestre ${q + 1} de ${y} (${MESES_LARGOS[q * 3]} a ${MESES_LARGOS[q * 3 + 2]})`, cols: semanas(ini, fin) }; }
+    const ini = isoDe(y, 1, 1), fin = isoDe(y, 12, 31);
+    return { ini, fin, titulo: `Año ${y}`, cols: MES_CORTO.map((t, i) => ({ ini: isoDe(y, i + 1, 1), fin: finDeMesISO(isoDe(y, i + 1, 1)), t: t.charAt(0).toUpperCase() + t.slice(1), sub: "", drill: ["mes", isoDe(y, i + 1, 1)] })) };
+  }
+  const moverRef = (zoom, ref, n) => (zoom === "semana" ? R.sumarDias(lunesDe(ref), 7 * n) : sumarMeses(ref, n * (zoom === "mes" ? 1 : zoom === "trimestre" ? 3 : 12)));
+  const fuenteCelda = (a, fin) => (!a.diasPas ? "fut" : a.diasEst ? "est" : fin > R.hoyISO() ? "mixto" : "real");
+
+  function htmlHoras(zoom) {
+    const hoy = R.hoyISO(), ref = S.capRef || hoy;
+    const P = periodo(zoom, ref), gente = personasAlcance();
+    const filas = gente.map((x) => ({ x, cols: P.cols.map((c) => agregado(x.k, c.ini, c.fin)), tot: agregado(x.k, P.ini, P.fin) }));
+    const T = sumarAgregados(filas.map((f) => f.tot));
+    const colsT = P.cols.map((c, j) => sumarAgregados(filas.map((f) => f.cols[j])));
+    const cel = (a, fin, attrs) => {
+      if (!a.disp && !a.carga) return `<td class="hm-c vacio">—</td>`;
+      const o = pctDe(a.carga, a.disp);
+      return `<td class="hm-c"><button type="button" class="hm-b ${nivelOc(o)} ${fuenteCelda(a, fin)}" ${attrs} title="${esc(`${hTxt(a.carga)} de ${hTxt(a.disp)} disponibles · plan ${hTxt(a.plan)}${a.diasEst ? " · incluye semanas sin cerrar (estimado)" : ""}`)}"><b>${a.disp ? `${o}%` : "—"}</b><span>${a.disp >= 40 ? `${Math.round(a.carga)}/${Math.round(a.disp)}` : `${hTxt(a.carga, "")}/${hTxt(a.disp, "")}`} h</span></button></td>`;
+    };
+    const porProy = new Map();
+    gente.forEach((x) => { const a = filas.find((f) => f.x === x).tot; a.porFila.forEach((v, f) => { const t = porProy.get(f) || { plan: 0, carga: 0, pasado: 0, planPas: 0, n: 0 }; t.plan += v.plan; t.carga += v.carga; t.pasado += v.pasado; t.planPas += v.planPas; t.n += 1; porProy.set(f, t); }); });
+    const listaProy = [...porProy.entries()].filter(([, v]) => v.plan || v.carga).sort((a, b) => b[1].carga - a[1].carga);
+    const maxP = Math.max(1, ...listaProy.map(([, v]) => Math.max(v.plan, v.carga)));
+    const tipos = TIPOS_EF.map(([kk, t, c]) => ({ kk, t, c, v: T[kk] })).filter((z) => Math.abs(z.v) > 0.05);
+    const totTipos = Math.max(1, sumaA(tipos.map((z) => Math.max(0, z.v))));
+    const kpi = (t, v, sub, alerta) => `<div class="kpi estatico ${alerta ? "alerta" : ""}"><span class="kpi-t">${t}</span><span class="kpi-v">${v}</span>${sub ? `<span class="sub">${sub}</span>` : ""}</div>`;
+    const oc = pctDe(T.carga, T.disp);
+    return `<div class="filtros ag-nav cap-zoom"><div class="seg">${ZOOMS.map(([z, t]) => `<button class="btn chico ${z === zoom ? "primario" : ""}" data-cz="${z}">${t}</button>`).join("")}</div>
+        <button class="btn chico" data-cmov="-1" aria-label="Anterior">‹</button><b>${esc(P.titulo)}</b><button class="btn chico" data-cmov="1" aria-label="Siguiente">›</button>${S.capRef && !(hoy >= P.ini && hoy <= P.fin) ? `<button class="btn chico" data-cmov="0">Hoy</button>` : ""}
+        <span class="sub">${hTxt(horasPeriodo(P.ini, P.fin))} hábiles por persona (jornada y festivos de Catálogos)</span></div>
+      <div class="kpis">
+        ${kpi("Disponible", hTxt(T.disp), `${gente.length} persona(s) · sin festivos ni ausencias`)}
+        ${kpi("Planeado", hTxt(T.plan), `${pctDe(T.plan, T.disp)}% de lo disponible`, T.plan > T.disp)}
+        ${kpi(T.diasPas ? "Real a la fecha" : "Real", T.diasPas ? hTxt(T.pasado) : "—", T.diasPas ? `plan a la fecha ${hTxt(T.planPas)} · ${pctDe(T.cerrado, T.pasado)}% en semanas cerradas` : "el periodo aún no empieza", T.pasado > T.dispPas)}
+        ${kpi("En reuniones", `${pctDe(T.reun, T.pasado)}%`, T.pasado ? hTxt(T.reun) : "")}
+        ${kpi("Gestión no detallada por proyecto", `${pctDe(T.gestGen, T.pasado)}%`, T.pasado ? hTxt(T.gestGen) : "", pctDe(T.gestGen, T.pasado) > 25)}
+      </div>
+      <div class="card"><div class="titulo-fila"><h2>Ocupación por persona</h2><span class="sub">${oc}% del equipo</span></div>
+        <p class="sub">Horas sobre las disponibles. Pasado: lo real de las semanas cerradas en «Mi semana» (borde punteado = estimado, semana sin cerrar). Futuro: el plan (dedicación + agenda). Clic en una celda para ver el detalle${zoom !== "semana" ? "; clic en el encabezado para acercar" : ""}.</p>
+        ${gente.length ? `<div class="tabla-scroll"><table class="hm"><thead><tr><th>Persona</th>${P.cols.map((c) => `<th class="${c.ini <= hoy && hoy <= c.fin ? "hoy" : ""}">${c.drill ? `<button class="btn enlace hm-h" data-cdrill="${c.drill.join("|")}">${esc(c.t)}</button>` : esc(c.t)}${c.sub ? `<div class="sub">${esc(corta(c.sub, 16))}</div>` : ""}</th>`).join("")}<th>Total</th></tr></thead>
+          <tbody>${filas.map((f) => `<tr><td>${persona(f.x.nombre, zoom === "semana" ? semanaPersona(f.x.k, P.ini).estado : "")}</td>${f.cols.map((a, j) => cel(a, P.cols[j].fin, `data-hm="${esc(f.x.k)}|${P.cols[j].ini}|${P.cols[j].fin}"`)).join("")}${cel(f.tot, P.fin, `data-hm="${esc(f.x.k)}|${P.ini}|${P.fin}"`)}</tr>`).join("")}</tbody>
+          <tfoot><tr><th>Equipo</th>${colsT.map((a, j) => cel(a, P.cols[j].fin, `data-hm="*|${P.cols[j].ini}|${P.cols[j].fin}"`)).join("")}${cel(T, P.fin, `data-hm="*|${P.ini}|${P.fin}"`)}</tr></tfoot></table></div>
+          <div class="hm-ley"><span class="hm-b verde real">≤ 85%</span><span class="hm-b ambar real">85% a 100%</span><span class="hm-b rojo real">&gt; 100%</span><span class="hm-b verde real">Real (semana cerrada)</span><span class="hm-b verde est">Estimado (sin cerrar)</span><span class="hm-b verde fut">Plan (futuro)</span></div>`
+          : vacio("No hay personas con dedicación en los proyectos filtrados.")}
+      </div>
+      <div class="grid2">
+        <div class="card"><h2>Por proyecto</h2><p class="sub">Horas de las personas en el alcance, real o estimado a la fecha y plan del periodo.</p>
+          ${listaProy.length ? `<div class="ef-barras">${listaProy.slice(0, 20).map(([f, v]) => `<div class="ef-bar"><div class="ef-bar-n">${f.startsWith("_") ? `<b>${esc(nombreFila(f))}</b>` : `<button class="btn enlace" data-pid="${esc(f)}">${esc(corta(nombreFila(f), 38))}</button>`}<span class="sub">${hTxt(v.carga)} · plan ${hTxt(v.plan)}</span></div>
+            <div class="ef-bar-p"><span class="ef-bar-r" style="width:${(v.carga / maxP) * 100}%"></span><span class="ef-bar-t" style="left:${(v.plan / maxP) * 100}%"></span></div></div>`).join("")}</div>` : vacio("Sin horas en el periodo.")}</div>
+        <div class="card"><h2>Por tipo de actividad</h2><p class="sub">Hasta hoy (lo futuro es plan y no se clasifica).</p>
+          ${tipos.length ? `<div class="ef-apilada">${tipos.filter((z) => z.v > 0).map((z) => `<span style="flex:${z.v};background:${z.c}" title="${esc(z.t)}: ${hTxt(z.v)}"></span>`).join("")}</div>
+            <ul class="ef-tipos">${tipos.map((z) => `<li><i style="background:${z.c}"></i>${esc(z.t)}<b>${hTxt(z.v)}</b><span class="sub">${pctDe(Math.max(0, z.v), totTipos)}%</span></li>`).join("")}</ul>` : vacio("Aún no hay horas pasadas en este periodo.")}</div>
+      </div>`;
+  }
+  function enlazarHoras(el, zoom) {
+    el.querySelectorAll("[data-cz]").forEach((b) => b.addEventListener("click", () => { S.capZoom = b.dataset.cz; S.capTab = b.dataset.cz === "semana" ? "semanal" : "mensual"; render(); }));
+    el.querySelectorAll("[data-cmov]").forEach((b) => b.addEventListener("click", () => { const n = Number(b.dataset.cmov); S.capRef = n ? moverRef(zoom, S.capRef || R.hoyISO(), n) : ""; render(); }));
+    el.querySelectorAll("[data-cdrill]").forEach((b) => b.addEventListener("click", () => { const [z, r] = b.dataset.cdrill.split("|"); S.capZoom = z; S.capRef = r; S.capTab = z === "semana" ? "semanal" : "mensual"; render(); }));
+    el.querySelectorAll("[data-hm]").forEach((b) => b.addEventListener("click", () => { const [k, ini, fin] = b.dataset.hm.split("|"); detalleHoras(k, ini, fin); }));
+  }
+  function modalInfo(titulo, html, alAbrir) {
+    cerrarModal();
+    const m = document.createElement("div");
+    m.id = "modal";
+    m.innerHTML = `<div class="modal-caja ancha" role="dialog" aria-modal="true" aria-label="${esc(titulo)}"><div class="titulo-fila"><h2>${esc(titulo)}</h2><button class="btn enlace" id="mi-cerrar" aria-label="Cerrar">✕</button></div>${html}</div>`;
+    document.body.appendChild(m);
+    $("#mi-cerrar").addEventListener("click", cerrarModal);
+    m.addEventListener("keydown", (e) => { if (e.key === "Escape") cerrarModal(); });
+    m.addEventListener("click", (e) => { if (e.target === m) cerrarModal(); });
+    if (alAbrir) alAbrir(m);
+  }
+  // Detalle de una celda del mapa de calor: por proyecto, por tipo y por semana/día.
+  function detalleHoras(k, ini, fin) {
+    const gente = k === "*" ? personasAlcance() : [infoPersona(k)].filter(Boolean);
+    const ags = gente.map((x) => ({ x, a: agregado(x.k, ini, fin) }));
+    const T = sumarAgregados(ags.map((z) => z.a));
+    const porFila = new Map();
+    ags.forEach(({ a }) => a.porFila.forEach((v, f) => { const t = porFila.get(f) || { plan: 0, carga: 0 }; t.plan += v.plan; t.carga += v.carga; porFila.set(f, t); }));
+    const semanas = new Map();
+    ags.forEach(({ a }) => a.porSemana.forEach((v, l) => { const t = semanas.get(l) || { plan: 0, carga: 0, disp: 0, cerr: 0, n: 0 }; t.plan += v.plan; t.carga += v.carga; t.disp += v.disp; t.n += 1; if (v.cerrada) t.cerr += 1; semanas.set(l, t); }));
+    const unaSemana = lunesDe(ini) === lunesDe(fin);
+    let porTiempo = "";
+    if (unaSemana && gente.length === 1) {
+      const w = semanaPersona(gente[0].k, lunesDe(ini));
+      porTiempo = `<table><thead><tr><th>Día</th><th>Horas</th><th>Disponible</th><th>Detalle</th></tr></thead><tbody>${w.dias.map((d, i) => (d < ini || d > fin) ? "" : `<tr><td class="nowrap">${NOM_DIA[i + 1]} ${fecha(d)}</td><td><b>${hTxt(sumaA(w.filas.map((r) => (d > R.hoyISO() ? r.plan[i] : r.val[i]))))}</b></td><td>${w.horas[i] ? hTxt(w.disp[i]) : esc(w.fest[i] || "No laborable")}</td>
+        <td class="sub">${w.filas.filter((r) => r.val[i] || r.plan[i]).map((r) => `${esc(corta(nombreFila(r.f), 28))}: ${hTxt(d > R.hoyISO() ? r.plan[i] : r.val[i])}${r.edit[i] ? " (editado)" : ""}`).join(" · ")}</td></tr>`).join("")}</tbody></table>`;
+    } else {
+      porTiempo = `<table><thead><tr><th>Semana</th><th>Horas</th><th>Plan</th><th>Disponible</th><th>Ocupación</th><th>Estado</th></tr></thead><tbody>${[...semanas.entries()].sort().map(([l, v]) => { const o = pctDe(v.carga, v.disp); return `<tr><td class="nowrap"><button class="btn enlace" data-dh-sem="${l}">${fechaCorta(l)} al ${fechaCorta(R.sumarDias(l, 4))}</button></td><td><b>${hTxt(v.carga)}</b></td><td>${hTxt(v.plan)}</td><td>${hTxt(v.disp)}</td><td><b class="oc-${nivelOc(o)}">${o}%</b></td><td class="sub">${l > R.hoyISO() ? "Plan" : v.cerr === v.n ? "Cerrada" : v.cerr ? `${v.cerr} de ${v.n} cerradas` : "Sin cerrar (estimado)"}</td></tr>`; }).join("")}</tbody></table>`;
+    }
+    const tipos = TIPOS_EF.map(([kk, t, c]) => ({ t, c, v: T[kk] })).filter((z) => Math.abs(z.v) > 0.05);
+    const o = pctDe(T.carga, T.disp);
+    const html = `<p class="sub">${fecha(ini)}${ini !== fin ? ` al ${fecha(fin)}` : ""} · ${gente.length === 1 ? esc(gente[0].nombre) : `${gente.length} personas`}</p>
+      <div class="kpis kpis-3"><div class="kpi estatico"><span class="kpi-t">Horas</span><span class="kpi-v">${hTxt(T.carga)}</span><span class="sub">plan ${hTxt(T.plan)}</span></div>
+        <div class="kpi estatico"><span class="kpi-t">Disponible</span><span class="kpi-v">${hTxt(T.disp)}</span><span class="sub">ocupación <b class="oc-${nivelOc(o)}">${o}%</b></span></div>
+        <div class="kpi estatico"><span class="kpi-t">En reuniones (a la fecha)</span><span class="kpi-v">${pctDe(T.reun, T.pasado)}%</span><span class="sub">${hTxt(T.reun)}</span></div></div>
+      <h3>Por proyecto</h3><table><thead><tr><th>Proyecto</th><th>Horas</th><th>Plan</th><th>Diferencia</th></tr></thead><tbody>${[...porFila.entries()].filter(([, v]) => v.plan || v.carga).sort((a, b) => b[1].carga - a[1].carga).map(([f, v]) => `<tr><td>${esc(nombreFila(f))}</td><td><b>${hTxt(v.carga)}</b></td><td>${hTxt(v.plan)}</td><td class="${v.carga - v.plan > 0.5 ? "texto-rojo" : ""}">${v.carga - v.plan > 0 ? "+" : ""}${hTxt(v.carga - v.plan)}</td></tr>`).join("") || `<tr><td colspan="4" class="sub">Sin horas.</td></tr>`}</tbody></table>
+      ${tipos.length ? `<h3>Por tipo (hasta hoy)</h3><ul class="ef-tipos">${tipos.map((z) => `<li><i style="background:${z.c}"></i>${esc(z.t)}<b>${hTxt(z.v)}</b></li>`).join("")}</ul>` : ""}
+      <h3>${unaSemana && gente.length === 1 ? "Por día" : "Por semana"}</h3><div class="tabla-scroll">${porTiempo}</div>
+      ${gente.length > 1 ? `<h3>Por persona</h3><table><thead><tr><th>Persona</th><th>Horas</th><th>Disponible</th><th>Ocupación</th></tr></thead><tbody>${ags.sort((a, b) => pctDe(b.a.carga, b.a.disp) - pctDe(a.a.carga, a.a.disp)).map(({ x, a }) => { const oo = pctDe(a.carga, a.disp); return `<tr><td>${esc(x.nombre)}</td><td>${hTxt(a.carga)}</td><td>${hTxt(a.disp)}</td><td><b class="oc-${nivelOc(oo)}">${oo}%</b></td></tr>`; }).join("")}</tbody></table>` : ""}
+      ${gente.length === 1 && (R.puede(S.usuario, "verTodo") || gente[0].k === clavePersona(S.usuario.Correo)) ? `<div class="acciones derecha"><button class="btn primario" id="dh-ms">Abrir en Mi semana</button></div>` : ""}`;
+    modalInfo("Detalle de horas", html, (m) => {
+      const b = m.querySelector("#dh-ms"); if (b) b.addEventListener("click", () => { cerrarModal(); S.msK = gente[0].k; S.msLunes = lunesDe(ini); ir("misemana"); });
+      m.querySelectorAll("[data-dh-sem]").forEach((x) => x.addEventListener("click", () => detalleHoras(k, x.dataset.dhSem, R.sumarDias(x.dataset.dhSem, 4))));
+    });
+  }
+
+  // ---------- Esfuerzo del proyecto (ficha › Resumen, Proyectos, PDF) ----------
+  function rangoEsf(p, per) {
+    const hoy = R.hoyISO();
+    if (per === "semana") { const l = lunesDe(hoy); return { ini: l, fin: R.sumarDias(l, 4), t: `Semana del ${fecha(l)}` }; }
+    if (per === "mes") { const ini = hoy.slice(0, 8) + "01"; return { ini, fin: finDeMesISO(ini), t: `${MESES_LARGOS[Number(hoy.slice(5, 7)) - 1]} de ${hoy.slice(0, 4)}` }; }
+    const ini = String(p.Fecha_Inicio || hoy).slice(0, 10), fin0 = String(p.Fecha_Fin_Plan || hoy).slice(0, 10);
+    return { ini, fin: fin0 < ini ? ini : fin0, t: `Todo el proyecto (${fecha(ini)} al ${fecha(fin0)})` };
+  }
+  function esfuerzoProyecto(pid, ini, fin) {
+    const X = idxEsf(), ks = [...(X.porProy.get(pid) || [])];
+    const per = ks.map((k) => ({ x: X.personas.get(k), a: agregado(k, ini, fin, (f) => f === pid) })).filter((z) => z.x && (z.a.plan || z.a.carga));
+    const T = sumarAgregados(per.map((z) => z.a));
+    const semanas = new Map();
+    per.forEach(({ a }) => a.porSemana.forEach((v, l) => { const t = semanas.get(l) || { plan: 0, carga: 0 }; t.plan += v.plan; t.carga += v.carga; semanas.set(l, t); }));
+    let costo = 0, conTarifa = false;
+    per.forEach(({ x, a }) => { const t = tarifaDe(x); if (t) { conTarifa = true; costo += a.pasado * t; } });
+    return { per, T, semanas, costo, conTarifa };
+  }
+  function cardEsfuerzo(p) {
+    const per = (S.efPer || {})[p.ID_Proyecto] || "mes", rg = rangoEsf(p, per), hoy = R.hoyISO();
+    const E = esfuerzoProyecto(p.ID_Proyecto, rg.ini, rg.fin), T = E.T;
+    const desv = T.pasado - T.planPas, verCosto = E.conTarifa && R.puede(S.usuario, "verTodo");
+    const tipos = TIPOS_EF.filter(([kk]) => kk !== "gestGen" && kk !== "otras").map(([kk, t, c]) => ({ t, c, v: T[kk] })).filter((z) => Math.abs(z.v) > 0.05);
+    const sem = [...E.semanas.entries()].sort().slice(-12), maxS = Math.max(1, ...sem.map(([, v]) => Math.max(v.plan, v.carga)));
+    const maxP = Math.max(1, ...E.per.map((z) => Math.max(z.a.planPas || z.a.plan, z.a.pasado || z.a.carga)));
+    return `<div class="card ef-card"><div class="titulo-fila"><h2>Esfuerzo del proyecto</h2><div class="acciones"><div class="seg">${[["semana", "Semana"], ["mes", "Mes"], ["todo", "Todo el proyecto"]].map(([v, t]) => `<button class="btn chico ${per === v ? "primario" : ""}" data-efper="${esc(p.ID_Proyecto)}|${v}">${t}</button>`).join("")}</div>${R.puede(S.usuario, "seguimiento") ? `<button class="btn chico" data-ef-nuevo="${esc(p.ID_Proyecto)}">+ Esfuerzo</button>` : ""}</div></div>
+      <p class="sub">${esc(rg.t.charAt(0).toUpperCase() + rg.t.slice(1))}. Real = semanas cerradas en «Mi semana»; mientras no se cierren se estima con la agenda, los dailies, las sesiones registradas y la dedicación.</p>
+      ${E.per.length ? `<div class="ef-kpis">
+        <div><span class="sub">Real a la fecha</span><b>${hTxt(T.pasado)}</b><span class="sub">${T.pasado ? `${pctDe(T.cerrado, T.pasado)}% cerrado` : rg.ini > hoy ? "aún no empieza" : ""}</span></div>
+        <div><span class="sub">Plan a la fecha</span><b>${hTxt(T.planPas)}</b><span class="sub">del periodo: ${hTxt(T.plan)}</span></div>
+        <div><span class="sub">Diferencia</span><b class="${desv > Math.max(2, T.planPas * 0.1) ? "texto-rojo" : ""}">${desv > 0 ? "+" : ""}${hTxt(desv)}</b><span class="sub">${T.planPas ? `${pctDe(T.pasado, T.planPas)}% del plan` : ""}</span></div>
+        <div><span class="sub">En reuniones</span><b>${pctDe(T.reun, T.pasado)}%</b><span class="sub">${hTxt(T.reun)}</span></div>
+        ${verCosto ? `<div><span class="sub">Costo estimado</span><b>${cop(Math.round(E.costo))}</b><span class="sub">horas × tarifa</span></div>` : ""}
+      </div>
+      <div class="grid2">
+        <div><h3>Por tipo</h3>${tipos.length ? `<div class="ef-apilada">${tipos.filter((z) => z.v > 0).map((z) => `<span style="flex:${z.v};background:${z.c}" title="${esc(z.t)}: ${hTxt(z.v)}"></span>`).join("")}</div><ul class="ef-tipos">${tipos.map((z) => `<li><i style="background:${z.c}"></i>${esc(z.t)}<b>${hTxt(z.v)}</b></li>`).join("")}</ul>` : `<p class="sub">Sin horas pasadas en el periodo.</p>`}</div>
+        <div><h3>Por persona</h3><div class="ef-barras">${E.per.sort((a, b) => b.a.pasado - a.a.pasado || b.a.plan - a.a.plan).map(({ x, a }) => `<div class="ef-bar"><div class="ef-bar-n"><span>${esc(corta(x.nombre, 30))}</span><span class="sub">${hTxt(a.pasado)} · plan ${hTxt(a.planPas)}${verCosto && tarifaDe(x) ? ` · ${cop(Math.round(a.pasado * tarifaDe(x)))}` : ""}</span></div>
+          <div class="ef-bar-p"><span class="ef-bar-r" style="width:${(a.pasado / maxP) * 100}%"></span><span class="ef-bar-t" style="left:${(a.planPas / maxP) * 100}%"></span></div></div>`).join("")}</div></div>
+      </div>
+      ${sem.length > 1 ? `<h3>Por semana</h3><div class="ef-semanas">${sem.map(([l, v]) => `<div class="ef-sem ${l > hoy ? "fut" : ""}" title="${esc(`Semana del ${fecha(l)}: ${hTxt(v.carga)} · plan ${hTxt(v.plan)}`)}"><div class="ef-sem-p"><span class="ef-sem-r" style="height:${(v.carga / maxS) * 100}%"></span><span class="ef-sem-t" style="bottom:${(v.plan / maxS) * 100}%"></span></div><span class="sub">${fechaCorta(l)}</span></div>`).join("")}</div>` : ""}
+      <div class="leyenda"><span><i class="lg-real"></i>Real / estimado</span><span><i class="lg-tick"></i>Plan</span></div>`
+      : `<p class="sub">Aún no hay horas para este periodo. Pon la dedicación del PM y del equipo, la agenda de seguimiento, y registra las sesiones con su duración.</p>`}</div>`;
+  }
+  function horasMesProyecto(p) {
+    const hoy = R.hoyISO(), ini = hoy.slice(0, 8) + "01";
+    const E = esfuerzoProyecto(p.ID_Proyecto, ini, finDeMesISO(ini));
+    return { real: E.T.pasado, planPas: E.T.planPas, plan: E.T.plan };
+  }
+  function celdaHorasMes(p) {
+    const h = horasMesProyecto(p);
+    if (!h.plan && !h.real) return `<span class="sub">—</span>`;
+    const o = pctDe(h.real, h.planPas);
+    return `<span class="nowrap" title="${esc(`Este mes: ${hTxt(h.real)} reales/estimadas a la fecha · plan a la fecha ${hTxt(h.planPas)} · plan del mes ${hTxt(h.plan)}`)}"><b class="${o > 115 ? "texto-rojo" : ""}">${hTxt(h.real)}</b> <span class="sub">/ ${hTxt(h.planPas)}</span></span><div class="sub">plan del mes ${hTxt(h.plan)}</div>`;
+  }
+  // Sección del informe del proyecto (PDF).
+  function seccionEsfuerzoHV(p, { fila, tabla }) {
+    const rg = rangoEsf(p, "todo"), E = esfuerzoProyecto(p.ID_Proyecto, rg.ini, rg.fin), T = E.T;
+    const meses = new Map();
+    for (let m = rg.ini.slice(0, 8) + "01"; m <= rg.fin; m = sumarMeses(m, 1)) { const t = esfuerzoProyecto(p.ID_Proyecto, m < rg.ini ? rg.ini : m, finDeMesISO(m) > rg.fin ? rg.fin : finDeMesISO(m)).T; if (t.plan || t.carga) meses.set(m.slice(0, 7), { plan: t.plan, carga: t.carga }); }
+    const verCosto = E.conTarifa && R.puede(S.usuario, "verTodo");
+    return { t: "Esfuerzo del proyecto", d: E.per.length ? `${hTxt(T.pasado)} a la fecha · plan ${hTxt(T.planPas)}` : "sin horas registradas", h: E.per.length ? `<table class="hv-ficha">${[
+        fila("Horas reales / estimadas a la fecha", `${hTxt(T.pasado)} <small>(${pctDe(T.cerrado, T.pasado)}% en semanas cerradas)</small>`), fila("Horas planeadas a la fecha", hTxt(T.planPas)), fila("Plan total del proyecto", hTxt(T.plan)),
+        fila("Diferencia", `${T.pasado - T.planPas > 0 ? "+" : ""}${hTxt(T.pasado - T.planPas)}`), fila("En reuniones", `${pctDe(T.reun, T.pasado)}% (${hTxt(T.reun)})`), fila("Preparación y actas", hTxt(T.prep)),
+        ...(verCosto ? [fila("Costo estimado (horas × tarifa)", cop(Math.round(E.costo)))] : [])].join("")}</table>
+      ${tabla(["Persona", "Horas a la fecha", "Plan a la fecha", "Plan total"], E.per.sort((a, b) => b.a.pasado - a.a.pasado).map(({ x, a }) => `<tr><td>${esc(x.nombre)}</td><td>${hTxt(a.pasado)}</td><td>${hTxt(a.planPas)}</td><td>${hTxt(a.plan)}</td></tr>`), "")}
+      ${tabla(["Mes", "Horas", "Plan"], [...meses.entries()].sort().map(([k, v]) => `<tr><td>${MESES_LARGOS[Number(k.slice(5, 7)) - 1]} ${k.slice(0, 4)}</td><td>${hTxt(v.carga)}</td><td>${hTxt(v.plan)}</td></tr>`), "")}` : `<p class="hv-vacio">Sin dedicación ni sesiones registradas.</p>` };
+  }
+
+  // ---------- Alertas de esfuerzo (Dashboard) ----------
+  function alertasEsfuerzo(ps) {
+    const hoy = R.hoyISO(), u = S.usuario, todo = R.puede(u, "verTodo"), X = idxEsf(), out = [];
+    const lun0 = lunesDe(hoy), l1 = R.sumarDias(lun0, -7), l2 = R.sumarDias(lun0, -14);
+    const pms = [...new Set(ps.filter(CUENTAN).map((p) => clavePersona(p.PM)).filter(Boolean))].filter((k) => todo || k === clavePersona(u.Correo));
+    const oc = (k, l) => { const a = agregado(k, l, R.sumarDias(l, 4)); return a.disp ? pctDe(a.carga, a.disp) : 0; };
+    pms.forEach((k) => {
+      const x = X.personas.get(k); if (!x) return;
+      const a = oc(k, l2), b = oc(k, l1);
+      if (a > 100 && b > 100) out.push({ n: "rojo", t: `<b>${esc(x.nombre)}</b> lleva dos semanas seguidas sobre su capacidad (${a}% y ${b}%).`, k, l: l1 });
+      const f1 = oc(k, R.sumarDias(lun0, 7)), f2 = oc(k, R.sumarDias(lun0, 14));
+      if (f1 > 100 && f2 > 100) out.push({ n: "ambar", t: `<b>${esc(x.nombre)}</b> tiene planeado más de su capacidad las próximas dos semanas (${f1}% y ${f2}%).`, k, l: R.sumarDias(lun0, 7) });
+    });
+    ps.filter(CUENTAN).forEach((p) => {
+      const h = horasMesProyecto(p);
+      if (h.planPas && h.real > h.planPas * 1.15 && h.real - h.planPas >= 4) out.push({ n: "ambar", t: `<b>${esc(p.Nombre)}</b> va en ${hTxt(h.real)} este mes, sobre las ${hTxt(h.planPas)} planeadas a la fecha (+${pctDe(h.real - h.planPas, h.planPas)}%).`, pid: p.ID_Proyecto });
+      agendaDe(p.ID_Proyecto).filter((a) => esDaily(a) && a.Activa !== "No").forEach((a) => {
+        const desde = R.sumarDias(hoy, -14);
+        const no = esfuerzos().filter((e) => e.Origen === "daily" && e.ID_Sesion === a.ID_Sesion && e.Fecha >= desde && e.Fecha <= hoy && !Number(e.Minutos)).length;
+        if (no >= 3) out.push({ n: "ambar", t: `El daily de <b>${esc(p.Nombre)}</b> no se hizo ${no} veces en las últimas dos semanas.`, pid: p.ID_Proyecto });
+      });
+    });
+    const sinCerrar = pms.map((k) => ({ k, l: semanaPorCerrar(k), x: X.personas.get(k) })).filter((z) => z.l && z.x && (todo ? S.datos.Usuarios.some((uu) => lc(uu.Correo) === lc(z.x.correo) && uu.Activo === "Sí") : true));
+    if (sinCerrar.length) out.push({ n: "gris", t: sinCerrar.length === 1 && sinCerrar[0].k === clavePersona(u.Correo) ? `Tu semana del ${fecha(sinCerrar[0].l)} no está cerrada: cuenta como estimada.` : `Semanas sin cerrar: ${sinCerrar.map((z) => `<b>${esc(z.x.nombre)}</b> (${fechaCorta(z.l)})`).join(", ")}. Cuentan como estimadas.`, k: sinCerrar[0].k, l: sinCerrar[0].l });
+    return out;
+  }
+  function cardAlertasEsfuerzo(ps) {
+    const al = alertasEsfuerzo(ps);
+    if (!al.length) return "";
+    return `<div class="card ef-alertas"><div class="titulo-fila"><h2>Capacidad y esfuerzo</h2><div class="acciones"><button class="btn chico" data-ir-vista="capacidad">Ver capacidad</button><button class="btn chico primario" data-ir-vista="misemana">Mi semana</button></div></div>
+      <ul class="lista">${al.map((a) => `<li class="ef-al ${a.n}"><span>${a.t}</span>${a.pid ? `<button class="btn chico" data-pid="${esc(a.pid)}">Ver proyecto</button>` : a.k ? `<button class="btn chico" data-ef-ms="${esc(a.k)}|${a.l}">Ver semana</button>` : ""}</li>`).join("")}</ul></div>`;
+  }
+
+  // ---------- Enlaces comunes (se llaman al final de cada render) ----------
+  function enlazarEsfuerzo(el) {
+    el.querySelectorAll("[data-efper]").forEach((b) => b.addEventListener("click", () => { const [pid, v] = b.dataset.efper.split("|"); S.efPer = { ...(S.efPer || {}), [pid]: v }; const y = window.scrollY; render(); window.scrollTo(0, y); }));
+    el.querySelectorAll("[data-ef-nuevo]").forEach((b) => b.addEventListener("click", () => formEsfuerzo({ ID_Proyecto: b.dataset.efNuevo })));
+    el.querySelectorAll("[data-ir-vista]").forEach((b) => b.addEventListener("click", () => ir(b.dataset.irVista)));
+    el.querySelectorAll("[data-ef-ms]").forEach((b) => b.addEventListener("click", () => { const [k, l] = b.dataset.efMs.split("|"); S.msK = k; S.msLunes = l; ir("misemana"); }));
+    el.querySelectorAll("[data-dl]").forEach((b) => b.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const [pid, sid, d, h] = b.dataset.dl.split("|"), p = proyecto(pid), a = agendaDe(pid).find((x) => x.ID_Sesion === sid);
+      if (p && a) marcarDaily(p, a, d, h === "1");
+    }));
+  }
+
+  // ---------- Catálogos › Jornada laboral y festivos ----------
+  function cardJornada() {
+    const J = jornada(), hoy = R.hoyISO(), y0 = Number(hoy.slice(0, 4));
+    const anios = [y0, y0 + 1];
+    const fest = [...J.fest.entries()].sort();
+    const resumen = (y) => MES_CORTO.map((t, i) => { const ini = isoDe(y, i + 1, 1), fin = finDeMesISO(ini); let d = 0; for (let x = ini; x <= fin; x = R.sumarDias(x, 1)) if (horasDia(x)) d += 1; return { t, d, h: horasPeriodo(ini, fin) }; });
+    return `<div class="card" id="cat-jornada"><div class="titulo-fila"><h2>Jornada laboral y festivos</h2><button class="btn primario" id="b-jornada">Editar jornada</button></div>
+      <p class="sub">Con esto se calculan las horas disponibles de cada persona (Capacidad del equipo, Mi semana y el esfuerzo de los proyectos). Aplica a todo el equipo.</p>
+      <div class="grid2"><div><table><thead><tr><th>Día</th><th>Horario</th><th>Horas</th></tr></thead><tbody>${[1, 2, 3, 4, 5, 6].map((d) => J.horario[d] ? `<tr><td>${["", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"][d]}</td><td>${esc(J.horario[d].ini)} a ${esc(J.horario[d].fin)}</td><td><b>${hTxt((J.min[d] || 0) / 60)}</b></td></tr>` : d === 6 ? "" : `<tr><td>${["", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes"][d]}</td><td class="sub">No laborable</td><td>0</td></tr>`).join("")}
+        <tr><td>Almuerzo</td><td colspan="2">${J.alm} min (se descuenta cada día)</td></tr></tbody><tfoot><tr><th colspan="2">Semana sin festivos</th><th>${hTxt(jornadaSemanal())}</th></tr></tfoot></table></div>
+        <div>${anios.map((y) => { const rs = resumen(y); return `<table class="jr-anio"><thead><tr><th colspan="3">${y}: ${sumaA(rs.map((r) => r.d))} días · ${hTxt(sumaA(rs.map((r) => r.h)))}</th></tr></thead><tbody>${rs.map((r) => `<tr><td>${r.t}</td><td>${r.d} días</td><td>${hTxt(r.h)}</td></tr>`).join("")}</tbody></table>`; }).join("")}</div></div>
+      <h3>Festivos <span class="contador">${fest.length}</span></h3>
+      <div class="jr-fest">${anios.map((y) => `<div><b>${y}</b><ul class="cat-lista">${fest.filter(([d]) => d.startsWith(String(y))).map(([d, n]) => `<li><span class="cat-valor">${fecha(d)} · ${esc(n)}${horasDia(d) === 0 && [0, 6].includes(diaSemana(d)) ? ` <span class="sub">(fin de semana)</span>` : ""}</span><span class="cat-acc"><button class="btn chico" data-fest-q="${esc(d)}" title="Quitar">✕</button></span></li>`).join("") || `<li class="sub">Sin festivos registrados.</li>`}</ul></div>`).join("")}</div>
+      <form class="jr-agregar" id="f-festivo" novalidate><input name="fecha" type="date" aria-label="Fecha del festivo"><input name="nombre" type="text" placeholder="Nombre (ej.: Día de la Raza)" aria-label="Nombre del festivo"><button class="btn primario" type="submit">Agregar festivo</button></form>
+      <div class="error-campo" id="e-festivo" role="alert"></div></div>`;
+  }
+  function enlazarJornada(el) {
+    const J = jornada();
+    const b = $("#b-jornada");
+    if (b) b.addEventListener("click", () => {
+      const NOMS = [[1, "Lun", "Lunes"], [2, "Mar", "Martes"], [3, "Mie", "Miércoles"], [4, "Jue", "Jueves"], [5, "Vie", "Viernes"], [6, "Sab", "Sábado"]];
+      const campos = [...NOMS.flatMap(([d, c, t]) => [{ k: `i${c}`, label: `${t}: entrada`, tipo: "time", def: J.horario[d] ? J.horario[d].ini : "" }, { k: `f${c}`, label: `${t}: salida`, tipo: "time", def: J.horario[d] ? J.horario[d].fin : "" }]),
+        { k: "alm", label: "Almuerzo (minutos)", tipo: "number", min: 0, max: 180, def: J.alm }];
+      modal("Jornada laboral", campos, {}, (fd) => {
+        const vals = NOMS.filter(([, c]) => fd[`i${c}`] && fd[`f${c}`]).map(([, c]) => `${c}=${fd[`i${c}`]}-${fd[`f${c}`]}`).concat([`Almuerzo=${fd.alm === "" ? 0 : fd.alm}`]);
+        guardar(async () => {
+          for (const v of [...(S.cat.Jornada || [])]) if (S.datos.Catalogos.some((f) => f.Lista === "Jornada" && String(f.Valor) === v)) await S.api.eliminarFila("Catalogos", { Lista: "Jornada", Valor: v });
+          await S.api.agregarFilas("Catalogos", vals.map((v) => ({ Lista: "Jornada", Valor: v })));
+        }, "Jornada actualizada");
+      }, (fd) => NOMS.find(([, c]) => !!fd[`i${c}`] !== !!fd[`f${c}`] || (fd[`i${c}`] && fd[`f${c}`] <= fd[`i${c}`])) ? "Revisa los horarios: cada día necesita entrada y salida, y la salida debe ser posterior a la entrada (vacío = no laborable)." : "",
+      { antes: `<p class="sub">Deja vacío un día para que no sea laborable. Las horas del día = salida − entrada − almuerzo.</p>` });
+    });
+    const f = $("#f-festivo");
+    if (f) f.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const d = f.fecha.value, n = f.nombre.value.trim(), err = $("#e-festivo");
+      if (!d) { err.textContent = "Elige la fecha."; return; }
+      if (J.fest.has(d)) { err.textContent = "Esa fecha ya es festivo."; return; }
+      guardar(() => S.api.agregarFila("Catalogos", { Lista: "Festivo", Valor: `${d} ${n || "Festivo"}`.slice(0, 60) }), "Festivo agregado");
+    });
+    el.querySelectorAll("[data-fest-q]").forEach((x) => x.addEventListener("click", () => {
+      const v = (S.cat.Festivo || []).find((z) => String(z).startsWith(x.dataset.festQ));
+      if (v) confirmar("Quitar festivo", `«${v}» volverá a contar como día hábil.`, "Quitar", () => guardar(() => S.api.eliminarFila("Catalogos", { Lista: "Festivo", Valor: v }), "Festivo quitado"));
+    }));
+  }
+
+  // ---------- Exportaciones ----------
+  function hojasHoras() {
+    const zoom = S.capZoom || "mes", P = periodo(zoom, S.capRef || R.hoyISO()), gente = personasAlcance(), filas = [], proys = [];
+    gente.forEach((x) => {
+      for (let l = lunesDe(P.ini); l <= P.fin; l = R.sumarDias(l, 7)) {
+        const a = agregado(x.k, l < P.ini ? P.ini : l, R.sumarDias(l, 4) > P.fin ? P.fin : R.sumarDias(l, 4)), w = semanaPersona(x.k, l);
+        filas.push({ x, l, a, estado: w.estado });
+        a.porFila.forEach((v, f) => { if (v.plan || v.carga) proys.push({ x, l, f, v }); });
+      }
+    });
+    return [{ nombre: "Horas por semana", columnas: [{ t: "Persona", v: (r) => r.x.nombre, ancho: 28 }, { t: "Semana (lunes)", v: (r) => r.l, tipo: "fecha" }, { t: "Estado", v: (r) => r.estado, ancho: 12 },
+      { t: "Disponible (h)", v: (r) => r2(r.a.disp), tipo: "num" }, { t: "Plan (h)", v: (r) => r2(r.a.plan), tipo: "num" }, { t: "Real / estimado (h)", v: (r) => r2(r.a.carga), tipo: "num" },
+      { t: "Ocupación", v: (r) => pctDe(r.a.carga, r.a.disp), tipo: "pct" }, { t: "Reuniones (h)", v: (r) => r2(r.a.reun), tipo: "num" }, { t: "Gestión general (h)", v: (r) => r2(r.a.gestGen), tipo: "num" }, { t: "Otras actividades (h)", v: (r) => r2(r.a.otras), tipo: "num" }], filas },
+    { nombre: "Horas por proyecto", columnas: [{ t: "Persona", v: (r) => r.x.nombre, ancho: 28 }, { t: "Semana (lunes)", v: (r) => r.l, tipo: "fecha" }, { t: "Proyecto", v: (r) => nombreFila(r.f), ancho: 34 }, { t: "ID", v: (r) => (r.f.startsWith("_") ? "" : r.f), ancho: 11 },
+      { t: "Plan (h)", v: (r) => r2(r.v.plan), tipo: "num" }, { t: "Real / estimado (h)", v: (r) => r2(r.v.carga), tipo: "num" }], filas: proys }];
+  }
+  function exportarMiSemana() {
+    const u = S.usuario, k = S.msK || clavePersona(u.Correo), lun = S.msLunes || lunesDe(R.hoyISO()), w = semanaPersona(k, lun), x = infoPersona(k) || {};
+    return exportarExcel(`Mi semana ${lun}`, [{ nombre: "Mi semana", columnas: [{ t: "Proyecto", v: (r) => nombreFila(r.f), ancho: 36 }, ...DIAS_EF.map((c, i) => ({ t: `${NOM_DIA[i + 1]} ${w.dias[i].slice(8, 10)}`, v: (r) => r2(r.val[i]), tipo: "num" })),
+      { t: "Total (h)", v: (r) => r2(sumaA(r.val)), tipo: "num" }, { t: "Plan (h)", v: (r) => r2(sumaA(r.plan)), tipo: "num" }, { t: "Celdas editadas", v: (r) => DIAS_EF.filter((c, i) => r.edit[i]).join(", "), ancho: 14 }], filas: w.filas }],
+    [`Persona: ${x.nombre || k}`, `Semana del ${fecha(lun)}`, `Estado: ${w.estado}`]);
+  }
+
+  // ---------- PPT: lámina «Capacidad real del equipo» ----------
+  function datosCapacidadReal(personasK, corte) {
+    const l0 = lunesDe(corte), semanas = [-3, -2, -1, 0].map((n) => R.sumarDias(l0, 7 * n));
+    const filas = personasK.map((k) => ({ x: infoPersona(k), sem: semanas.map((l) => { const a = agregado(k, l, R.sumarDias(l, 4)); return { a, o: a.disp ? pctDe(a.carga, a.disp) : null, cerr: !!idxEsf().cie.get(`${k}|${l}`) }; }) })).filter((f) => f.x && f.sem.some((s) => s.a.disp || s.a.carga));
+    const T = sumarAgregados(filas.flatMap((f) => f.sem.map((s) => s.a)));
+    return { semanas, filas, T };
   }
 
   // ---------- Stakeholders y proveedores ----------
@@ -6688,17 +7489,22 @@ ${x.h}</section>`).join("")}
   }
 
   // tipoInicial: "Seguimiento" (reporte de avance) o "Sesión" (comité, mesa técnica, reunión: acta y compromisos, sin avance).
-  function formSeguimiento(p, tipoInicial = "Seguimiento") {
+  function formSeguimiento(p, tipoInicial = "Seguimiento", opts = {}) {
     S.pidForm = p.ID_Proyecto;
+    const agNoDaily = agendaDe(p.ID_Proyecto).filter((a) => !esDaily(a) && a.Activa !== "No");
+    const sesAg = opts.sesion || null;
+    const durDef = sesAg ? Number(sesAg.Duracion_Min) || 30 : agNoDaily.length ? Number(agNoDaily[0].Duracion_Min) || 60 : 60;
     const e = R.estadoSeguimiento(p, S.datos.Seguimientos);
     const ult = e.ultimo;
     const abiertos = S.datos.Compromisos.filter((c) => c.ID_Proyecto === p.ID_Proyecto && !R.cerrado(c))
       .sort((a, b) => (a.Fecha_Compromiso < b.Fecha_Compromiso ? -1 : 1));
     const campos = [
       { k: "Tipo_Sesion", label: "¿Qué vas a registrar?", tipo: "select", def: tipoInicial, opciones: [["Seguimiento", "Seguimiento de avance (reporta avance, semáforo y presupuesto)"], ["Sesión", "Sesión / reunión (comité, mesa técnica…): acta y compromisos, sin avance"]], ancho: true },
-      { k: "Nombre_Sesion", label: "Nombre de la sesión", placeholder: "Ej.: Comité de cambios, Mesa técnica con Sonda, Revisión con el área" },
+      { k: "Nombre_Sesion", label: "Nombre de la sesión", def: sesAg && !/seguimiento/i.test(sesAg.Tipo) ? sesAg.Tipo : "", placeholder: "Ej.: Comité de cambios, Mesa técnica con Sonda, Revisión con el área" },
       { seccion: "1. Avance" },
-      { k: "Fecha_Corte", label: "Fecha de corte / de la sesión", tipo: "date", def: R.hoyISO() },
+      { k: "Fecha_Corte", label: "Fecha de corte / de la sesión", tipo: "date", def: opts.fecha || R.hoyISO() },
+      { k: "Duracion_Min", label: "Duración de la sesión (min)", tipo: "number", min: 0, max: 600, def: durDef, ayuda: "Suma a tus horas del proyecto en «Mi semana»." },
+      { k: "Preparacion_Min", label: "Preparación y acta (min)", tipo: "number", min: 0, max: 600, placeholder: "Ej.: 30", ayuda: "Opcional: tiempo para preparar la sesión y hacer el acta." },
       { k: "Avance_Real", label: "Avance real (%)", tipo: "number", min: 0, max: 100, def: p.Avance_Real },
       { k: "Avance_Planeado", label: "Avance planeado a la fecha (%)", tipo: "number", min: 0, max: 100, def: p.Avance_Planeado, ayuda: "Lo que debería llevar según el plan." },
       { k: "Semaforo", label: "Semáforo", tipo: "select", opciones: S.cat.Semaforo, def: p.Semaforo },
@@ -6865,6 +7671,8 @@ ${x.h}</section>`).join("")}
         Bloqueos: fd.Bloqueos, Reportado_Por: S.usuario.Correo, Fecha_Acta: fd.Fecha_Acta, URL_Acta: fd.URL_Acta,
         Acta_Archivo: "",   // se marca solo cuando el PDF quedó completo en Excel
         Tipo_Sesion: esSes ? "Sesión" : "Seguimiento", Nombre_Sesion: fd.Nombre_Sesion || "",
+        Duracion_Min: fd.Duracion_Min, Preparacion_Min: fd.Preparacion_Min,
+        ID_Sesion: sesAg && sesAg.ID_Proyecto === p.ID_Proyecto && tocaEn(sesAg, fd.Fecha_Corte) ? sesAg.ID_Sesion : ((agNoDaily.find((a) => tocaEn(a, fd.Fecha_Corte)) || {}).ID_Sesion || ""),
       };
       const actaElegida = acta, cronoElegido = esSes ? null : cronoNuevo;
       const comps = extra.nuevos.map((c, i) => ({
@@ -7230,6 +8038,8 @@ ${x.h}</section>`).join("")}
       { k: "Nombre_Sesion", label: "Nombre de la sesión", placeholder: "Ej.: Comité de cambios" },
       { seccion: "1. Avance" },
       { k: "Fecha_Corte", label: "Fecha de corte / de la sesión", tipo: "date" },
+      { k: "Duracion_Min", label: "Duración de la sesión (min)", tipo: "number", min: 0, max: 600, ayuda: "Suma a las horas del proyecto en «Mi semana»." },
+      { k: "Preparacion_Min", label: "Preparación y acta (min)", tipo: "number", min: 0, max: 600 },
       { k: "Avance_Real", label: "Avance real (%)", tipo: "number", min: 0, max: 100 },
       { k: "Avance_Planeado", label: "Avance planeado a la fecha (%)", tipo: "number", min: 0, max: 100 },
       { k: "Semaforo", label: "Semáforo", tipo: "select", opciones: S.cat.Semaforo },
