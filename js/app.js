@@ -3715,7 +3715,8 @@ ${x.h}</section>`).join("")}
   // Proyectos del recurso dentro de su ficha: rol, dedicación, estado, avance y compromisos abiertos.
   function proyectosRecursoHTML(r) {
     const l = proyectosDeRecurso(r);
-    const ded = (pid) => { const x = (S.datos.Stakeholders || []).find((y) => y.ID_Proyecto === pid && ((y.ID_Recurso && y.ID_Recurso === r.ID_Recurso) || (r.Correo && y.Correo && lc(y.Correo) === lc(r.Correo)))); const pr = proyecto(pid); return x && num0(x.Dedicacion) !== null ? `${num0(x.Dedicacion)}%` : pr && r.Correo && lc(pr.PM) === lc(r.Correo) && num0(pr.Dedicacion_PM) !== null ? `${num0(pr.Dedicacion_PM)}%` : "—"; };
+    const ded = (pid) => { const pr = proyecto(pid); if (pr && r.Correo && lc(pr.PM) === lc(r.Correo)) { const d = dedPM(pr); return d !== null ? `${d}%` : "—"; }
+      const x = (S.datos.Stakeholders || []).find((y) => y.ID_Proyecto === pid && ((y.ID_Recurso && y.ID_Recurso === r.ID_Recurso) || (r.Correo && y.Correo && lc(y.Correo) === lc(r.Correo)))); return x && num0(x.Dedicacion) !== null ? `${num0(x.Dedicacion)}%` : "—"; };
     const activos = l.filter((x) => x.p.Estado === "Activo").length;
     return `<div class="rp-caja"><div class="rp-cab"><b>Proyectos asociados</b> <span class="sub">${l.length ? `${l.length} proyecto(s) · ${activos} activo(s)` : "Aún no está en ningún proyecto"}</span></div>
       ${l.length ? `<div class="tabla-scroll"><table class="no-orden no-recortar rp-tabla"><thead><tr><th>Proyecto</th><th>Rol</th><th>Dedicación</th><th>Estado</th><th>Avance</th></tr></thead><tbody>
@@ -6210,8 +6211,9 @@ ${x.h}</section>`).join("")}
       x.total += ded; x.asign.push({ p, rol, ded, idStk });
     };
     S.datos.Proyectos.filter(CUENTAN).forEach((p) => {
-      sumar(p.PM, nombreUsuario(p.PM), p, "PM", num0(p.Dedicacion_PM));
-      stakeholdersDe(p.ID_Proyecto).forEach((x) => sumar(x.Correo, x.Nombre, p, x.Rol, num0(x.Dedicacion), x.ID_Stakeholder));
+      const rolesPM = stkPMde(p).map((x) => x.Rol).filter(Boolean);
+      sumar(p.PM, nombreUsuario(p.PM), p, rolesPM.length ? `PM · ${rolesPM.join(", ")}` : "PM", dedPM(p));
+      stakeholdersDe(p.ID_Proyecto).filter((x) => !esPMdeProy(p, x)).forEach((x) => sumar(x.Correo, x.Nombre, p, x.Rol, num0(x.Dedicacion), x.ID_Stakeholder));
     });
     // Tiempo del PM en las sesiones de su agenda (calculado): cuenta como otra actividad.
     const minPM = {};
@@ -6367,6 +6369,23 @@ ${x.h}</section>`).join("")}
   const stakeholdersDe = (pid) => (S.datos.Stakeholders || []).filter((x) => x.ID_Proyecto === pid);
   const contacto = (correo, tel) => [correo ? `<a href="mailto:${esc(correo)}">${esc(correo)}</a>` : "", tel ? esc(tel) : ""].filter(Boolean).join("<br>") || "—";
 
+  // El PM puede estar también en el equipo (stakeholders): su dedicación es UNA sola (Proyectos.Dedicacion_PM)
+  // y se replica en su fila de stakeholder, para que no se sume dos veces en la capacidad.
+  function esPMdeProy(p, x) {
+    if (!p || !p.PM || !x) return false;
+    const r = x.ID_Recurso ? recursoId(x.ID_Recurso) : null;
+    return lc(x.Correo) === lc(p.PM) || (r && lc(r.Correo) === lc(p.PM)) || (!!x.Nombre && normTxt(x.Nombre) === normTxt(nombreUsuario(p.PM)));
+  }
+  const stkPMde = (p) => stakeholdersDe(p.ID_Proyecto).filter((x) => esPMdeProy(p, x));
+  const dedPM = (p) => num0(p.Dedicacion_PM) ?? stkPMde(p).map((x) => num0(x.Dedicacion)).find((v) => v !== null) ?? null;
+  async function sincronizarDedPM(pid, valor) {
+    const p = proyecto(pid); if (!p) return;
+    const v = valor !== undefined && valor !== "" && valor !== null ? Number(valor) : dedPM(p);
+    if (v === null || v === undefined) return;
+    if (num0(p.Dedicacion_PM) !== v) await S.api.actualizarPorId("Proyectos", "ID_Proyecto", pid, { Dedicacion_PM: v });
+    const dif = stkPMde(p).filter((x) => num0(x.Dedicacion) !== v);
+    if (dif.length) await S.api.actualizarVarios("Stakeholders", "ID_Stakeholder", dif.map((x) => ({ id: x.ID_Stakeholder, cambios: { Dedicacion: v } })));
+  }
   function celdaDedicacion(correo, nombre, ded) {
     const d = num0(ded);
     if (d === null) return `<span class="sub">Sin registrar</span>`;
@@ -6383,10 +6402,12 @@ ${x.h}</section>`).join("")}
       ${faltan.length ? `<div class="faltan-stk"><span class="sub">Sin asignar:</span> ${faltan.map((r) => puede ? `<button class="btn chico" data-rol-stk="${esc(r)}">+ ${esc(r)}</button>` : `<span class="pill noaplica">${esc(r)}</span>`).join(" ")}</div>` : ""}
       <div class="tabla-scroll"><table><thead><tr><th>Rol</th><th>Nombre</th><th>Cargo / área</th><th>Empresa</th><th>Contacto</th><th>Dedicación</th><th></th></tr></thead>
         <tbody><tr class="fila-pm"><td><b>PM</b></td><td>${persona(nombreUsuario(p.PM))}</td><td>Gerente del proyecto</td><td>Interno</td><td>${contacto(p.PM, "")}</td>
-          <td${ed({ puede, tabla: "Proyectos", idCol: "ID_Proyecto", id: p.ID_Proyecto, campo: "Dedicacion_PM", tipo: "number", min: 0, max: 100, valor: p.Dedicacion_PM ?? "", extra: () => sello(), etiqueta: "Dedicación del PM" })}>${celdaDedicacion(p.PM, nombreUsuario(p.PM), p.Dedicacion_PM)}</td><td class="derecha sub"></td></tr>
+          <td${ed({ puede, tabla: "Proyectos", idCol: "ID_Proyecto", id: p.ID_Proyecto, campo: "Dedicacion_PM", tipo: "number", min: 0, max: 100, valor: dedPM(p) ?? "", extra: () => sello(), despues: (v) => sincronizarDedPM(p.ID_Proyecto, v), etiqueta: "Dedicación del PM" })}>${celdaDedicacion(p.PM, nombreUsuario(p.PM), dedPM(p))}</td><td class="derecha sub"></td></tr>
         ${lista.map((x) => `<tr><td${ed({ puede, tabla: "Stakeholders", idCol: "ID_Stakeholder", id: x.ID_Stakeholder, campo: "Rol", tipo: "select", opciones: S.cat.Rol_Stakeholder, valor: x.Rol, etiqueta: "Rol" })}><b>${esc(x.Rol)}</b></td><td>${persona(x.Nombre)}</td><td>${esc([x.Cargo, x.Area].filter(Boolean).join(" · ") || "—")}</td>
           <td>${x.ID_Proveedor ? esc((proveedor(x.ID_Proveedor) || {}).Nombre || x.ID_Proveedor) : "Interno"}</td><td>${contacto(x.Correo, x.Telefono)}</td>
-          <td${ed({ puede, tabla: "Stakeholders", idCol: "ID_Stakeholder", id: x.ID_Stakeholder, campo: "Dedicacion", tipo: "number", min: 0, max: 100, valor: x.Dedicacion ?? "", etiqueta: "Dedicación" })}>${celdaDedicacion(x.Correo, x.Nombre, x.Dedicacion)}</td>
+          ${esPMdeProy(p, x)
+            ? `<td${ed({ puede, tabla: "Proyectos", idCol: "ID_Proyecto", id: p.ID_Proyecto, campo: "Dedicacion_PM", tipo: "number", min: 0, max: 100, valor: dedPM(p) ?? "", extra: () => sello(), despues: (v) => sincronizarDedPM(p.ID_Proyecto, v), etiqueta: "Dedicación del PM" })}>${dedPM(p) !== null ? `<b>${dedPM(p)}%</b>` : `<span class="sub">Sin registrar</span>`}<div class="sub">Es el PM: misma dedicación (no se suma dos veces)</div></td>`
+            : `<td${ed({ puede, tabla: "Stakeholders", idCol: "ID_Stakeholder", id: x.ID_Stakeholder, campo: "Dedicacion", tipo: "number", min: 0, max: 100, valor: x.Dedicacion ?? "", etiqueta: "Dedicación" })}>${celdaDedicacion(x.Correo, x.Nombre, x.Dedicacion)}</td>`}
           <td class="derecha">${puede ? `<button class="btn chico" data-stk="${esc(x.ID_Stakeholder)}">Editar</button>` : ""}</td></tr>`).join("")}</tbody></table></div>
       <div class="provs"><b>Proveedor(es):</b> ${provs.length ? provs.map((x) => `<span class="prov">${esc(x.Nombre)}${x.Servicio ? ` <span class="sub">· ${esc(x.Servicio)}</span>` : ""}${x.Contacto || x.Correo ? ` <span class="sub">· ${esc(x.Contacto || "")} ${x.Correo ? `<a href="mailto:${esc(x.Correo)}">${esc(x.Correo)}</a>` : ""}</span>` : ""}</span>`).join("")
         : `<span class="sub">Ninguno${puede ? " — asígnalos con «Editar proyecto»." : "."}</span>`}</div></div>`;
@@ -6430,8 +6451,8 @@ ${x.h}</section>`).join("")}
       };
       if (nuevo) {
         const id = R.siguienteIdHijo("STK", S.datos.Stakeholders || [], "ID_Stakeholder", p.ID_Proyecto);
-        guardar(async () => { const idr = await conRecurso(); await S.api.agregarFila("Stakeholders", { ID_Stakeholder: id, ID_Proyecto: p.ID_Proyecto, ...fd, ID_Recurso: idr }); }, "Stakeholder agregado");
-      } else guardar(async () => { const idr = await conRecurso(); await S.api.actualizarPorId("Stakeholders", "ID_Stakeholder", x.ID_Stakeholder, { ...fd, ID_Recurso: idr }); });
+        guardar(async () => { const idr = await conRecurso(); await S.api.agregarFila("Stakeholders", { ID_Stakeholder: id, ID_Proyecto: p.ID_Proyecto, ...fd, ID_Recurso: idr }); if (esPMdeProy(p, { ...fd, ID_Recurso: idr })) await sincronizarDedPM(p.ID_Proyecto, fd.Dedicacion); }, "Stakeholder agregado");
+      } else guardar(async () => { const idr = await conRecurso(); await S.api.actualizarPorId("Stakeholders", "ID_Stakeholder", x.ID_Stakeholder, { ...fd, ID_Recurso: idr }); if (esPMdeProy(p, { ...fd, ID_Recurso: idr })) await sincronizarDedPM(p.ID_Proyecto, fd.Dedicacion); });
     }, null, nuevo ? vivo : { ...vivo, eliminar: { texto: "Quitar del proyecto", mensaje: `${x.Nombre || "Esta persona"} dejará de aparecer como ${x.Rol || "stakeholder"} de este proyecto.`,
       accion: () => guardar(() => S.api.eliminarFilas("Stakeholders", "ID_Stakeholder", [x.ID_Stakeholder]), "Stakeholder quitado") } });
   }
@@ -6479,7 +6500,7 @@ ${x.h}</section>`).join("")}
       { k: "Cliente_Area", label: "Cliente / área", tipo: "select", opciones: S.cat.Cliente_Area },
       { k: "PM", label: "PM responsable", tipo: "select", opciones: pms, bloqueado: pmFijo,
         ayuda: pmFijo ? "Quedas como PM de esta iniciativa." : "Solo aparecen usuarios con rol PM. El PM verá este proyecto." },
-      { k: "Dedicacion_PM", label: "Dedicación del PM a este proyecto (%)", tipo: "number", min: 0, max: 100, placeholder: "Ej.: 40", ayuda: "Suma en «Capacidad del equipo»." },
+      { k: "Dedicacion_PM", label: "Dedicación del PM a este proyecto (%)", tipo: "number", min: 0, max: 100, placeholder: "Ej.: 40", ayuda: "Suma en «Capacidad del equipo». Si el PM también está en el equipo, es la misma dedicación: se replica y no se suma dos veces." },
       { k: "Metodologia", label: "Metodología", tipo: "select", opciones: S.cat.Metodologia },
       { k: "Prioridad", label: "Prioridad", tipo: "select", opciones: S.cat.Prioridad, def: "Media" },
       { seccion: "2. Estado" },
@@ -6630,12 +6651,12 @@ ${x.h}</section>`).join("")}
         const fila = { ...fd, Nombre: fd.Nombre || `Iniciativa ${id}`, ID_Proyecto: id, Avance_Real: fd.Avance_Real === "" ? 0 : fd.Avance_Real, ...sello() };
         S.pid = fila.ID_Proyecto;
         S.vista = "ficha";
-        guardar(async () => { await S.api.agregarFila("Proyectos", fila); await guardarEquipo(id); if (alCrear) await alCrear(id); }, `Iniciativa ${fila.ID_Proyecto} registrada`);
+        guardar(async () => { await S.api.agregarFila("Proyectos", fila); await guardarEquipo(id); await sincronizarDedPM(id, fd.Dedicacion_PM); if (alCrear) await alCrear(id); }, `Iniciativa ${fila.ID_Proyecto} registrada`);
       } else {
         const seCierra = fd.Estado === "Cerrado" && p.Estado !== "Cerrado";
         if (seCierra) { S.fichaTab = "lecciones"; if ((S.cat.Fase || []).includes("Cierre")) fd.Fase = "Cierre"; }
         const pend = seCierra ? pendientesCierre(p) : [];
-        guardar(async () => { await S.api.actualizarPorId("Proyectos", "ID_Proyecto", p.ID_Proyecto, { ...fd, ...sello() }); await guardarEquipo(p.ID_Proyecto); },
+        guardar(async () => { await S.api.actualizarPorId("Proyectos", "ID_Proyecto", p.ID_Proyecto, { ...fd, ...sello() }); await guardarEquipo(p.ID_Proyecto); await sincronizarDedPM(p.ID_Proyecto, fd.Dedicacion_PM); },
           seCierra ? `Proyecto cerrado.${pend.length ? ` Quedaron abiertos: ${pend.join(", ")}.` : ""} Es buen momento para registrar las lecciones aprendidas.` : "Guardado");
       }
     }, (fd) => {
