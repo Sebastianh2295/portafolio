@@ -156,7 +156,8 @@
     Tipo_Cambio: ["Alcance", "Tiempo", "Costo", "Recursos", "Calidad"], Tipo_Demanda: ["Proyecto nuevo", "Mejora / evolutivo", "Regulatorio / obligatorio", "Mantenimiento", "Innovación"], Categoria_Demanda: ["Estratégico", "Operativo", "Cumplimiento"],
     Tipo_Documento: ["Acta", "Cronograma", "Contrato / orden de compra", "Especificación / requerimientos", "Diseño / arquitectura", "Presentación", "Informe", "Manual", "Carpeta", "Otro"],
     Categoria_Leccion: ["Planeación", "Técnica", "Proveedores", "Comunicación", "Equipo", "Calidad", "Gestión del cambio"],
-    Tipo_Sesion_Agenda: ["Daily", "Seguimiento", "Comité", "Mesa técnica"],
+    Tipo_Sesion_Agenda: ["Daily", "Seguimiento", "Comité", "Mesa técnica", "Reunión con proveedor"],
+    Motivo_Sesion: ["Cancelada", "Sin quórum", "Reprogramada", "Otro"],
     Dimension_Valor: ["Seguridad del paciente", "Eficiencia operacional", "Experiencia del paciente", "Cumplimiento / acreditación", "Estratégico", "Financiero"],
     Tipo_Esfuerzo: ["Reunión no agendada", "Gestión y coordinación", "Correos y llamadas", "Documentación e informes", "Revisión con proveedor", "Preparación de sesión", "Otro"],
     Jornada: ["Lun=07:00-16:30", "Mar=07:00-16:30", "Mie=07:00-16:30", "Jue=07:00-16:30", "Vie=07:00-16:00", "Almuerzo=60"],
@@ -1654,6 +1655,7 @@
     { lista: "Tipo_Cambio", t: "Tipo de cambio", campo: "Tipo", tabla: "Cambios", idCol: "ID_Cambio" },
     { lista: "Categoria_Leccion", t: "Categoría de lección aprendida", campo: "Categoria", tabla: "Lecciones", idCol: "ID_Leccion" },
     { lista: "Tipo_Actividad", t: "Tipo de otra actividad (capacidad)", campo: "Tipo", tabla: "Actividades", idCol: "ID_Actividad" },
+    { lista: "Motivo_Sesion", t: "Motivo de sesión no realizada", campo: "Motivo", tabla: "Esfuerzo", idCol: "ID_Esfuerzo" },
     { lista: "Tipo_Esfuerzo", t: "Tipo de esfuerzo (+ Esfuerzo)", campo: "Tipo", tabla: "Esfuerzo", idCol: "ID_Esfuerzo" },
     { lista: "Tipo_Sesion_Agenda", t: "Tipo de sesión (agenda de seguimiento)", campo: "Tipo", tabla: "Agenda", idCol: "ID_Sesion" },
     { lista: "Dimension_Valor", t: "Dimensión de valor (beneficios)", campo: "Dimension", tabla: "Beneficios", idCol: "ID_Beneficio" },
@@ -2766,6 +2768,7 @@
         ${tabla(["Importancia", "Dimensión", "Beneficio esperado / valor para la FSFB", "Indicador", "Base → meta", "Actual", "Logro", "Estado"], V.bs.map(({ b, e }) => `<tr><td>${t(b.Importancia)}</td><td>${t(b.Dimension)}</td><td>${t(b.Beneficio_Esperado)}${b.Valor_FSFB ? `<br><small>${t(b.Valor_FSFB)}</small>` : ""}</td><td>${t(b.Indicador)}</td>
           <td class="hv-nw">${b.Tipo_Medida === "Cualitativo" ? "Cualitativo" : `${esc(fmtValor(b, b.Linea_Base))} → ${esc(fmtValor(b, b.Meta))}`}</td><td class="hv-nw">${e.ult ? `${esc(fmtValor(b, e.ult.Valor))}<br><small>${fecha(e.ult.Fecha)}</small>` : "—"}</td><td>${e.logro === null ? "—" : `${e.logro}%`}</td><td>${t(e.estado)}</td></tr>`), "Sin beneficios registrados.")}` }; })(),
       seccionEsfuerzoHV(p, { fila, tabla }),
+      seccionSesionesHV(p, { tabla }),
       { t: "Equipo: stakeholders y proveedores", d: `${plural(stks.length, "persona", "personas")} · ${plural(provs.length, "proveedor", "proveedores")}`, h: `      ${tabla(["Rol", "Nombre", "Cargo / área", "Empresa", "Correo"], stks.map((x) => `<tr><td>${t(x.Rol)}</td><td>${t(x.Nombre)}</td><td>${t([x.Cargo, x.Area].filter(Boolean).join(" · "))}</td><td>${x.ID_Proveedor ? t((proveedor(x.ID_Proveedor) || {}).Nombre) : "Interno"}</td><td>${t(x.Correo)}</td></tr>`), "Sin stakeholders registrados.")}
       <p class="hv-p"><b>Proveedores:</b> ${provs.length ? provs.map((x) => `${esc(x.Nombre)}${x.Servicio ? ` (${esc(x.Servicio)})` : ""}`).join(" · ") : "ninguno"}</p>` },
       { t: "Hitos", d: `${hitos.length} · ${hitos.filter((h) => h.Estado === "Cumplido").length} cumplidos`, h: `      ${tabla(["Hito", "Fecha plan", "Fecha real", "Estado"], hitos.map((h) => `<tr><td>${t(h.Hito)}</td><td>${fecha(h.Fecha_Plan)}</td><td>${h.Fecha_Real ? fecha(h.Fecha_Real) : "—"}</td><td>${t(h.Estado)}</td></tr>`), "Sin hitos.")}` },
@@ -4544,7 +4547,7 @@ ${x.h}</section>`).join("")}
   const horaTxt = (h) => { const v = hhmm(h); if (!v) return "—"; let [H, M] = v.split(":").map(Number); const pmx = H >= 12; H = H % 12 || 12; return `${H}:${String(M).padStart(2, "0")} ${pmx ? "p. m." : "a. m."}`; };
   const minDe = (h) => { const v = hhmm(h); if (!v) return 0; const [H, M] = v.split(":").map(Number); return H * 60 + M; };
   // ¿Hay sesión de esta recurrencia en la fecha d?
-  function tocaEn(a, d) {
+  function tocaBase(a, d) {
     if (!agendaActiva(a, d)) return false;
     const dw = diaSemana(d);
     if (!diasDe(a).some((x) => DIAS_AG.find((z) => z[0] === x)[2] === dw)) return false;
@@ -4553,20 +4556,95 @@ ${x.h}</section>`).join("")}
     if (a.Frecuencia === "Mensual") { const nth = Math.ceil(Number(String(base).slice(8, 10)) / 7); return Math.ceil(Number(d.slice(8, 10)) / 7) === Math.min(nth, 4); }
     return true;
   }
+  // En festivo no hay sesión: no se espera, no cuenta para el cumplimiento ni suma horas.
+  const tocaEn = (a, d) => !jornada().fest.has(d) && tocaBase(a, d);
+  const tocariaEn = (a, d) => jornada().fest.has(d) && tocaBase(a, d);
   const ocurrencias = (a, ini, fin) => { const out = []; for (let d = ini; d <= fin; d = R.sumarDias(d, 1)) if (tocaEn(a, d)) out.push(d); return out; };
-  const resumenAgenda = (a) => `${a.Tipo || "Sesión"}: ${diasDe(a).length === 5 ? "L a V" : diasDe(a).join(", ")}${a.Frecuencia && a.Frecuencia !== "Semanal" ? ` (${a.Frecuencia.toLowerCase()})` : ""} ${horaTxt(a.Hora)}`;
-  const minutosSemana = (a) => (Number(a.Duracion_Min) || 0) * diasDe(a).length * (VECES_SEMANA[a.Frecuencia] || 1);
+  const esUnaVez = (a) => a.Frecuencia === "Una vez";
+  const tituloSes = (a) => a.Titulo || a.Tipo || "Sesión";
+  const resumenAgenda = (a) => (esUnaVez(a) ? `${tituloSes(a)}: ${fecha(a.Desde)} ${horaTxt(a.Hora)}` : `${tituloSes(a)}: ${diasDe(a).length === 5 ? "L a V" : diasDe(a).join(", ")}${a.Frecuencia && a.Frecuencia !== "Semanal" ? ` (${a.Frecuencia.toLowerCase()})` : ""} ${horaTxt(a.Hora)}`);
+  const minutosSemana = (a) => (esUnaVez(a) ? 0 : (Number(a.Duracion_Min) || 0) * diasDe(a).length * (VECES_SEMANA[a.Frecuencia] || 1));
   const durTxt = (min) => { const h = Math.floor(min / 60), m = Math.round(min % 60); return h ? `${h} h${m ? ` ${m} min` : ""}` : `${m} min`; };
 
-  // Estado de seguimiento con agenda: vencido si una sesión programada (no daily) pasó sin registro.
+  // ---------- Configuración de cada sesión (por proyecto) ----------
+  // Hecha_Con: «check» = ✓ basta · «avance» = registro de seguimiento · «sesion» = registro de sesión (sin avance).
+  const HECHA_CON = [["check", "✓ basta"], ["avance", "Registro de avance"], ["sesion", "Registro de sesión"]];
+  const defSes = (a) => (!a.ID_Proyecto || esDaily(a) ? { con: "check", acta: "No", cuenta: "No" } : /seguimiento/i.test(a.Tipo || "") ? { con: "avance", acta: "Sí", cuenta: "Sí" } : { con: "sesion", acta: "No", cuenta: "Sí" });
+  const cfgSes = (a) => {
+    const d = defSes(a), con = HECHA_CON.some(([k]) => k === a.Hecha_Con) ? a.Hecha_Con : d.con;
+    return { con, acta: con !== "check" && (a.Exige_Acta || d.acta) === "Sí", cuenta: !!a.ID_Proyecto && (a.Cuenta_Estado || d.cuenta) === "Sí", horas: a.Suma_Horas !== "No" };
+  };
+  const metaDe = (p) => num0(p.Meta_Cumplimiento) ?? 80;
+  const toleranciaDe = (p) => num0(p.Tolerancia_Dias) ?? 0;
+  const habilesAtras = (d, n) => { let x = d; for (let i = 0; i < n;) { x = R.sumarDias(x, -1); if (horasDia(x) > 0) i += 1; } return x; };
+
+  // Marca de una ocurrencia (✓ / ✕ / ↻): fila de Esfuerzo con Origen «sesion» (o «daily», versión anterior).
+  // Índice de marcas (se rehace en cada render): por sesión y fecha, y la primera fecha marcada de cada sesión.
+  let _marcas = null;
+  const marcas = () => {
+    if (_marcas) return _marcas;
+    const porClave = new Map(), primera = new Map();
+    (S.datos.Esfuerzo || []).forEach((e) => {
+      if (e.Origen !== "sesion" && e.Origen !== "daily") return;
+      porClave.set(`${e.ID_Sesion}|${e.Fecha}`, e);
+      if (!primera.has(e.ID_Sesion) || e.Fecha < primera.get(e.ID_Sesion)) primera.set(e.ID_Sesion, e.Fecha);
+    });
+    return (_marcas = { porClave, primera });
+  };
+  const marcaSes = (a, d) => marcas().porClave.get(`${a.ID_Sesion}|${d}`);
+  // Las sesiones de «✓ basta» se empiezan a medir desde su primera marca (o desde que existe el control de sesiones):
+  // lo anterior sin marcar queda «sin dato» y no baja el cumplimiento.
+  const CONTROL_DESDE = "2026-10-22";
+  const inicioControl = (a) => { const f = marcas().primera.get(a.ID_Sesion), b = String(a.Desde || "") > CONTROL_DESDE ? String(a.Desde) : CONTROL_DESDE; return f && f < b ? f : b; };
+  const estMarca = (m) => (!m ? "" : m.Estado ? ({ Hecha: "hecha", "No se hizo": "no", Reprogramada: "reprog" }[m.Estado] || "") : Number(m.Minutos) ? "hecha" : "no");
+  // Registro (seguimiento o sesión) de esa ocurrencia: el mismo día ±1, de esa sesión o sin sesión asociada.
+  const regSes = (a, d) => {
+    if (!a.ID_Proyecto) return null;
+    const l = (S.datos.Seguimientos || []).filter((s) => s.ID_Proyecto === a.ID_Proyecto && s.Fecha_Corte >= R.sumarDias(d, -1) && s.Fecha_Corte <= R.sumarDias(d, 1));
+    return l.find((s) => s.ID_Sesion === a.ID_Sesion) || l.find((s) => !s.ID_Sesion && s.Fecha_Corte === d) || l.find((s) => !s.ID_Sesion) || null;
+  };
+  // Estado de una ocurrencia: hecha · sinreg (✓ pero falta el registro) · no · reprog · pend (pasó sin marcar) · hoy · futura.
+  function estadoOcu(a, d, hoy = R.hoyISO()) {
+    const c = cfgSes(a), m = marcaSes(a, d), em = estMarca(m);
+    if (em === "reprog" || em === "no") return { st: em, m, c };
+    const reg = c.con !== "check" ? regSes(a, d) : null;
+    if (reg) return { st: "hecha", reg, m, c, sinActa: c.acta && !(reg.Acta_Archivo || reg.URL_Acta) };
+    if (em === "hecha") return { st: c.con === "check" ? "hecha" : "sinreg", m, c, sinActa: c.acta };
+    if (c.con === "check" && d < hoy && d < inicioControl(a)) return { st: "sindato", m, c };
+    return { st: d > hoy ? "futura" : d === hoy ? "hoy" : "pend", m, c };
+  }
+  const ST_TXT = { hecha: "Se hizo", sinreg: "Se hizo · falta el registro", no: "No se hizo", reprog: "Reprogramada", pend: "Sin marcar", hoy: "Hoy", futura: "Programada", sindato: "Sin dato (antes de empezar a marcarla)" };
+  const ST_SIM = { hecha: "✓", sinreg: "✓", no: "✕", reprog: "↻", pend: "!", hoy: "○", futura: "·", sindato: "·" };
+  // Cumplimiento: sesiones hechas sobre las que ya debían ocurrir (sin contar reprogramadas, festivos ni las de hoy aún sin marcar).
+  function cumplimiento(pid, ini, fin, hoy = R.hoyISO(), sesiones) {
+    const r = { total: 0, ok: 0, no: 0, pend: 0, reprog: 0, sinreg: 0, sinActa: 0, pct: null };
+    (sesiones || agendaDe(pid)).forEach((a) => ocurrencias(a, ini, fin > hoy ? hoy : fin).forEach((d) => {
+      const e = estadoOcu(a, d, hoy);
+      if (e.st === "reprog") { r.reprog += 1; return; }
+      if (e.st === "hoy" || e.st === "sindato") return;
+      r.total += 1;
+      if (e.st === "hecha" || e.st === "sinreg") { r.ok += 1; if (e.st === "sinreg") r.sinreg += 1; if (e.sinActa) r.sinActa += 1; }
+      else if (e.st === "no") r.no += 1; else r.pend += 1;
+    }));
+    r.pct = r.total ? Math.round((r.ok / r.total) * 100) : null;
+    return r;
+  }
+
+  // Estado de seguimiento con agenda: vencido si una sesión que «cuenta para el estado» pasó la tolerancia sin darse por hecha.
+  // Las de registro (avance o sesión) quedan cubiertas por cualquier registro posterior del proyecto (como antes); las de ✓ necesitan su marca.
   const estadoSegBase = R.estadoSeguimiento;
   R.estadoSeguimiento = (p, segs, hoy = R.hoyISO()) => {
     const base = estadoSegBase(p, segs, hoy);
-    const ag = agendaDe(p.ID_Proyecto).filter((a) => !esDaily(a) && diasDe(a).length && a.Activa !== "No");
+    const ag = agendaDe(p.ID_Proyecto).filter((a) => cfgSes(a).cuenta && diasDe(a).length && a.Activa !== "No");
     if (!ag.length || base.estado === "No aplica") return base;
     const regs = R.seguimientosDe(p.ID_Proyecto, segs);
-    const pasadas = ag.flatMap((a) => ocurrencias(a, R.sumarDias(hoy, -45), R.sumarDias(hoy, -1))).sort();
-    const sinRegistro = pasadas.filter((d) => !regs.some((s) => s.Fecha_Corte >= R.sumarDias(d, -1)));
+    const limite = habilesAtras(hoy, toleranciaDe(p) + 1);
+    const pendiente = (a, d) => {
+      const e = estadoOcu(a, d, hoy);
+      if (e.st === "hecha" || e.st === "no" || e.st === "reprog" || e.st === "sindato") return false;
+      return cfgSes(a).con === "check" ? true : !regs.some((s) => s.Fecha_Corte >= R.sumarDias(d, -1));
+    };
+    const sinRegistro = ag.flatMap((a) => ocurrencias(a, R.sumarDias(hoy, -45), limite).filter((d) => pendiente(a, d))).sort();
     const proximas = ag.flatMap((a) => ocurrencias(a, hoy, R.sumarDias(hoy, 70))).sort();
     if (sinRegistro.length) { const d = sinRegistro[sinRegistro.length - 1]; return { ...base, proximo: d, faltan: R.difDias(d, hoy), estado: "Vencido", conAgenda: true }; }
     const prox = proximas[0];
@@ -4577,55 +4655,192 @@ ${x.h}</section>`).join("")}
   const kpisBase = R.kpis;
   R.kpis = (proyectos, segs) => { const k = kpisBase(proyectos, segs); const act = proyectos.filter((p) => p.Estado === "Activo"); k.pctAlDia = act.length ? (act.filter((p) => R.estadoSeguimiento(p, segs).estado !== "Vencido").length / act.length) * 100 : 100; return k; };
 
+  // ---------- Ficha › Seguimientos: sesiones del proyecto (configuración) y control de sesiones ----------
+  const siNo = (b) => (b ? "Sí" : "No");
   function seccionAgenda(p, puede) {
     const ag = agendaDe(p.ID_Proyecto), hoy = R.hoyISO();
-    const regs = R.seguimientosDe(p.ID_Proyecto, S.datos.Seguimientos);
-    const minT = ag.filter((a) => agendaActiva(a, hoy)).reduce((t, a) => t + minutosSemana(a), 0);
+    const per = ag.filter((a) => !esUnaVez(a)), extras = ag.filter((a) => esUnaVez(a) && a.Desde >= R.sumarDias(hoy, -30)).sort((a, b) => String(a.Desde).localeCompare(String(b.Desde)));
+    const minT = per.filter((a) => agendaActiva(a, hoy) && cfgSes(a).horas).reduce((t, a) => t + minutosSemana(a), 0);
+    const C = cumplimiento(p.ID_Proyecto, R.sumarDias(hoy, -30), hoy);
+    const meta = metaDe(p), tol = toleranciaDe(p);
+    const EP = (campo, o) => ed({ puede, tabla: "Proyectos", idCol: "ID_Proyecto", id: p.ID_Proyecto, campo, valor: p[campo] ?? "", tipo: "number", extra: () => sello(), ...o });
     const fila = (a) => {
-      const prox = ocurrencias(a, hoy, R.sumarDias(hoy, 70))[0];
-      const ult = ocurrencias(a, R.sumarDias(hoy, -45), R.sumarDias(hoy, -1)).pop();
-      const falta = ult && !esDaily(a) && !regs.some((s) => s.Fecha_Corte >= R.sumarDias(ult, -1));
-      return `<div class="ag-fila ${a.Activa === "No" ? "inactiva" : ""}">
-        <div><span class="pill ag-${normTxt(a.Tipo || "sesion").replace(/[^a-z]/g, "")}">${esc(a.Tipo || "Sesión")}</span>${a.Participantes ? `<div class="sub">${esc(a.Participantes)}</div>` : ""}</div>
-        <div class="ag-dias">${DIAS_AG.map(([k]) => `<span class="ag-dia ${diasDe(a).includes(k) ? "on" : ""}">${k}</span>`).join("")}${a.Frecuencia && a.Frecuencia !== "Semanal" ? ` <span class="sub">${esc(a.Frecuencia.toLowerCase())}</span>` : ""}</div>
-        <div><b>${horaTxt(a.Hora)}</b><div class="sub">${a.Duracion_Min ? `${a.Duracion_Min} min` : ""}${a.Lugar ? ` · ${esc(a.Lugar)}` : ""}</div></div>
-        <div>${a.Activa === "No" ? pill("Inactiva") : esDaily(a) ? `<span class="sub">No exige registro</span>` : falta ? `<span class="pill vencido">Sin registro del ${fecha(ult)}</span>` : `<span class="pill aldía">Al día</span>`}<div class="sub">${prox ? `Próxima: ${fecha(prox)}` : ""}</div></div>
-        <div class="derecha nowrap"><button class="btn chico" data-ag-ics="${esc(a.ID_Sesion)}" title="Descargar para Outlook (.ics)">📅 Outlook</button>${puede ? ` <button class="btn chico" data-ag-edit="${esc(a.ID_Sesion)}">Editar</button>` : ""}</div></div>`;
+      const c = cfgSes(a), prox = ocurrencias(a, hoy, R.sumarDias(hoy, 70))[0];
+      return `<tr class="${a.Activa === "No" ? "fila-inactiva" : ""}">
+        <td><span class="pill ag-${normTxt(a.Tipo || "sesion").replace(/[^a-z]/g, "")}">${esc(a.Tipo || "Sesión")}</span>${a.Titulo ? ` <b>${esc(a.Titulo)}</b>` : ""}${a.Participantes ? `<div class="sub">${esc(a.Participantes)}</div>` : ""}</td>
+        <td class="nowrap"><span class="ag-dias">${DIAS_AG.map(([k]) => `<span class="ag-dia ${diasDe(a).includes(k) ? "on" : ""}">${k}</span>`).join("")}</span><div class="sub">${esc((a.Frecuencia || "Semanal").toLowerCase())}${prox ? ` · próxima ${fecha(prox)}` : ""}</div></td>
+        <td class="nowrap"><b>${horaTxt(a.Hora)}</b><div class="sub">${a.Duracion_Min || 30} min${a.Lugar ? ` · ${esc(a.Lugar)}` : ""}</div></td>
+        <td>${esc(HECHA_CON.find(([k]) => k === c.con)[1])}</td><td>${siNo(c.acta)}</td><td>${siNo(c.cuenta)}</td><td>${siNo(c.horas)}</td><td>${a.Activa === "No" ? pill("Inactiva") : "Sí"}</td>
+        <td class="derecha nowrap"><button class="btn chico" data-ag-ics="${esc(a.ID_Sesion)}" title="Descargar para Outlook (.ics)">📅</button>${puede ? ` <button class="btn chico" data-ag-edit="${esc(a.ID_Sesion)}">Editar</button>` : ""}</td></tr>`;
     };
-    return `<div class="card ag-card"><div class="titulo-fila"><h2>Agenda de seguimiento</h2>${puede ? `<button class="btn chico primario" id="b-ag">+ Sesión recurrente</button>` : ""}</div>
-      ${ag.length ? ag.map(fila).join("") : `<p class="sub">Sin agenda: el seguimiento se controla por la frecuencia «${esc(p.Frecuencia_Seguimiento || "Semanal")}». Agrega las sesiones recurrentes (daily, seguimiento, comité) con sus días y hora.</p>`}
-      ${minT ? `<p class="sub">Tiempo en sesiones de este proyecto: <b>${durTxt(minT)} por semana</b> para el PM (se suma a su carga en Capacidad del equipo). Los daily no exigen registro; los demás sí.</p>` : ""}</div>`;
+    return `<div class="card ag-card"><div class="titulo-fila"><h2>Sesiones del proyecto</h2>${puede ? `<div class="acciones"><button class="btn chico primario" id="b-ag">+ Sesión periódica</button><button class="btn chico" id="b-ag-extra">+ Sesión extra</button></div>` : ""}</div>
+      <p class="sub">Cada sesión define cuándo se da por hecha: con ✓, con el registro de avance o con el registro de sesión; si exige acta, si cuenta para el estado de seguimiento y si suma horas al PM.</p>
+      ${per.length ? `<div class="tabla-scroll"><table class="ses-tabla"><thead><tr><th>Sesión</th><th>Días</th><th>Hora</th><th>Para darla por hecha</th><th>Acta</th><th title="Si no se da por hecha, el proyecto queda con seguimiento vencido">Cuenta para el estado</th><th title="Suma su duración a las horas del PM">Suma horas</th><th>Activa</th><th></th></tr></thead><tbody>${per.map(fila).join("")}</tbody></table></div>`
+        : `<p class="sub">Sin sesiones periódicas: el seguimiento se controla por la frecuencia «${esc(p.Frecuencia_Seguimiento || "Semanal")}». Agrega las del proyecto (daily, seguimiento, comité, mesa técnica, reunión con proveedor…) con sus días, hora y reglas.</p>`}
+      ${extras.length ? `<div class="ses-extras"><b>Sesiones extra:</b> ${extras.map((a) => `<button class="btn chico" data-ag-edit="${esc(a.ID_Sesion)}" ${puede ? "" : "disabled"}>${esc(tituloSes(a))} · ${fecha(a.Desde)} ${horaTxt(a.Hora)}${a.Reprograma_De ? " ↻" : ""}</button>`).join(" ")}</div>` : ""}
+      <table class="ses-cfg"><tr><th>Meta de cumplimiento</th><td${EP("Meta_Cumplimiento", { min: 0, max: 100, valor: meta, etiqueta: "Meta de cumplimiento" })}><b>${meta}%</b></td>
+        <th>Tolerancia para dar por hecha una sesión</th><td${EP("Tolerancia_Dias", { min: 0, max: 15, valor: tol, etiqueta: "Tolerancia (días hábiles)" })}><b>${tol}</b> día(s) hábil(es)${tol ? "" : " · el mismo día"}</td>
+        <th>Últimos 30 días</th><td><b class="${C.pct !== null && C.pct < meta ? "texto-rojo" : ""}">${C.pct === null ? "—" : `${C.pct}%`}</b> <span class="sub">${C.ok} de ${C.total}</span></td></tr></table>
+      ${minT ? `<p class="sub">Tiempo en sesiones de este proyecto: <b>${durTxt(minT)} por semana</b> para el PM (suma en Capacidad del equipo y en Mi semana).</p>` : ""}</div>
+      ${controlSesiones(p, puede)}`;
   }
+  // Grilla del mes: una fila por sesión, una columna por semana; cada ocurrencia con su estado.
+  function controlSesiones(p, puede) {
+    const hoy = R.hoyISO(), mes = (S.ctlMes || {})[p.ID_Proyecto] || hoy.slice(0, 8) + "01", fin = finDeMesISO(mes);
+    const ag = agendaDe(p.ID_Proyecto).filter((a) => ocurrencias(a, mes, fin).length);
+    const semanas = []; for (let l = lunesDe(mes); l <= fin; l = R.sumarDias(l, 7)) semanas.push(l);
+    const C = cumplimiento(p.ID_Proyecto, mes, fin, hoy, ag), meta = metaDe(p);
+    const celda = (a, l) => {
+      const ds = DIAS_EF.map((c, i) => R.sumarDias(l, i)).filter((d) => d >= mes && d <= fin);
+      return ds.map((d) => (tocaEn(a, d) ? botonOcu(p, a, d, puede) : tocariaEn(a, d) ? `<span class="oc oc-fest" title="${esc(`${fecha(d)}: festivo`)}">F</span>` : "")).join("");
+    };
+    const nomMes = `${MESES_LARGOS[Number(mes.slice(5, 7)) - 1]} ${mes.slice(0, 4)}`;
+    return `<div class="card ctl-card"><div class="titulo-fila"><h2>Control de sesiones</h2><div class="acciones"><button class="btn chico" data-ctlmes="${esc(p.ID_Proyecto)}|-1" aria-label="Mes anterior">‹</button><b>${esc(nomMes.charAt(0).toUpperCase() + nomMes.slice(1))}</b><button class="btn chico" data-ctlmes="${esc(p.ID_Proyecto)}|1" aria-label="Mes siguiente">›</button></div></div>
+      ${ag.length ? `<div class="ctl-res"><span>Cumplimiento <b class="${C.pct !== null && C.pct < meta ? "texto-rojo" : "oc-verde"}">${C.pct === null ? "—" : `${C.pct}%`}</b> <span class="sub">meta ${meta}%</span></span>
+          <span><span class="oc oc-hecha">✓</span> ${C.ok} hechas${C.sinreg ? ` (${C.sinreg} sin registro)` : ""}</span><span><span class="oc oc-no">✕</span> ${C.no} no se hicieron</span><span><span class="oc oc-reprog">↻</span> ${C.reprog} reprogramadas</span><span><span class="oc oc-pend">!</span> ${C.pend} sin marcar</span>${C.sinActa ? `<span>📄 ${C.sinActa} sin acta</span>` : ""}</div>
+        <div class="tabla-scroll"><table class="ctl"><thead><tr><th>Sesión</th>${semanas.map((l) => `<th class="${l <= hoy && hoy <= R.sumarDias(l, 4) ? "hoy" : ""}">Sem. ${fechaCorta(l < mes ? mes : l)}</th>`).join("")}</tr></thead>
+          <tbody>${ag.map((a) => `<tr><td><b>${esc(tituloSes(a))}</b><div class="sub">${esc(esUnaVez(a) ? "una vez" : `${diasDe(a).length === 5 ? "L a V" : diasDe(a).join(", ")} · ${(a.Frecuencia || "Semanal").toLowerCase()}`)} · ${horaTxt(a.Hora)}</div></td>${semanas.map((l) => `<td class="ctl-c">${celda(a, l)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>
+        <p class="sub">${puede ? "Clic en una sesión para marcarla: ✓ se hizo, ✕ no se hizo (con motivo) o ↻ reprogramar; en las que se dan por hechas con registro, abre el registro de avance o de sesión." : ""} ✓ ámbar = se hizo pero falta el registro · 📄 = falta el acta · F = festivo.</p>`
+        : `<p class="sub">No hay sesiones programadas en ${esc(nomMes)}.</p>`}</div>`;
+  }
+  // Botón de una ocurrencia (lo usan el control, la Agenda semanal y Mi semana).
+  function botonOcu(p, a, d, puede) {
+    const e = estadoOcu(a, d);
+    const tip = `${tituloSes(a)} · ${NOM_DIA[diaSemana(d)]} ${fecha(d)} ${horaTxt(a.Hora)} · ${ST_TXT[e.st]}${e.m && e.m.Motivo ? ` (${e.m.Motivo})` : ""}${e.st === "reprog" && e.m.Fecha_Nueva ? ` al ${fecha(e.m.Fecha_Nueva)}` : ""}${e.sinActa ? " · falta el acta" : ""}`;
+    return `<button type="button" class="oc oc-${e.st} ${e.sinActa ? "sin-acta" : ""}" data-oc="${esc(p.ID_Proyecto)}|${esc(a.ID_Sesion)}|${d}" title="${esc(tip)}" ${puede ? "" : "disabled"}>${ST_SIM[e.st]}<small>${d.slice(8, 10)}</small></button>`;
+  }
+  const sesionPorId = (sid) => (S.datos.Agenda || []).find((x) => x.ID_Sesion === sid);
+  const duenoSes = (a) => (a.ID_Proyecto ? (proyecto(a.ID_Proyecto) || {}).PM : a.Correo) || "";
+  const semanaCerradaDe = (correo, d) => !!cierres().find((c) => clavePersona(c.Correo, c.Nombre) === clavePersona(correo) && c.Fecha_Semana === lunesDe(d));
+  const puedeMarcar = (a) => { const u = S.usuario; if (!u) return false; if (!a.ID_Proyecto) return R.puede(u, "verTodo") || lc(a.Correo) === lc(u.Correo); const p = proyecto(a.ID_Proyecto); return !!p && R.puedeEditar(u, p, "seguimiento"); };
+
+  // Guardar la marca de una ocurrencia. Reprogramar crea (o mueve) una sesión extra en la nueva fecha.
+  async function guardarMarca(a, d, datos) {
+    const dueno = duenoSes(a), m = marcaSes(a, d);
+    const fila = { Origen: "sesion", Estado: datos.Estado, Minutos: datos.Estado === "Hecha" ? Number(datos.Minutos) || Number(a.Duracion_Min) || 30 : 0, Motivo: datos.Motivo || "", Fecha_Nueva: datos.Estado === "Reprogramada" ? datos.Fecha_Nueva : "", Nota: datos.Nota || "" };
+    if (m) await S.api.actualizarPorId("Esfuerzo", "ID_Esfuerzo", m.ID_Esfuerzo, fila);
+    else await S.api.agregarFila("Esfuerzo", { ID_Esfuerzo: idUnico("ESF"), Fecha: d, Correo: dueno, Nombre: nombreUsuario(dueno), ID_Proyecto: a.ID_Proyecto || "", Tipo: a.Tipo || "Sesión", ID_Sesion: a.ID_Sesion, Registrado_Por: S.usuario.Correo, Fecha_Registro: R.hoyISO(), ...fila });
+    const extra = (S.datos.Agenda || []).find((x) => x.Reprograma_De === `${a.ID_Sesion}|${d}`);
+    if (datos.Estado === "Reprogramada") {
+      const letra = DIAS_AG.find((z) => z[2] === diaSemana(datos.Fecha_Nueva))[0];
+      const nueva = { Desde: datos.Fecha_Nueva, Hasta: datos.Fecha_Nueva, Dias: letra, Hora: datos.Hora || a.Hora };
+      if (extra) await S.api.actualizarPorId("Agenda", "ID_Sesion", extra.ID_Sesion, nueva);
+      else await S.api.agregarFila("Agenda", { ID_Sesion: idUnico("AGD"), ID_Proyecto: a.ID_Proyecto || "", Tipo: a.Tipo, Titulo: a.Titulo || "", Frecuencia: "Una vez", Duracion_Min: a.Duracion_Min, Lugar: a.Lugar, Participantes: a.Participantes,
+        Activa: "Sí", Hecha_Con: a.Hecha_Con || "", Exige_Acta: a.Exige_Acta || "", Cuenta_Estado: a.Cuenta_Estado || "", Suma_Horas: a.Suma_Horas || "", Correo: a.Correo || "", Fila: a.Fila || "", Reprograma_De: `${a.ID_Sesion}|${d}`, Registrado_Por: S.usuario.Correo, ...nueva });
+    } else if (extra && !marcaSes(extra, extra.Desde)) await S.api.eliminarFilas("Agenda", "ID_Sesion", [extra.ID_Sesion]);
+  }
+  async function quitarMarca(a, d) {
+    const m = marcaSes(a, d); if (m) await S.api.eliminarFilas("Esfuerzo", "ID_Esfuerzo", [m.ID_Esfuerzo]);
+    const extra = (S.datos.Agenda || []).find((x) => x.Reprograma_De === `${a.ID_Sesion}|${d}`);
+    if (extra && !marcaSes(extra, extra.Desde)) await S.api.eliminarFilas("Agenda", "ID_Sesion", [extra.ID_Sesion]);
+  }
+  // Marca rápida desde la Agenda semanal o Mi semana (✓ / ✕). Repetir la misma marca la quita.
+  async function marcarRapido(a, d, hecho) {
+    if (semanaCerradaDe(duenoSes(a), d)) { toast(`La semana del ${fecha(lunesDe(d))} de ${nombreUsuario(duenoSes(a))} ya está cerrada en «Mi semana».`, true); return; }
+    const e = estadoOcu(a, d), y = window.scrollY;
+    try {
+      if ((hecho && e.m && estMarca(e.m) === "hecha") || (!hecho && e.st === "no")) await quitarMarca(a, d);
+      else await guardarMarca(a, d, { Estado: hecho ? "Hecha" : "No se hizo", Minutos: a.Duracion_Min, Motivo: hecho ? "" : (e.m && e.m.Motivo) || "" });
+      render(); window.scrollTo(0, y);
+      if (hecho && e.c.con !== "check" && !e.reg) toast(`Marcada como hecha. Falta el ${e.c.con === "avance" ? "registro de avance" : "registro de la sesión"}: clic en la sesión para hacerlo.`);
+    } catch (er) { toast("No se pudo guardar: " + er.message, true); }
+  }
+  // Ventana de una ocurrencia: ✓ se hizo · ✕ no se hizo (motivo) · ↻ reprogramar · registrar avance o sesión.
+  function modalOcurrencia(a, d) {
+    const p = a.ID_Proyecto ? proyecto(a.ID_Proyecto) : pseudoP(a);
+    if (!p) return;
+    const e = estadoOcu(a, d), c = e.c, m = e.m || {};
+    const dueno = duenoSes(a);
+    const campos = [
+      { k: "Estado", label: "¿Qué pasó?", tipo: "select", ancho: true, opciones: [["Hecha", "✓ Se hizo"], ["No se hizo", "✕ No se hizo"], ["Reprogramada", "↻ Se reprogramó"]], def: m.Estado || (estMarca(m) === "no" ? "No se hizo" : "Hecha") },
+      { k: "Minutos", label: "Duración real (min)", tipo: "number", min: 1, max: 600, def: Number(m.Minutos) || Number(a.Duracion_Min) || 30 },
+      { k: "Motivo", label: "Motivo", tipo: "select", opciones: S.cat.Motivo_Sesion || CATALOGOS_BASE.Motivo_Sesion, def: m.Motivo || "" },
+      { k: "Fecha_Nueva", label: "Nueva fecha", tipo: "date", def: m.Fecha_Nueva || "" },
+      { k: "Hora", label: "Nueva hora", tipo: "time", def: hhmm(a.Hora) },
+      { k: "Nota", label: "Nota (opcional)", tipo: "textarea", def: m.Nota || "" },
+    ];
+    const reg = e.reg;
+    const antes = `<div class="contexto"><div><span class="sub">Sesión</span><b>${esc(tituloSes(a))}${a.ID_Proyecto ? ` · ${esc(p.Nombre)}` : ""}</b></div><div><span class="sub">Fecha</span><b>${NOM_DIA[diaSemana(d)]} ${fecha(d)} · ${horaTxt(a.Hora)}</b></div><div><span class="sub">Estado</span><b>${esc(ST_TXT[e.st])}</b></div></div>
+      ${c.con !== "check" ? `<div class="ses-reg ${reg ? "ok" : ""}">${reg ? `✓ Registrada el ${fecha(reg.Fecha_Corte)}${c.acta ? (reg.Acta_Archivo || reg.URL_Acta ? " · con acta" : " · <b>falta el acta</b>") : ""}.` : `Esta sesión se da por hecha con el <b>${c.con === "avance" ? "registro de avance" : "registro de la sesión"}</b>${c.acta ? " (con acta)" : ""}.`}
+        ${a.ID_Proyecto && !reg && d <= R.hoyISO() ? `<button type="button" class="btn primario" id="oc-registrar">${c.con === "avance" ? "Registrar avance" : "Registrar sesión"}</button>` : reg && c.acta && !(reg.Acta_Archivo || reg.URL_Acta) ? `<button type="button" class="btn" id="oc-acta">Adjuntar acta</button>` : ""}</div>` : ""}`;
+    modal(`Sesión del ${fecha(d)}`, campos, {}, (fd) => {
+      guardar(() => guardarMarca(a, d, fd), fd.Estado === "Reprogramada" ? `Reprogramada al ${fecha(fd.Fecha_Nueva)}` : fd.Estado === "Hecha" ? "Sesión marcada como hecha" : "Sesión marcada como no realizada");
+    }, (fd) => {
+      if (semanaCerradaDe(dueno, d) && fd.Estado !== m.Estado) return `La semana del ${fecha(lunesDe(d))} ya está cerrada en «Mi semana». Reábrela para cambiar esta sesión.`;
+      if (fd.Estado === "Reprogramada") {
+        if (!fd.Fecha_Nueva) return "Elige la nueva fecha.";
+        if (fd.Fecha_Nueva === d) return "La nueva fecha debe ser distinta.";
+        if (![1, 2, 3, 4, 5].includes(diaSemana(fd.Fecha_Nueva))) return "La nueva fecha debe ser de lunes a viernes.";
+      }
+      if (fd.Estado === "No se hizo" && !fd.Motivo) return "Elige el motivo.";
+      return "";
+    }, {
+      antes, textoBoton: "Guardar",
+      ...(e.m ? { eliminar: { texto: "Quitar marca", titulo: "Quitar marca", mensaje: "La sesión vuelve a quedar sin marcar (se estima lo programado).", accion: () => guardar(() => quitarMarca(a, d), "Marca quitada") } } : {}),
+      init: (mm) => {
+        const est = mm.querySelector("[name=Estado]");
+        const ver = () => {
+          const v = est.value, lab = (k) => mm.querySelector(`[name=${k}]`).closest("label");
+          lab("Minutos").hidden = v !== "Hecha"; lab("Motivo").hidden = v !== "No se hizo"; lab("Fecha_Nueva").hidden = v !== "Reprogramada"; lab("Hora").hidden = v !== "Reprogramada";
+        };
+        est.addEventListener("change", ver); ver();
+        const br = mm.querySelector("#oc-registrar");
+        if (br) br.addEventListener("click", () => { cerrarModal(); formSeguimiento(p, c.con === "avance" && p.Estado === "Activo" ? "Seguimiento" : "Sesión", { fecha: d, sesion: a }); });
+        const ba = mm.querySelector("#oc-acta");
+        if (ba) ba.addEventListener("click", () => { cerrarModal(); adjuntarActa(reg.ID_Seguimiento, false); });
+      },
+    });
+  }
+
   function enlazarAgenda(el, p) {
     if ($("#b-ag")) $("#b-ag").addEventListener("click", () => formAgenda(p));
+    if ($("#b-ag-extra")) $("#b-ag-extra").addEventListener("click", () => formAgenda(p, null, true));
     el.querySelectorAll("[data-ag-edit]").forEach((b) => b.addEventListener("click", () => formAgenda(p, agendaDe(p.ID_Proyecto).find((a) => a.ID_Sesion === b.dataset.agEdit))));
     el.querySelectorAll("[data-ag-ics]").forEach((b) => b.addEventListener("click", () => descargarICS(p, agendaDe(p.ID_Proyecto).find((a) => a.ID_Sesion === b.dataset.agIcs))));
   }
-  function formAgenda(p, a) {
-    const nuevo = !a;
+  // Sesión periódica o extra (una sola vez) del proyecto, con sus reglas.
+  function formAgenda(p, a, extra) {
+    const nuevo = !a, unaVez = extra || (a && esUnaVez(a));
+    const cfg0 = cfgSes(a || { ID_Proyecto: p.ID_Proyecto, Tipo: "Seguimiento" });
+    const tipos = [...new Set([...(S.cat.Tipo_Sesion_Agenda || CATALOGOS_BASE.Tipo_Sesion_Agenda), "Reunión con proveedor"])];
     const campos = [
-      { k: "Tipo", label: "Tipo de sesión", tipo: "select", opciones: S.cat.Tipo_Sesion_Agenda || CATALOGOS_BASE.Tipo_Sesion_Agenda, def: "Seguimiento" },
-      { k: "Frecuencia", label: "Frecuencia", tipo: "select", opciones: FREC_AG, def: "Semanal", ayuda: "Quincenal: semana de por medio desde «Desde». Mensual: la misma semana del mes que «Desde»." },
-      { k: "Dias", label: "Días", tipo: "checks", opciones: DIAS_AG.map(([k, t]) => [k, t]), def: "" },
+      { k: "Tipo", label: "Tipo de sesión", tipo: "select", opciones: tipos, def: "Seguimiento" },
+      { k: "Titulo", label: "Nombre (opcional)", placeholder: "Ej.: Comité directivo, Mesa con Sonda" },
+      ...(unaVez ? [{ k: "Desde", label: "Fecha", tipo: "date", def: R.hoyISO() }] : [
+        { k: "Frecuencia", label: "Frecuencia", tipo: "select", opciones: FREC_AG, def: "Semanal", ayuda: "Quincenal: semana de por medio desde «Desde». Mensual: la misma semana del mes que «Desde»." },
+        { k: "Dias", label: "Días", tipo: "checks", opciones: DIAS_AG.map(([k, t]) => [k, t]), def: "" }]),
       { k: "Hora", label: "Hora", tipo: "time", def: "08:00" },
       { k: "Duracion_Min", label: "Duración (minutos)", tipo: "number", min: 5, max: 480, def: 30 },
       { k: "Lugar", label: "Lugar o enlace", placeholder: "Teams, Sala 3…" },
       { k: "Participantes", label: "Participantes", ancho: true, placeholder: "Equipo técnico, proveedor, sponsor…" },
-      { k: "Desde", label: "Desde", tipo: "date", def: R.hoyISO() },
-      { k: "Hasta", label: "Hasta (opcional)", tipo: "date", ayuda: "Vacío = mientras dure el proyecto." },
+      { seccion: "Reglas de esta sesión" },
+      { k: "Hecha_Con", label: "Para darla por hecha", tipo: "select", opciones: HECHA_CON, def: cfg0.con, ayuda: "✓ basta: un clic. Registro: abre el formulario de avance o de sesión." },
+      { k: "Exige_Acta", label: "¿Exige acta?", tipo: "select", opciones: ["Sí", "No"], def: siNo(cfg0.acta) },
+      { k: "Cuenta_Estado", label: "¿Cuenta para el estado de seguimiento?", tipo: "select", opciones: ["Sí", "No"], def: siNo(cfg0.cuenta), ayuda: "Si no se da por hecha a tiempo, el proyecto queda con seguimiento vencido." },
+      { k: "Suma_Horas", label: "¿Suma horas al PM?", tipo: "select", opciones: ["Sí", "No"], def: siNo(cfg0.horas) },
+      ...(unaVez ? [] : [{ k: "Desde", label: "Desde", tipo: "date", def: R.hoyISO() }, { k: "Hasta", label: "Hasta (opcional)", tipo: "date", ayuda: "Vacío = mientras dure el proyecto." }]),
       { k: "Activa", label: "¿Activa?", tipo: "select", opciones: ["Sí", "No"], def: "Sí" },
     ];
-    modal(nuevo ? "Nueva sesión recurrente" : "Editar sesión recurrente", campos, a || {}, (fd) => {
-      fd.Dias = String(fd.Dias).split(/,\s*/).filter(Boolean).join(",");
-      if (nuevo) guardar(() => S.api.agregarFila("Agenda", { ID_Sesion: R.siguienteIdHijo("AGD", S.datos.Agenda || [], "ID_Sesion", p.ID_Proyecto), ID_Proyecto: p.ID_Proyecto, ...fd, Registrado_Por: S.usuario.Correo }), "Sesión agendada");
-      else guardar(() => S.api.actualizarPorId("Agenda", "ID_Sesion", a.ID_Sesion, fd), "Agenda actualizada");
-    }, (fd) => (!fd.Dias ? "Marca al menos un día." : !hhmm(fd.Hora) ? "Escribe la hora." : fd.Hasta && fd.Desde && fd.Hasta < fd.Desde ? "«Hasta» no puede ser anterior a «Desde»." : ""),
+    const vals = a ? { ...a, Hecha_Con: cfg0.con, Exige_Acta: siNo(cfg0.acta), Cuenta_Estado: siNo(cfg0.cuenta), Suma_Horas: siNo(cfg0.horas) } : {};
+    modal(nuevo ? (unaVez ? "Nueva sesión extra (una sola vez)" : "Nueva sesión periódica") : unaVez ? "Editar sesión extra" : "Editar sesión periódica", campos, vals, (fd) => {
+      if (unaVez) { fd.Frecuencia = "Una vez"; fd.Hasta = fd.Desde; fd.Dias = DIAS_AG.find((z) => z[2] === diaSemana(fd.Desde))[0]; }
+      else fd.Dias = String(fd.Dias).split(/,\s*/).filter(Boolean).join(",");
+      if (fd.Hecha_Con === "check") fd.Exige_Acta = "No";
+      if (nuevo) guardar(() => S.api.agregarFila("Agenda", { ID_Sesion: R.siguienteIdHijo("AGD", S.datos.Agenda || [], "ID_Sesion", p.ID_Proyecto), ID_Proyecto: p.ID_Proyecto, ...fd, Registrado_Por: S.usuario.Correo }), unaVez ? "Sesión extra agendada" : "Sesión agendada");
+      else guardar(() => S.api.actualizarPorId("Agenda", "ID_Sesion", a.ID_Sesion, fd), "Sesión actualizada");
+    }, (fd) => (unaVez ? (!fd.Desde ? "Elige la fecha." : ![1, 2, 3, 4, 5].includes(diaSemana(fd.Desde)) ? "La fecha debe ser de lunes a viernes." : "") : !fd.Dias ? "Marca al menos un día." : "") || (!hhmm(fd.Hora) ? "Escribe la hora." : fd.Hasta && fd.Desde && fd.Hasta < fd.Desde ? "«Hasta» no puede ser anterior a «Desde»." : ""),
     { init: (m) => {
-        const t = m.querySelector('[name="Tipo"]');
-        t.addEventListener("change", () => { if (/daily/i.test(t.value)) { m.querySelectorAll('[data-checks="Dias"] input').forEach((i) => { i.checked = true; }); const d = m.querySelector('[name="Duracion_Min"]'); if (d && (!d.value || d.value === "30")) d.value = 15; } });
+        const t = m.querySelector('[name="Tipo"]'), hc = m.querySelector('[name="Hecha_Con"]'), ea = m.querySelector('[name="Exige_Acta"]'), ce = m.querySelector('[name="Cuenta_Estado"]');
+        const actaSegun = () => { ea.disabled = hc.value === "check"; if (hc.value === "check") ea.value = "No"; };
+        t.addEventListener("change", () => {
+          if (/daily/i.test(t.value) && !unaVez) { m.querySelectorAll('[data-checks="Dias"] input').forEach((i) => { i.checked = true; }); const d = m.querySelector('[name="Duracion_Min"]'); if (d && (!d.value || d.value === "30")) d.value = 15; }
+          if (nuevo) { const c = cfgSes({ ID_Proyecto: p.ID_Proyecto, Tipo: t.value }); hc.value = c.con; ea.value = siNo(c.acta); ce.value = siNo(c.cuenta); actaSegun(); }
+        });
+        hc.addEventListener("change", actaSegun); actaSegun();
       },
-      ...(nuevo ? {} : { eliminar: { texto: "Eliminar sesión", mensaje: "Se quitará esta sesión recurrente de la agenda. Los seguimientos ya registrados no se tocan.", accion: () => guardar(() => S.api.eliminarFilas("Agenda", "ID_Sesion", [a.ID_Sesion]), "Sesión eliminada") } }) });
+      ...(nuevo ? {} : { eliminar: { texto: "Eliminar sesión", mensaje: "Se quitará esta sesión de la agenda. Los seguimientos ya registrados no se tocan. Si ya no se hace, mejor pon «Hasta» o márcala inactiva para conservar el histórico.", accion: () => guardar(() => S.api.eliminarFilas("Agenda", "ID_Sesion", [a.ID_Sesion]), "Sesión eliminada") } }) });
   }
+
   // Archivo de calendario (.ics) con la recurrencia, para agregarla a Outlook.
   function descargarICS(p, a) {
     if (!a) return;
@@ -4642,8 +4857,8 @@ ${x.h}</section>`).join("")}
     const ics = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//FSFB//Portafolio PMO//ES", "CALSCALE:GREGORIAN", "METHOD:PUBLISH",
       "BEGIN:VTIMEZONE", "TZID:America/Bogota", "BEGIN:STANDARD", "DTSTART:19700101T000000", "TZOFFSETFROM:-0500", "TZOFFSETTO:-0500", "TZNAME:COT", "END:STANDARD", "END:VTIMEZONE",
       "BEGIN:VEVENT", `UID:${a.ID_Sesion}@portafolio-fsfb`, `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, "").slice(0, 15)}Z`,
-      `DTSTART;TZID=America/Bogota:${ini}`, `DTEND;TZID=America/Bogota:${fin}`, `RRULE:${rrule}${hasta ? `;UNTIL=${String(hasta).replace(/-/g, "")}T235959Z` : ""}`,
-      `SUMMARY:${escI(`${a.Tipo || "Sesión"} · ${p.Nombre}`)}`, a.Lugar ? `LOCATION:${escI(a.Lugar)}` : "",
+      `DTSTART;TZID=America/Bogota:${ini}`, `DTEND;TZID=America/Bogota:${fin}`, esUnaVez(a) ? "" : `RRULE:${rrule}${hasta ? `;UNTIL=${String(hasta).replace(/-/g, "")}T235959Z` : ""}`,
+      `SUMMARY:${escI(`${tituloSes(a)} · ${p.Nombre}`)}`, a.Lugar ? `LOCATION:${escI(a.Lugar)}` : "",
       `DESCRIPTION:${escI(`Proyecto ${p.ID_Proyecto} · ${p.Nombre}\nPM: ${nombreUsuario(p.PM)}${a.Participantes ? `\nParticipantes: ${a.Participantes}` : ""}`)}`,
       "END:VEVENT", "END:VCALENDAR"].filter(Boolean).join("\r\n");
     descargar(new TextEncoder().encode(ics), `${normTxt(`${a.Tipo || "sesion"} ${p.Nombre}`).replace(/[^a-z0-9]+/g, "_").slice(0, 50)}.ics`, "text/calendar");
@@ -4661,10 +4876,10 @@ ${x.h}</section>`).join("")}
     const todoAg = R.puede(S.usuario, "verTodo");
     agendaGeneral().filter((a) => (todoAg ? (!S.filtros.pm || lc(S.filtros.pm) === lc(a.Correo)) && !S.filtros.proyecto : lc(a.Correo) === lc(S.usuario.Correo)))
       .forEach((a) => dias.forEach((d) => { if (tocaEn(a, d.f)) ev.push({ p: pseudoP(a), a, f: d.f, gen: true, ini: minDe(a.Hora), fin: minDe(a.Hora) + (Number(a.Duracion_Min) || 30) }); }));
-    const regs = (pid) => R.seguimientosDe(pid, S.datos.Seguimientos);
     ev.forEach((e) => {
-      e.reg = !e.gen && regs(e.p.ID_Proyecto).some((s) => s.Fecha_Corte === e.f || (s.Fecha_Corte >= R.sumarDias(e.f, -1) && s.Fecha_Corte <= R.sumarDias(e.f, 1)));
-      e.falta = !marcable(e.a) && e.f < hoy && !e.reg;
+      e.e = estadoOcu(e.a, e.f, hoy); e.st = e.e.st;
+      e.reg = e.st === "hecha";
+      e.falta = e.st === "pend" || (e.st === "sinreg" && e.f < hoy);
       e.choque = ev.some((o) => o !== e && o.f === e.f && lc(o.p.PM) === lc(e.p.PM) && o.ini < e.fin && e.ini < o.fin);
     });
     const horas = [...new Set(ev.map((e) => hhmm(e.a.Hora)))].sort();
@@ -4673,51 +4888,51 @@ ${x.h}</section>`).join("")}
     const nCh = ev.filter((e) => e.choque).length, nFal = ev.filter((e) => e.falta).length;
     const evHTML = (e) => `<button type="button" class="ag-ev ag-${normTxt(e.a.Tipo || "sesion").replace(/[^a-z]/g, "")} ${e.gen ? "ag-gen" : ""} ${e.choque ? "choque" : ""} ${e.falta ? "falta" : ""} ${e.reg ? "hecho" : ""}" data-ag-ev="${esc(e.p.ID_Proyecto)}|${esc(e.a.ID_Sesion)}|${e.f}"
         title="${esc(`${e.p.Nombre} · ${e.a.Tipo} · ${horaTxt(e.a.Hora)} · ${e.a.Duracion_Min || 30} min · PM ${nombreUsuario(e.p.PM)}${e.choque ? " · cruce de horario del PM" : ""}${e.falta ? " · sin registro" : ""}`)}">
-        <b>${esc(corta(e.p.Nombre, 26))}</b><span>${esc(e.a.Tipo || "Sesión")}${e.reg ? " ✓" : ""}${e.choque ? " · cruce" : ""}${e.falta ? " · sin registro" : ""}</span></button>`;
+        <b>${esc(corta(e.p.Nombre, 26))}</b><span>${esc(e.a.Titulo || e.a.Tipo || "Sesión")}${e.st === "hecha" ? " ✓" : e.st === "sinreg" ? " ✓ · falta registro" : e.st === "no" ? " ✕" : e.st === "reprog" ? " ↻" : ""}${e.e.sinActa ? " · sin acta" : ""}${e.choque ? " · cruce" : ""}${e.st === "pend" ? " · sin marcar" : ""}</span></button>`;
     // Dailies: ✓ se hizo / ✕ no se hizo (suma o quita su tiempo en las horas del PM).
-    ev.forEach((e) => { if (marcable(e.a)) { const m = marcaDaily(e.p, e.a, e.f); e.dl = m ? (Number(m.Minutos) ? "si" : "no") : ""; e.reg = e.dl === "si"; } });
-    const puedeDl = (e) => e.f <= hoy && horasDia(e.f) > 0 && R.puedeEditar(S.usuario, e.p, "seguimiento");
-    const evCaja = (e) => (!marcable(e.a) ? evHTML(e) : `<div class="ag-evw ${e.dl ? "dl-" + e.dl : ""}">${evHTML(e)}${puedeDl(e) ? `<span class="ag-ck"><button class="dl-b si ${e.dl === "si" ? "on" : ""}" data-dl="${esc(e.p.ID_Proyecto)}|${esc(e.a.ID_Sesion)}|${e.f}|1" title="Se hizo (suma ${e.a.Duracion_Min || 15} min)">✓</button><button class="dl-b no ${e.dl === "no" ? "on" : ""}" data-dl="${esc(e.p.ID_Proyecto)}|${esc(e.a.ID_Sesion)}|${e.f}|0" title="No se hizo">✕</button></span>` : ""}</div>`);
+    ev.forEach((e) => { e.dl = e.st === "hecha" || e.st === "sinreg" ? "si" : e.st === "no" ? "no" : e.st === "reprog" ? "reprog" : ""; });
+    const puedeDl = (e) => e.f <= hoy && puedeMarcar(e.a);
+    const evCaja = (e) => (false ? evHTML(e) : `<div class="ag-evw ${e.dl ? "dl-" + e.dl : ""}">${evHTML(e)}${puedeDl(e) ? `<span class="ag-ck"><button class="dl-b si ${e.dl === "si" ? "on" : ""}" data-dl="${esc(e.p.ID_Proyecto)}|${esc(e.a.ID_Sesion)}|${e.f}|1" title="Se hizo (suma ${e.a.Duracion_Min || 15} min)">✓</button><button class="dl-b no ${e.dl === "no" ? "on" : ""}" data-dl="${esc(e.p.ID_Proyecto)}|${esc(e.a.ID_Sesion)}|${e.f}|0" title="No se hizo">✕</button></span>` : ""}</div>`);
     // Totales de la semana por PM: plan (agenda) vs real (dailies ✓ + sesiones registradas con su duración).
     const totPM = {};
     ev.forEach((e) => {
       const k = lc(e.p.PM), t = (totPM[k] = totPM[k] || { plan: 0, real: 0, si: 0, no: 0, sin: 0, n: 0, reg: 0, falta: 0 });
       const dur = Number(e.a.Duracion_Min) || 30;
       t.plan += dur; t.n += 1;
-      if (marcable(e.a)) { if (e.dl === "si") { t.si += 1; t.real += dur; } else if (e.dl === "no") t.no += 1; else if (e.f <= hoy) t.sin += 1; }
-      else if (e.reg) { const sg = R.seguimientosDe(e.p.ID_Proyecto, S.datos.Seguimientos).find((x) => x.Fecha_Corte === e.f); t.real += sg ? minSeg(sg, e.a) : dur; t.reg += 1; }
-      else if (e.falta) t.falta += 1;
+      if (e.dl === "si") { t.si += 1; t.real += e.e.reg ? minSeg(e.e.reg, e.a) : Number(e.e.m && e.e.m.Minutos) || dur; if (e.e.reg) t.reg += 1; }
+      else if (e.dl === "no") t.no += 1; else if (e.dl === "reprog") t.reprog = (t.reprog || 0) + 1; else if (e.f <= hoy) t.sin += 1;
+      if (e.falta) t.falta += 1;
     });
     el.innerHTML = `<h1>Agenda semanal</h1>${barraFiltros()}
       <div class="filtros ag-nav"><button class="btn chico" id="ag-ant">← Semana anterior</button><b>Semana del ${fecha(dias[0].f)} al ${fecha(dias[4].f)}</b><button class="btn chico" id="ag-sig">Semana siguiente →</button>${lun !== lunesDe(hoy) ? `<button class="btn chico" id="ag-hoy">Esta semana</button>` : ""}</div>
       <div class="kpis kpis-3">
         <div class="kpi estatico"><span class="kpi-t">Sesiones esta semana</span><span class="kpi-v">${ev.length}</span><span class="sub">${ev.filter((e) => esDaily(e.a)).length} daily</span></div>
-        <div class="kpi estatico ${nFal ? "alerta" : ""}"><span class="kpi-t">Sin registro</span><span class="kpi-v">${nFal}</span><span class="sub">seguimientos y comités ya pasados</span></div>
+        <div class="kpi estatico ${nFal ? "alerta" : ""}"><span class="kpi-t">Sin marcar o sin registro</span><span class="kpi-v">${nFal}</span><span class="sub">sesiones que ya pasaron</span></div>
         <div class="kpi estatico ${nCh ? "alerta" : ""}"><span class="kpi-t">Cruces de horario</span><span class="kpi-v">${nCh}</span><span class="sub">mismo PM, misma hora</span></div>
         <div class="kpi estatico"><span class="kpi-t">Horas en sesiones por PM</span><span class="kpi-v kpi-chico">${Object.entries(porPM).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([k, m]) => `${esc(corta(nombreUsuario(k), 22))} ${durTxt(m)}`).join(" · ") || "—"}</span></div>
       </div>
       <div class="card">${ev.length ? `<div class="ag-grid"><div class="ag-h"></div>${dias.map((d) => `<div class="ag-h ${d.f === hoy ? "hoy" : ""}">${d.t} ${d.f.slice(8, 10)}</div>`).join("")}
         ${horas.map((h) => `<div class="ag-hora">${horaTxt(h)}</div>${dias.map((d) => `<div class="ag-celda ${d.f === hoy ? "hoy" : ""}">${ev.filter((e) => e.f === d.f && hhmm(e.a.Hora) === h).sort((a, b) => String(a.p.Nombre).localeCompare(String(b.p.Nombre), "es")).map(evCaja).join("")}</div>`).join("")}`).join("")}</div>
-        <div class="ag-leyenda"><span class="ag-ev ag-daily">Daily</span><span class="ag-ev ag-seguimiento">Seguimiento</span><span class="ag-ev ag-comite">Comité</span><span class="ag-ev ag-mesatecnica">Mesa técnica</span><span class="ag-ev ag-gen">Sin proyecto</span><span class="ag-ev choque">Cruce de horario</span><span class="ag-ev falta">Sin registro</span><span class="sub">✓ = registrado. En los daily marca ✓ si se hizo o ✕ si no (suma o quita su tiempo). Clic en una sesión para registrarla.</span></div>`
+        <div class="ag-leyenda"><span class="ag-ev ag-daily">Daily</span><span class="ag-ev ag-seguimiento">Seguimiento</span><span class="ag-ev ag-comite">Comité</span><span class="ag-ev ag-mesatecnica">Mesa técnica</span><span class="ag-ev ag-gen">Sin proyecto</span><span class="ag-ev choque">Cruce de horario</span><span class="ag-ev falta">Sin registro</span><span class="sub">Marca ✓ si se hizo o ✕ si no (suma o quita su tiempo). Clic en una sesión para reprogramarla, poner el motivo o hacer su registro de avance o de sesión.</span></div>`
         : vacio("No hay sesiones programadas esta semana. Agrégalas en la pestaña «Seguimientos» de cada proyecto (Agenda de seguimiento).")}</div>
       ${Object.keys(totPM).length ? `<div class="card"><div class="titulo-fila"><h2>Totales de la semana por PM</h2><button class="btn chico" data-ir-vista="misemana">Ver Mi semana</button></div>
-        <p class="sub">Planeado = lo que dice la agenda. Real = dailies marcados ✓ más las sesiones registradas con su duración y preparación.</p>
-        <div class="tabla-scroll"><table><thead><tr><th>PM</th><th>Sesiones</th><th>Planeado</th><th>Real</th><th>Dailies</th><th>Otras sesiones</th></tr></thead><tbody>
+        <p class="sub">Planeado = lo que dice la agenda. Real = sesiones hechas (✓ o registradas, con su duración y preparación).</p>
+        <div class="tabla-scroll"><table><thead><tr><th>PM</th><th>Sesiones</th><th>Planeado</th><th>Real</th><th>✓ / ✕ / ↻</th><th>Registros</th></tr></thead><tbody>
         ${Object.entries(totPM).sort((a, b) => b[1].plan - a[1].plan).map(([k, t]) => `<tr><td>${persona(nombreUsuario(k))}</td><td>${t.n}</td><td><b>${durTxt(t.plan)}</b></td><td><b class="${t.real > t.plan ? "texto-rojo" : ""}">${durTxt(t.real)}</b></td>
-          <td class="nowrap">${t.si || t.no || t.sin ? `<span class="dl-est si">✓ ${t.si}</span> <span class="dl-est no">✕ ${t.no}</span>${t.sin ? ` <span class="sub">${t.sin} sin marcar</span>` : ""}` : `<span class="sub">—</span>`}</td>
-          <td class="nowrap">${t.reg ? `${t.reg} registrada(s)` : ""}${t.falta ? ` <span class="pill vencido">${t.falta} sin registro</span>` : ""}${!t.reg && !t.falta ? `<span class="sub">—</span>` : ""}</td></tr>`).join("")}</tbody>
+          <td class="nowrap">${t.si || t.no || t.sin ? `<span class="dl-est si">✓ ${t.si}</span> <span class="dl-est no">✕ ${t.no}</span>${t.reprog ? ` ↻ ${t.reprog}` : ""}${t.sin ? ` <span class="sub">${t.sin} sin marcar</span>` : ""}` : `<span class="sub">—</span>`}</td>
+          <td class="nowrap">${t.reg ? `${t.reg} registrada(s)` : ""}${t.falta ? ` <span class="pill vencido">${t.falta} pendiente(s)</span>` : ""}${!t.reg && !t.falta ? `<span class="sub">—</span>` : ""}</td></tr>`).join("")}</tbody>
         <tfoot><tr><th>Total</th><th>${sumaA(Object.values(totPM).map((t) => t.n))}</th><th>${durTxt(sumaA(Object.values(totPM).map((t) => t.plan)))}</th><th>${durTxt(sumaA(Object.values(totPM).map((t) => t.real)))}</th><th></th><th></th></tr></tfoot></table></div></div>` : ""}`;
     enlazarFiltros();
     $("#ag-ant").addEventListener("click", () => { S.agLunes = R.sumarDias(lun, -7); render(); });
     $("#ag-sig").addEventListener("click", () => { S.agLunes = R.sumarDias(lun, 7); render(); });
     if ($("#ag-hoy")) $("#ag-hoy").addEventListener("click", () => { S.agLunes = ""; render(); });
     el.querySelectorAll("[data-ag-ev]").forEach((b) => b.addEventListener("click", () => {
-      const [pid, , f] = b.dataset.agEv.split("|"), p = proyecto(pid), a = agendaDe(pid).find((x) => x.ID_Sesion === b.dataset.agEv.split("|")[1]);
-      if (!pid) { const g = agendaGeneral().find((x) => x.ID_Sesion === b.dataset.agEv.split("|")[1]); if (g && (R.puede(S.usuario, "verTodo") || lc(g.Correo) === lc(S.usuario.Correo))) formAgendaGeneral(g); return; }
-      if (!p) return;
-      if (f > hoy || !R.puedeEditar(S.usuario, p, "seguimiento")) { S.fichaTab = "seguimientos"; S.fichaPid = pid; return ir("ficha", pid); }
-      formSeguimiento(p, a && /seguimiento/i.test(a.Tipo) && p.Estado === "Activo" ? "Seguimiento" : "Sesión", { fecha: f, sesion: a });
+      const [pid, sid, f] = b.dataset.agEv.split("|"), a = sesionPorId(sid);
+      if (!a) return;
+      if (puedeMarcar(a) && f <= hoy) return modalOcurrencia(a, f);
+      if (pid) { S.fichaTab = "seguimientos"; S.fichaPid = pid; ir("ficha", pid); } else if (puedeMarcar(a)) formAgendaGeneral(a);
     }));
+
   }
 
   // ---------- Valor y beneficios para la FSFB ----------
@@ -5470,6 +5685,28 @@ ${x.h}</section>`).join("")}
             celda(e.estado === "Vencido" ? `Vencido ${-e.faltan} d` : e.estado, i, { align: "center", bold: true, color: e.estado === "Vencido" ? PPT.Rojo : "9A6B00" })]));
           tabla(s, filas, [2.65, 1.1, 1.1, 1.18], 3.45, { x: 6.8, rowH: 0.33 });
           if (pend.length > 8) s.addText(`y ${pend.length - 8} más`, { x: 6.8, y: 6.75, w: 6, h: 0.3, fontFace: F, fontSize: 9, color: PPT.sec });
+        }
+      }
+
+      // 7b. Cumplimiento de sesiones (últimos 30 días a la fecha de corte)
+      if (incluir.has("seguimientos")) {
+        const desde = R.sumarDias(corte, -30);
+        const filasC = ps.filter((p) => CUENTAN(p) && agendaDe(p.ID_Proyecto).length).map((p) => ({ p, C: cumplimiento(p.ID_Proyecto, desde, corte, corte), meta: metaDe(p) })).filter((x) => x.C.total || x.C.reprog)
+          .sort((a, b) => (a.C.pct ?? 101) - (b.C.pct ?? 101));
+        if (filasC.length) {
+          const tot = filasC.reduce((t, x) => ({ total: t.total + x.C.total, ok: t.ok + x.C.ok }), { total: 0, ok: 0 });
+          paginar(filasC, 12).forEach((pag, ip) => {
+            const s = lamina(`Cumplimiento de sesiones${ip ? " (cont.)" : ""}`, `Sesiones de la agenda de cada proyecto del ${fecha(desde)} al ${fecha(corte)}: hechas sobre las que debían ocurrir (sin festivos ni reprogramadas). Meta definida por proyecto.`);
+            if (!ip) tile(s, 9.8, 1.5, 2.95, 1.3, "Cumplimiento del portafolio", `${tot.total ? Math.round((tot.ok / tot.total) * 100) : 0}%`, `${tot.ok} de ${tot.total} sesiones`, PPT.azul);
+            const filas = [[cab("Proyecto"), cab("PM"), cab("Hechas", { align: "center" }), cab("No se hicieron", { align: "center" }), cab("↻", { align: "center" }), cab("Sin marcar", { align: "center" }), cab("Sin acta", { align: "center" }), cab("Cumplimiento", { align: "center" })]];
+            pag.forEach((x, i) => {
+              const bajo = x.C.pct !== null && x.C.pct < x.meta;
+              filas.push([celda(corta(x.p.Nombre, 34), i), celda(corta(nombreUsuario(x.p.PM), 20), i), celda(`${x.C.ok} de ${x.C.total}`, i, { align: "center" }), celda(x.C.no, i, { align: "center" }), celda(x.C.reprog, i, { align: "center" }),
+                celda(x.C.pend, i, { align: "center", color: x.C.pend ? PPT.Rojo : PPT.texto }), celda(x.C.sinActa, i, { align: "center" }),
+                { text: x.C.pct === null ? "—" : `${x.C.pct}% / meta ${x.meta}%`, options: { align: "center", fontSize: 10, valign: "middle", bold: true, color: bajo ? PPT.Rojo : PPT.Verde, fill: { color: i % 2 ? PPT.suave : PPT.blanco } } }]);
+            });
+            tabla(s, filas, [2.9, 1.6, 0.85, 0.95, 0.5, 0.85, 0.75, 1.55], ip ? 1.55 : 3.0, { rowH: 0.32 });
+          });
         }
       }
 
@@ -6289,25 +6526,26 @@ ${x.h}</section>`).join("")}
       if (!x.correo && correo) x.correo = correo;
       x.total += ded; x.asign.push({ p, rol, ded, idStk });
     };
-    S.datos.Proyectos.filter(CUENTAN).forEach((p) => {
+    const hoyC = R.hoyISO();
+    S.datos.Proyectos.filter((p) => CUENTAN(p) && proyActivoEn(p, corte, hoyC)).forEach((p) => {
       const rolesPM = stkPMde(p).map((x) => x.Rol).filter(Boolean);
       sumar(p.PM, nombreUsuario(p.PM), p, rolesPM.length ? `PM · ${rolesPM.join(", ")}` : "PM", dedPM(p));
       stakeholdersDe(p.ID_Proyecto).filter((x) => !esPMdeProy(p, x)).forEach((x) => sumar(x.Correo, x.Nombre, p, x.Rol, num0(x.Dedicacion), x.ID_Stakeholder));
     });
     // Tiempo del PM en las sesiones de su agenda (calculado): cuenta como otra actividad.
     const minPM = {};
-    S.datos.Proyectos.filter(CUENTAN).forEach((p) => agendaDe(p.ID_Proyecto).filter((a) => agendaActiva(a, corte)).forEach((a) => { if (p.PM) minPM[lc(p.PM)] = (minPM[lc(p.PM)] || 0) + minutosSemana(a); }));
+    S.datos.Proyectos.filter((p) => CUENTAN(p) && proyActivoEn(p, corte, hoyC)).forEach((p) => agendaDe(p.ID_Proyecto).filter((a) => agendaActiva(a, corte) && cfgSes(a).horas).forEach((a) => { if (p.PM) minPM[lc(p.PM)] = (minPM[lc(p.PM)] || 0) + minutosSemana(a); }));
     Object.entries(minPM).forEach(([correo, min]) => {
-      const ded = Math.round((min / 60 / jornadaSemanal()) * 100);
+      const ded = Math.round((min / 60 / jornadaSemanal()) * 1000) / 10;   // un decimal: el total se redondea una sola vez
       if (!ded) return;
       const k = clavePersona(correo, "");
       const x = (personas[k] = personas[k] || { k, nombre: nombreUsuario(correo), correo, total: 0, asign: [] });
       (x.otras = x.otras || []).push({ ID_Actividad: "", Tipo: "Sesiones de seguimiento (agenda)", Descripcion: `${durTxt(min)} por semana en sesiones programadas`, Dedicacion: ded, Fecha_Inicio: "", Fecha_Fin: "", auto: true });
     });
     const minGen = {};
-    agendaGeneral().filter((a) => agendaActiva(a, corte)).forEach((a) => { minGen[lc(a.Correo)] = (minGen[lc(a.Correo)] || 0) + minutosSemana(a); });
+    agendaGeneral().filter((a) => agendaActiva(a, corte) && cfgSes(a).horas).forEach((a) => { minGen[lc(a.Correo)] = (minGen[lc(a.Correo)] || 0) + minutosSemana(a); });
     Object.entries(minGen).forEach(([correo, min]) => {
-      const ded = Math.round((min / 60 / jornadaSemanal()) * 100);
+      const ded = Math.round((min / 60 / jornadaSemanal()) * 1000) / 10;   // un decimal: el total se redondea una sola vez
       if (!ded) return;
       const k = clavePersona(correo, "");
       const x = (personas[k] = personas[k] || { k, nombre: nombreUsuario(correo), correo, total: 0, asign: [] });
@@ -6322,7 +6560,7 @@ ${x.h}</section>`).join("")}
       const r = recursoPor({ correo: x.correo, nombre: x.nombre });
       x.otras = x.otras || [];
       x.tProy = x.total;
-      x.tOtras = x.otras.filter((a) => !esAusencia(a)).reduce((t, a) => t + num0(a.Dedicacion), 0);
+      x.tOtras = Math.round(x.otras.filter((a) => !esAusencia(a)).reduce((t, a) => t + num0(a.Dedicacion), 0));
       x.aus = Math.min(100, x.otras.filter(esAusencia).reduce((t, a) => t + num0(a.Dedicacion), 0));
       x.total = x.tProy + x.tOtras;
       x.capBase = (r && num0(r.Capacidad)) ?? 100;
@@ -6387,7 +6625,7 @@ ${x.h}</section>`).join("")}
             <td><div class="cap-asign">${x.asign.sort((a, b) => b.ded - a.ded).map((a) => ids.has(a.p.ID_Proyecto)
               ? `<button class="chip-proy" data-pid="${esc(a.p.ID_Proyecto)}">${esc(a.p.Nombre)} · ${esc(a.rol)} · <b>${a.ded}%</b></button>`
               : `<span class="chip-proy">Otro proyecto · <b>${a.ded}%</b></span>`).join("") || `<span class="sub">—</span>`}</div></td>
-            <td><div class="cap-asign">${x.otras.map((a) => `<span class="chip-act ${esAusencia(a) ? "aus" : ""}" title="${esc([a.Descripcion, a.Fecha_Fin ? `hasta ${fecha(a.Fecha_Fin)}` : "permanente"].filter(Boolean).join(" · "))}">${esc(a.Tipo || "Actividad")} · <b>${num0(a.Dedicacion)}%</b></span>`).join("") || `<span class="sub">—</span>`}</div></td></tr>`).join("")}</tbody></table></div>`
+            <td><div class="cap-asign">${x.otras.map((a) => `<span class="chip-act ${esAusencia(a) ? "aus" : ""}" title="${esc([a.Descripcion, a.Fecha_Fin ? `hasta ${fecha(a.Fecha_Fin)}` : "permanente"].filter(Boolean).join(" · "))}">${esc(a.Tipo || "Actividad")} · <b>${String(num0(a.Dedicacion)).replace(".", ",")}%</b></span>`).join("") || `<span class="sub">—</span>`}</div></td></tr>`).join("")}</tbody></table></div>`
         : vacio("Aún no hay dedicaciones registradas. Pon el % de dedicación del PM en «Editar proyecto», el de cada stakeholder en su ficha y las otras actividades en su pestaña.")}
       </div>` : ""}
       ${tabC === "otras" ? `<div class="card" id="otras-actividades"><div class="titulo-fila"><h2>Otras actividades <span class="sub">${acts.length}</span></h2>${puedeAct ? `<button class="btn primario" id="b-act">+ Actividad</button>` : ""}</div>
@@ -6547,7 +6785,7 @@ ${x.h}</section>`).join("")}
     cierres().forEach((c) => { const x = per(c.Correo, c.Nombre); if (x) X.cie.set(`${x.k}|${c.Fecha_Semana}`, c); });
     return (_ief = X);
   }
-  const invalidarEsf = () => { _ief = null; };
+  const invalidarEsf = () => { _ief = null; _marcas = null; };
   const infoPersona = (k) => idxEsf().personas.get(k) || (S.usuario && k === clavePersona(S.usuario.Correo) ? { k, correo: S.usuario.Correo, nombre: S.usuario.Nombre || S.usuario.Correo, asign: [] } : null);
   const tarifaDe = (x) => (x && x.r ? num0(x.r.Tarifa_Hora) : null);
 
@@ -6560,6 +6798,21 @@ ${x.h}</section>`).join("")}
   // Minutos de una sesión registrada: duración + preparación/acta (si no se escribieron, lo programado en la agenda).
   const minSeg = (s, a) => { const d = num0(s.Duracion_Min), p = num0(s.Preparacion_Min); return d === null && p === null ? (a ? Number(a.Duracion_Min) || 30 : 0) : (d || 0) + (p || 0); };
 
+  // Horas de una ocurrencia de sesión: lo marcado (✓ con su duración, ✕/↻ = 0), lo registrado (duración + preparación) o lo programado.
+  function horasOcu(a, d, usados, hoy = R.hoyISO()) {
+    const plan = (Number(a.Duracion_Min) || 30) / 60, e = estadoOcu(a, d, hoy);
+    if (e.st === "no") return { plan, real: 0, prep: 0, nota: `no se hizo ✕${e.m.Motivo ? ` (${e.m.Motivo})` : ""}` };
+    if (e.st === "reprog") return { plan, real: 0, prep: 0, nota: `reprogramada ↻${e.m.Fecha_Nueva ? ` al ${fecha(e.m.Fecha_Nueva)}` : ""}` };
+    if (e.reg) {
+      const dd = num0(e.reg.Duracion_Min), pp = num0(e.reg.Preparacion_Min);
+      if (dd === null && pp === null) return { plan, real: e.m && Number(e.m.Minutos) ? Number(e.m.Minutos) / 60 : plan, prep: 0, nota: "registrada" };
+      if (e.reg.Fecha_Corte !== d || usados.has(e.reg.ID_Seguimiento)) return { plan, real: 0, prep: 0, nota: `registrada el ${fecha(e.reg.Fecha_Corte)} (sus horas cuentan ese día)` };
+      usados.add(e.reg.ID_Seguimiento);
+      return { plan, real: (dd || 0) / 60, prep: (pp || 0) / 60, nota: "registrada" };
+    }
+    if (e.m && (e.st === "hecha" || e.st === "sinreg")) return { plan, real: (Number(e.m.Minutos) || 0) / 60 || plan, prep: 0, nota: e.st === "sinreg" ? "se hizo ✓ · falta el registro" : "se hizo ✓" };
+    return { plan, real: plan, prep: 0, nota: d > hoy ? "programada" : d === hoy ? "hoy" : "sin marcar: se estima lo programado" };
+  }
   // Semana (L–V) de una persona: una fila por proyecto + gestión general + otras actividades.
   function semanaPersona(k, lun) {
     const X = idxEsf(), ck = `${k}|${lun}`;
@@ -6588,34 +6841,18 @@ ${x.h}</section>`).join("")}
         const tb = (h * as.ded / 100) * fac;
         if (tb) { r.trab[i] += tb; r.plan[i] += tb; r.det[i].push({ t: `Trabajo del proyecto (${as.ded}% de ${hTxt(h)})`, h: tb }); }
         if (!as.pm || !fac) return;
-        agendaDe(p.ID_Proyecto).filter((a) => tocaEn(a, d)).forEach((a) => {
-          const dur = (Number(a.Duracion_Min) || 30) / 60;
-          r.plan[i] += dur;
-          let real = dur, nota = d > hoy ? "programada" : "sin registro: se estima lo programado", prep = 0;
-          if (esDaily(a)) {
-            const m = (X.esf.get(`${k}|${d}`) || []).find((e) => e.Origen === "daily" && e.ID_Sesion === a.ID_Sesion);
-            if (m) { real = (Number(m.Minutos) || 0) / 60; nota = real ? "se hizo ✓" : "no se hizo ✕"; }
-          } else {
-            const libres = (X.segs.get(`${p.ID_Proyecto}|${d}`) || []).filter((s) => !usados.has(s.ID_Seguimiento));
-            const s = libres.find((z) => z.ID_Sesion === a.ID_Sesion) || libres.find((z) => !z.ID_Sesion);
-            if (s) {
-              usados.add(s.ID_Seguimiento);
-              const dd = num0(s.Duracion_Min), pp = num0(s.Preparacion_Min);
-              real = dd === null && pp === null ? dur : (dd || 0) / 60; prep = (pp || 0) / 60; nota = "registrada";
-            }
-          }
-          r.reun[i] += real; r.prep[i] += prep;
-          r.det[i].push({ t: `${a.Tipo || "Sesión"} ${horaTxt(a.Hora)} · ${nota}`, h: real });
-          if (prep) r.det[i].push({ t: "Preparación y acta", h: prep });
+        agendaDe(p.ID_Proyecto).filter((a) => tocaEn(a, d) && cfgSes(a).horas).forEach((a) => {
+          const z = horasOcu(a, d, usados, hoy);
+          r.plan[i] += z.plan; r.reun[i] += z.real; r.prep[i] += z.prep;
+          r.det[i].push({ t: `${tituloSes(a)} ${horaTxt(a.Hora)} · ${z.nota}`, h: z.real });
+          if (z.prep) r.det[i].push({ t: "Preparación y acta", h: z.prep });
         });
       });
-      // Sesiones recurrentes sin proyecto: van a Gestión general u Otras actividades; ✓/✕ como los daily.
-      if (fac) (X.agGen.get(k) || []).filter((a) => tocaEn(a, d)).forEach((a) => {
-        const r = fila(a.Fila === OTRAS ? OTRAS : GEST), dur = (Number(a.Duracion_Min) || 30) / 60;
-        const m = (X.esf.get(`${k}|${d}`) || []).find((e) => e.Origen === "daily" && e.ID_Sesion === a.ID_Sesion);
-        const real = m ? (Number(m.Minutos) || 0) / 60 : dur;
-        r.plan[i] += dur; r.reun[i] += real;
-        r.det[i].push({ t: `${a.Titulo || a.Tipo || "Sesión"} ${horaTxt(a.Hora)} · ${m ? (real ? "se hizo ✓" : "no se hizo ✕") : d > hoy ? "programada" : "sin marcar: se estima lo programado"}`, h: real });
+      // Sesiones recurrentes sin proyecto: van a Gestión general u Otras actividades.
+      if (fac) (X.agGen.get(k) || []).filter((a) => tocaEn(a, d) && cfgSes(a).horas).forEach((a) => {
+        const r = fila(a.Fila === OTRAS ? OTRAS : GEST), z = horasOcu(a, d, usados, hoy);
+        r.plan[i] += z.plan; r.reun[i] += z.real;
+        r.det[i].push({ t: `${tituloSes(a)} ${horaTxt(a.Hora)} · ${z.nota}`, h: z.real });
       });
       // Sesiones registradas por la persona que no estaban en su agenda.
       (X.segsDia.get(`${k}|${d}`) || []).filter((s) => !usados.has(s.ID_Seguimiento)).forEach((s) => {
@@ -6625,7 +6862,7 @@ ${x.h}</section>`).join("")}
         if (pp) r.det[i].push({ t: "Preparación y acta", h: pp });
       });
       // Registros rápidos (+ Esfuerzo).
-      (X.esf.get(`${k}|${d}`) || []).filter((e) => e.Origen !== "daily").forEach((e) => {
+      (X.esf.get(`${k}|${d}`) || []).filter((e) => e.Origen !== "daily" && e.Origen !== "sesion").forEach((e) => {
         const f = e.ID_Proyecto || GEST, r = fila(f), hh = (Number(e.Minutos) || 0) / 60;
         if (f !== GEST && ES_REUNION.test(e.Tipo)) r.reun[i] += hh; else r.gest[i] += hh;
         r.det[i].push({ t: `${e.Tipo || "Registro"}${e.Nota ? `: ${corta(e.Nota, 60)}` : ""}`, h: hh });
@@ -6747,20 +6984,6 @@ ${x.h}</section>`).join("")}
     });
   }
 
-  // ---------- Dailies: ✓ se hizo / ✕ no se hizo (se carga al PM del proyecto) ----------
-  const marcaDaily = (p, a, d) => esfuerzos().find((e) => e.Origen === "daily" && e.ID_Sesion === a.ID_Sesion && e.Fecha === d && clavePersona(e.Correo, e.Nombre) === clavePersona(p.PM));
-  async function marcarDaily(p, a, d, hecho) {
-    const ex = marcaDaily(p, a, d), min = hecho ? Number(a.Duracion_Min) || 15 : 0;
-    if (idxEsf().cie.get(`${clavePersona(p.PM)}|${lunesDe(d)}`)) { toast(`La semana del ${fecha(lunesDe(d))} de ${nombreUsuario(p.PM)} ya está cerrada.`, true); return; }
-    const y = window.scrollY;
-    try {
-      if (ex && Number(ex.Minutos) === min) await S.api.eliminarFilas("Esfuerzo", "ID_Esfuerzo", [ex.ID_Esfuerzo]);
-      else if (ex) await S.api.actualizarPorId("Esfuerzo", "ID_Esfuerzo", ex.ID_Esfuerzo, { Minutos: min });
-      else await S.api.agregarFila("Esfuerzo", { ID_Esfuerzo: idUnico("ESF"), Fecha: d, Correo: p.PM, Nombre: nombreUsuario(p.PM), ID_Proyecto: p.ID_Proyecto, Tipo: a.Tipo || "Daily", Minutos: min, Origen: "daily", ID_Sesion: a.ID_Sesion, Nota: "", Registrado_Por: S.usuario.Correo, Fecha_Registro: R.hoyISO() });
-      render(); window.scrollTo(0, y);
-    } catch (e) { toast("No se pudo guardar: " + e.message, true); }
-  }
-
   // ---------- Sesiones recurrentes sin proyecto ----------
   function formAgendaGeneral(a, k0) {
     const nuevo = !a, u = S.usuario, todo = R.puede(u, "verTodo"), yoK = clavePersona(u.Correo);
@@ -6818,12 +7041,11 @@ ${x.h}</section>`).join("")}
       return `<td class="ms-c ${r.edit[i] ? "editada" : ""} ${lun > hoy || w.dias[i] > hoy ? "futuro" : ""}" title="${esc(tip)}"><input type="number" inputmode="decimal" min="0" max="16" step="0.25" value="${r2(r.val[i]) || ""}" placeholder="0" data-ms="${esc(r.f)}|${i}" ${puede ? "" : "disabled"} aria-label="${esc(nombreFila(r.f))} ${NOM_DIA[i + 1]}">${r.edit[i] && puede ? `<button type="button" class="ms-auto" data-ms-auto="${esc(r.f)}|${i}" title="Volver al valor automático (${hTxt(r.est[i])})">↺</button>` : ""}</td>`;
     };
     const ocup = pctDe(total, dispT);
-    const quick = esfuerzos().filter((e) => e.Origen !== "daily" && clavePersona(e.Correo, e.Nombre) === k && e.Fecha >= lun && e.Fecha <= w.dias[4]).sort((a, b) => String(a.Fecha).localeCompare(String(b.Fecha)));
+    const quick = esfuerzos().filter((e) => e.Origen !== "daily" && e.Origen !== "sesion" && clavePersona(e.Correo, e.Nombre) === k && e.Fecha >= lun && e.Fecha <= w.dias[4]).sort((a, b) => String(a.Fecha).localeCompare(String(b.Fecha)));
     const misGen = (X.agGen.get(k) || []).slice().sort((a, b) => String(a.Hora).localeCompare(String(b.Hora)));
-    const dailies = [...(x.asign || []).filter((a) => a.pm && CUENTAN(a.p)).flatMap((a) => agendaDe(a.p.ID_Proyecto).filter((s) => esDaily(s) && w.dias.some((d) => tocaEn(s, d))).map((s) => ({ p: a.p, s }))),
-      ...misGen.filter((s) => w.dias.some((d) => tocaEn(s, d))).map((s) => ({ p: pseudoP(s), s }))];
-    const sesiones = (x.asign || []).filter((a) => a.pm && CUENTAN(a.p)).flatMap((a) => agendaDe(a.p.ID_Proyecto).filter((s) => !esDaily(s)).flatMap((s) => w.dias.filter((d) => tocaEn(s, d)).map((d) => ({ p: a.p, s, d }))));
-    const regDe = (p, s, d) => (S.datos.Seguimientos || []).find((z) => z.ID_Proyecto === p.ID_Proyecto && z.Fecha_Corte === d && (z.ID_Sesion === s.ID_Sesion || !z.ID_Sesion));
+    // Todas las sesiones de la semana a cargo de la persona (las de sus proyectos como PM y las suyas sin proyecto).
+    const sesSem = [...(x.asign || []).filter((a) => a.pm && CUENTAN(a.p)).flatMap((a) => agendaDe(a.p.ID_Proyecto).map((s) => ({ p: a.p, s }))), ...misGen.map((s) => ({ p: pseudoP(s), s }))]
+      .filter(({ s }) => w.dias.some((d) => tocaEn(s, d))).sort((a, b) => String(a.s.Hora).localeCompare(String(b.s.Hora)) || String(a.p.Nombre).localeCompare(String(b.p.Nombre), "es"));
     const recordar = !w.cerrada && (w.estado === "Sin cerrar" || (w.estado === "En curso" && diaSemana(hoy) === 5));
     el.innerHTML = `<div class="titulo-fila"><h1>Mi semana</h1><div class="acciones"><button class="btn primario" id="ms-esf">+ Esfuerzo</button></div></div>
       <div class="filtros ag-nav">${gente.length > 1 ? `<label class="filtro"><span>Persona</span><select id="ms-persona">${gente.map((g) => `<option value="${esc(g.k)}" ${g.k === k ? "selected" : ""}>${esc(g.nombre)}</option>`).join("")}</select></label>` : ""}
@@ -6833,7 +7055,7 @@ ${x.h}</section>`).join("")}
       <div class="kpis kpis-3">
         <div class="kpi estatico"><span class="kpi-t">Horas ${w.cerrada ? "reales" : lun > hoy ? "planeadas" : "registradas (estimado)"}</span><span class="kpi-v">${hTxt(total)}</span><span class="sub">plan ${hTxt(planT)}</span></div>
         <div class="kpi estatico ${ocup > 100 ? "alerta" : ""}"><span class="kpi-t">Disponible</span><span class="kpi-v">${hTxt(dispT)}</span><span class="sub">ocupación <b class="oc-${nivelOc(ocup)}">${ocup}%</b>${sumaA(w.aus) ? ` · ausencia ${hTxt(sumaA(w.aus))}` : ""}</span></div>
-        <div class="kpi estatico"><span class="kpi-t">En reuniones</span><span class="kpi-v">${pctDe(reunT, total)}%</span><span class="sub">${hTxt(reunT)} en proyectos</span></div>
+        <div class="kpi estatico"><span class="kpi-t">En reuniones</span><span class="kpi-v">${pctDe(reunT, total)}%</span><span class="sub">${hTxt(reunT)} en sesiones y reuniones</span></div>
         <div class="kpi estatico"><span class="kpi-t">Gestión no detallada por proyecto</span><span class="kpi-v">${pctDe(gestT, total)}%</span><span class="sub">${hTxt(gestT)}</span></div>
       </div>
       <div class="card"><div class="titulo-fila"><h2>Horas por proyecto y día</h2><div class="acciones">${w.cerrada
@@ -6846,14 +7068,13 @@ ${x.h}</section>`).join("")}
           <tfoot><tr><th>Total</th>${DIAS_EF.map((c, i) => { const t = totDia(i), o = pctDe(t, w.disp[i]); return `<th class="nowrap">${hTxt(t)}${w.disp[i] ? `<div class="oc-${nivelOc(o)}">${o}%</div>` : ""}</th>`; }).join("")}<th class="nowrap">${hTxt(total)}<div class="oc-${nivelOc(ocup)}">${ocup}%</div></th><th class="sub">${hTxt(planT)}</th></tr></tfoot></table></div>
       </div>
       <div class="grid2">
-        <div class="card"><h2>Sesiones de la agenda</h2>${dailies.length || sesiones.length ? `
-          ${dailies.length ? `<table class="ms-dl"><thead><tr><th>Daily y sin proyecto</th>${w.dias.map((d, i) => `<th>${NOM_DIA[i + 1]}</th>`).join("")}</tr></thead><tbody>${dailies.map(({ p, s }) => `<tr><td>${esc(corta(p.Nombre, 30))}<div class="sub">${horaTxt(s.Hora)} · ${s.Duracion_Min || 15} min</div></td>${w.dias.map((d) => {
-            if (!tocaEn(s, d) || !horasDia(d)) return `<td></td>`;
-            const m = marcaDaily(p, s, d), est = m ? (Number(m.Minutos) ? "si" : "no") : "";
-            return `<td class="nowrap">${d > hoy || !puede ? `<span class="dl-est ${est}">${est === "si" ? "✓" : est === "no" ? "✕" : "·"}</span>` : `<button class="dl-b si ${est === "si" ? "on" : ""}" data-dl="${esc(p.ID_Proyecto)}|${esc(s.ID_Sesion)}|${d}|1" title="Se hizo">✓</button><button class="dl-b no ${est === "no" ? "on" : ""}" data-dl="${esc(p.ID_Proyecto)}|${esc(s.ID_Sesion)}|${d}|0" title="No se hizo">✕</button>`}</td>`;
-          }).join("")}</tr>`).join("")}</tbody></table>` : ""}
-          ${sesiones.length ? `<ul class="lista ms-ses">${sesiones.map(({ p, s, d }) => { const g = regDe(p, s, d); return `<li><b>${NOM_DIA[diaSemana(d)]} ${d.slice(8, 10)}</b> · ${esc(s.Tipo || "Sesión")} de ${esc(corta(p.Nombre, 34))} · ${horaTxt(s.Hora)} ${g ? `<span class="pill aldía">Registrada · ${durTxt(minSeg(g, s))}</span>` : d > hoy ? `<span class="sub">programada</span>` : `<span class="pill vencido">Sin registro</span> ${R.puedeEditar(u, p, "seguimiento") ? `<button class="btn chico" data-ms-reg="${esc(p.ID_Proyecto)}|${esc(s.ID_Sesion)}|${d}">Registrar</button>` : ""}`}</li>`; }).join("")}</ul>` : ""}
-          <p class="sub">✓/✕ en los dailies y en las sesiones sin proyecto suma o quita su tiempo. Las demás sesiones toman la duración y la preparación que escribas al registrarlas.</p>`
+        <div class="card"><h2>Sesiones de la semana</h2>${sesSem.length ? `<div class="tabla-scroll"><table class="ms-dl"><thead><tr><th>Sesión</th>${w.dias.map((d, i) => `<th class="${d === hoy ? "hoy" : ""}">${NOM_DIA[i + 1]} ${d.slice(8, 10)}</th>`).join("")}</tr></thead><tbody>
+          ${sesSem.map(({ p, s }) => `<tr><td><b>${esc(corta(tituloSes(s), 26))}</b><div class="sub">${esc(corta(p.general ? "Sin proyecto" : p.Nombre, 28))} · ${horaTxt(s.Hora)}</div></td>${w.dias.map((d) => {
+            if (!tocaEn(s, d)) return `<td>${tocariaEn(s, d) ? `<span class="oc oc-fest">F</span>` : ""}</td>`;
+            const st = estadoOcu(s, d).st, pm = puede && puedeMarcar(s) && d <= hoy;
+            return `<td class="nowrap">${botonOcu(p, s, d, puede && puedeMarcar(s))}${pm && (st === "pend" || st === "hoy") ? `<span class="ag-ck fila"><button class="dl-b si" data-dl="${esc(p.ID_Proyecto)}|${esc(s.ID_Sesion)}|${d}|1" title="Se hizo">✓</button><button class="dl-b no" data-dl="${esc(p.ID_Proyecto)}|${esc(s.ID_Sesion)}|${d}|0" title="No se hizo">✕</button></span>` : ""}</td>`;
+          }).join("")}</tr>`).join("")}</tbody></table></div>
+          <p class="sub">✓ se hizo · ✕ no se hizo · ↻ reprogramada · ! sin marcar. Clic en una sesión para cambiarla, poner el motivo o hacer su registro. Lo marcado suma o quita su tiempo en la tabla de arriba.</p>`
           : `<p class="sub">No hay sesiones de agenda a tu cargo esta semana.</p>`}</div>
         <div class="card"><div class="titulo-fila"><h2>Registros rápidos <span class="contador">${quick.length}</span></h2>${puede ? `<button class="btn chico" id="ms-esf2">+ Esfuerzo</button>` : ""}</div>
           ${quick.length ? `<table><thead><tr><th>Día</th><th>Para</th><th>Tipo</th><th>Duración</th><th></th></tr></thead><tbody>${quick.map((e) => `<tr><td class="nowrap">${NOM_DIA[diaSemana(e.Fecha)]} ${String(e.Fecha).slice(8, 10)}</td><td>${esc(corta(nombreFila(e.ID_Proyecto || GEST), 30))}${e.Nota ? `<div class="sub">${esc(corta(e.Nota, 70))}</div>` : ""}</td><td>${esc(e.Tipo)}</td><td class="nowrap">${durTxt(Number(e.Minutos) || 0)}</td><td class="derecha">${puede ? `<button class="btn chico" data-ms-del="${esc(e.ID_Esfuerzo)}" title="Eliminar">✕</button>` : ""}</td></tr>`).join("")}</tbody></table>`
@@ -7110,6 +7331,15 @@ ${x.h}</section>`).join("")}
       ${tabla(["Mes", "Horas", "Plan"], [...meses.entries()].sort().map(([k, v]) => `<tr><td>${MESES_LARGOS[Number(k.slice(5, 7)) - 1]} ${k.slice(0, 4)}</td><td>${hTxt(v.carga)}</td><td>${hTxt(v.plan)}</td></tr>`), "")}` : `<p class="hv-vacio">Sin dedicación ni sesiones registradas.</p>` };
   }
 
+  // Sesiones del proyecto y su cumplimiento (informe PDF).
+  function seccionSesionesHV(p, { tabla }) {
+    const ag = agendaDe(p.ID_Proyecto).filter((a) => !esUnaVez(a)), hoy = R.hoyISO(), meta = metaDe(p);
+    const C30 = cumplimiento(p.ID_Proyecto, R.sumarDias(hoy, -30), hoy), CT = cumplimiento(p.ID_Proyecto, String(p.Fecha_Inicio || R.sumarDias(hoy, -365)).slice(0, 10), hoy);
+    return { t: "Sesiones del proyecto", d: ag.length ? `${ag.length} periódica(s) · cumplimiento ${C30.pct === null ? "—" : `${C30.pct}%`} (meta ${meta}%)` : "sin agenda", h: ag.length ? `
+      ${tabla(["Sesión", "Días y frecuencia", "Hora", "Para darla por hecha", "Acta", "Cuenta para el estado", "Suma horas"], ag.map((a) => { const c = cfgSes(a); return `<tr><td>${esc(tituloSes(a))}</td><td>${esc(`${diasDe(a).join(", ")} · ${(a.Frecuencia || "Semanal").toLowerCase()}`)}</td><td>${horaTxt(a.Hora)} · ${a.Duracion_Min || 30} min</td><td>${esc(HECHA_CON.find(([k]) => k === c.con)[1])}</td><td>${siNo(c.acta)}</td><td>${siNo(c.cuenta)}</td><td>${siNo(c.horas)}</td></tr>`; }), "")}
+      ${tabla(["Periodo", "Hechas", "No se hicieron", "Reprogramadas", "Sin marcar", "Sin acta", "Cumplimiento"], [["Últimos 30 días", C30], ["Desde el inicio", CT]].map(([t, C]) => `<tr><td>${t}</td><td>${C.ok} de ${C.total}</td><td>${C.no}</td><td>${C.reprog}</td><td>${C.pend}</td><td>${C.sinActa}</td><td><b>${C.pct === null ? "—" : `${C.pct}%`}</b> (meta ${meta}%)</td></tr>`), "")}` : `<p class="hv-vacio">Sin sesiones periódicas en la agenda.</p>` };
+  }
+
   // ---------- Alertas de esfuerzo (Dashboard) ----------
   function alertasEsfuerzo(ps) {
     const hoy = R.hoyISO(), u = S.usuario, todo = R.puede(u, "verTodo"), X = idxEsf(), out = [];
@@ -7126,11 +7356,12 @@ ${x.h}</section>`).join("")}
     ps.filter(CUENTAN).forEach((p) => {
       const h = horasMesProyecto(p);
       if (h.planPas && h.real > h.planPas * 1.15 && h.real - h.planPas >= 4) out.push({ n: "ambar", t: `<b>${esc(p.Nombre)}</b> va en ${hTxt(h.real)} este mes, sobre las ${hTxt(h.planPas)} planeadas a la fecha (+${pctDe(h.real - h.planPas, h.planPas)}%).`, pid: p.ID_Proyecto });
-      agendaDe(p.ID_Proyecto).filter((a) => esDaily(a) && a.Activa !== "No").forEach((a) => {
-        const desde = R.sumarDias(hoy, -14);
-        const no = esfuerzos().filter((e) => e.Origen === "daily" && e.ID_Sesion === a.ID_Sesion && e.Fecha >= desde && e.Fecha <= hoy && !Number(e.Minutos)).length;
-        if (no >= 3) out.push({ n: "ambar", t: `El daily de <b>${esc(p.Nombre)}</b> no se hizo ${no} veces en las últimas dos semanas.`, pid: p.ID_Proyecto });
-      });
+      if (agendaDe(p.ID_Proyecto).some((a) => a.Activa !== "No")) {
+        const C = cumplimiento(p.ID_Proyecto, R.sumarDias(hoy, -30), hoy), meta = metaDe(p);
+        if (C.total >= 3 && C.pct < meta) out.push({ n: C.pct < meta - 20 ? "rojo" : "ambar", t: `Sesiones de <b>${esc(p.Nombre)}</b>: cumplimiento ${C.pct}% en los últimos 30 días (meta ${meta}%) · ${C.no} no se hicieron, ${C.pend} sin marcar.`, pid: p.ID_Proyecto });
+        if (C.sinActa) out.push({ n: "ambar", t: `<b>${esc(p.Nombre)}</b> tiene ${C.sinActa} sesión(es) hecha(s) sin el acta que exigen.`, pid: p.ID_Proyecto });
+        if (C.sinreg) out.push({ n: "ambar", t: `<b>${esc(p.Nombre)}</b> tiene ${C.sinreg} sesión(es) marcada(s) como hechas sin su registro.`, pid: p.ID_Proyecto });
+      }
     });
     const sinCerrar = pms.map((k) => ({ k, l: semanaPorCerrar(k), x: X.personas.get(k) })).filter((z) => z.l && z.x && (todo ? S.datos.Usuarios.some((uu) => lc(uu.Correo) === lc(z.x.correo) && uu.Activo === "Sí") : true));
     if (sinCerrar.length) out.push({ n: "gris", t: sinCerrar.length === 1 && sinCerrar[0].k === clavePersona(u.Correo) ? `Tu semana del ${fecha(sinCerrar[0].l)} no está cerrada: cuenta como estimada.` : `Semanas sin cerrar: ${sinCerrar.map((z) => `<b>${esc(z.x.nombre)}</b> (${fechaCorta(z.l)})`).join(", ")}. Cuentan como estimadas.`, k: sinCerrar[0].k, l: sinCerrar[0].l });
@@ -7151,10 +7382,18 @@ ${x.h}</section>`).join("")}
     el.querySelectorAll("[data-ef-ms]").forEach((b) => b.addEventListener("click", () => { const [k, l] = b.dataset.efMs.split("|"); S.msK = k; S.msLunes = l; ir("misemana"); }));
     el.querySelectorAll("[data-dl]").forEach((b) => b.addEventListener("click", (e) => {
       e.stopPropagation();
-      const [pid, sid, d, h] = b.dataset.dl.split("|");
-      const a = pid ? agendaDe(pid).find((x) => x.ID_Sesion === sid) : agendaGeneral().find((x) => x.ID_Sesion === sid);
-      const p = pid ? proyecto(pid) : a && pseudoP(a);
-      if (p && a) marcarDaily(p, a, d, h === "1");
+      const [, sid, d, h] = b.dataset.dl.split("|"), a = sesionPorId(sid);
+      if (a) marcarRapido(a, d, h === "1");
+    }));
+    el.querySelectorAll("button[data-oc]").forEach((b) => b.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const [, sid, d] = b.dataset.oc.split("|"), a = sesionPorId(sid);
+      if (a && puedeMarcar(a)) modalOcurrencia(a, d);
+    }));
+    el.querySelectorAll("[data-ctlmes]").forEach((b) => b.addEventListener("click", () => {
+      const [pid, n] = b.dataset.ctlmes.split("|"), act = (S.ctlMes || {})[pid] || R.hoyISO().slice(0, 8) + "01";
+      S.ctlMes = { ...(S.ctlMes || {}), [pid]: sumarMeses(act, Number(n)) };
+      const y = window.scrollY; render(); window.scrollTo(0, y);
     }));
   }
 
