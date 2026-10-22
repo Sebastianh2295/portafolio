@@ -182,6 +182,7 @@
     await completarFechaCreacion();
     await migrarLineasBase();
     await migrarCronogramas();
+    await sincronizarPlazosHito();
     const faltan = Object.keys(CATALOGOS_BASE).filter((k) => !S.datos.Catalogos.some((f) => f.Lista === k));
     if (sembrado || !faltan.length) return;
     sembrado = true;
@@ -251,6 +252,7 @@
     cargando(true, "Guardando en Excel…");
     try {
       await accion();
+      await sincronizarPlazosHito();
       // Los cambios ya quedaron en memoria (ver conAuditoria): no se relee todo el Excel.
       armarCatalogos();
       refrescarUsuario();
@@ -894,7 +896,7 @@
         const ult = coms[coms.length - 1];
         return `<tr>${conProyecto ? `<td><button class="btn enlace" data-pid="${esc(c.ID_Proyecto)}" title="Ir al proyecto"><b>${esc(p.Nombre)}</b></button></td>` : ""}
           <td${edCompTexto(c)}>${esc(c.Compromiso)}<div class="sub">${esc(origen(c))}</div></td><td>${celdaResp(c, R.puedeEditar(S.usuario, p, "compromisos"))}</td>
-          <td class="nowrap"${edCompFecha(c)}>${c.Fecha_Compromiso ? fecha(c.Fecha_Compromiso) : `<span class="sub">—</span>`}</td>
+          <td class="nowrap"${edCompFecha(c)}>${c.Fecha_Compromiso ? fecha(c.Fecha_Compromiso) : `<span class="sub">—</span>`}${chipPlazo(c)}</td>
           <td${edCompEstado(c)}>${pillComp(c)}${e === "Cerrado" && c.Fecha_Cierre ? `<div class="sub">${fecha(c.Fecha_Cierre)}</div>` : ""}</td>
           <td class="opc">${ult ? `<span class="ult-com">${esc(resumenCom(ult))}</span><div class="sub">${esc(nombreUsuario(ult.Autor))} · ${fechaHora(ult.Fecha_Hora)}</div>` : `<span class="sub">Sin comentarios</span>`}</td>
           <td class="derecha nowrap"><button class="btn chico ${coms.length ? "" : "primario-suave"}" data-abrir-comp="${esc(c.ID_Compromiso)}">${coms.length ? `Comentarios (${coms.length})` : "Abrir"}</button>
@@ -978,7 +980,7 @@
       `Compromiso: ${c.Compromiso}`,
       conProy ? `Proyecto: ${(proyecto(c.ID_Proyecto) || {}).Nombre || c.ID_Proyecto}` : "",
       `${responsablesDe(c).length > 1 ? "Responsables" : "Responsable"}: ${responsablesDe(c).map((x) => x.Nombre).join(", ") || "—"}`,
-      `Fecha límite: ${c.Fecha_Compromiso ? fecha(c.Fecha_Compromiso) : "sin fecha"} (${venceTexto(c)})`,
+      `Fecha límite: ${c.Fecha_Compromiso ? fecha(c.Fecha_Compromiso) : "sin fecha"}${c.Plazo ? ` · ${textoPlazo(c)}` : ""} (${venceTexto(c)})`,
       `Estado actual: ${R.estadoBase(c)}`,
       ultimoAvance(c) ? `Último avance registrado: ${ultimoAvance(c)}` : "",
     ].filter(Boolean).join("\n");
@@ -1149,7 +1151,7 @@
       return `<tr><td${edCompTexto(c)}>${esc(c.Compromiso)}${ult ? `<div class="sub ult-com">💬 ${esc(resumenCom(ult))}</div>` : ""}</td>
         <td class="nowrap"${edCompCreado(c)}>${fechaCreacion(c) ? fecha(fechaCreacion(c)) : `<span class="sub">—</span>`}</td>
         <td${edCompSesion(c)}>${c.ID_Seguimiento ? `Sesión ${fecha(fSes(c))}` : `<span class="sub">Sin sesión</span>`}</td>
-        <td>${celdaResp(c, puede)}</td><td class="nowrap"${edCompFecha(c)}>${c.Fecha_Compromiso ? fecha(c.Fecha_Compromiso) : `<span class="sub">—</span>`}</td>
+        <td>${celdaResp(c, puede)}</td><td class="nowrap"${edCompFecha(c)}>${c.Fecha_Compromiso ? fecha(c.Fecha_Compromiso) : `<span class="sub">—</span>`}${chipPlazo(c)}</td>
         <td${edCompEstado(c)}>${pillComp(c)}${e === "Cerrado" && c.Fecha_Cierre ? `<div class="sub">${fecha(c.Fecha_Cierre)}</div>` : ""}</td>
         <td class="derecha nowrap"><button class="btn chico ${coms.length ? "" : "primario-suave"}" data-abrir-comp="${esc(c.ID_Compromiso)}">${coms.length ? `Comentarios (${coms.length})` : "Abrir"}</button>
           ${puede ? botonesEstado(c) : ""}</td></tr>`;
@@ -1229,7 +1231,7 @@
         <div><span class="sub">Estado</span><b>${pillComp(c)}</b></div>
         <div><span class="sub">${responsablesDe(c).length > 1 ? "Responsables" : "Responsable"}${puede ? ` <button class="btn enlace chico" data-cambiar-resp="${esc(c.ID_Compromiso)}">✎ Cambiar</button>` : ""}</span>${responsablesDe(c, false).some((x) => x.esGrupo) ? `<div class="sub">👥 ${GRUPO_PROY}:</div>` : ""}${responsablesDe(c).map((x) => `<b>${esc(x.Nombre)}</b>${(() => { const rol = rolEnProyecto(c.ID_Proyecto, x); const d = [rol, x.r && x.r.Cargo, x.r && empresaDe(x.r), x.Correo].filter(Boolean); return d.length ? `<div class="sub">${esc(d.join(" · "))}</div>` : ""; })()}`).join("") || "<b>—</b>"}</div>
         <div><span class="sub">Creado</span><b>${fechaCreacion(c) ? fecha(fechaCreacion(c)) : "—"}</b></div>
-        <div><span class="sub">Fecha límite</span><b>${fecha(c.Fecha_Compromiso)}</b></div>
+        <div><span class="sub">Fecha límite</span><b>${fecha(c.Fecha_Compromiso)}</b>${chipPlazo(c)}</div>
         ${c.Fecha_Cierre ? `<div><span class="sub">Cerrado el</span><b>${fecha(c.Fecha_Cierre)}</b></div>` : ""}
       </div>
       <div class="form-seccion">Seguimiento del compromiso <span class="contador">${coms.length}</span></div>
@@ -2782,7 +2784,7 @@
       { t: "Seguimientos y sesiones", d: segs.length ? `${plural(segs.length, "sesión", "sesiones")} · última ${fecha(segs[segs.length - 1].Fecha_Corte)}` : "sin sesiones", h: `      ${tabla(["Fecha", "Avance", "Semáforo", "Logros", "Próximos pasos", "Bloqueos", "Acta"], segs.slice().reverse().map((x) => `<tr><td class="hv-nw">${fecha(x.Fecha_Corte)}${R.esSesion(x) ? `<br><small>Sesión${x.Nombre_Sesion ? `: ${esc(x.Nombre_Sesion)}` : ""}</small>` : ""}</td><td>${R.esSesion(x) ? "—" : pct(x.Avance_Real)}</td><td>${R.esSesion(x) ? "—" : t(x.Semaforo)}</td><td>${t(x.Logros)}</td><td>${t(x.Proximos_Pasos)}</td><td>${t(x.Bloqueos)}</td><td>${x.Fecha_Acta ? fecha(x.Fecha_Acta) : "—"}${x.Acta_Archivo ? " · PDF" : ""}${esURL(x.URL_Acta) ? `<br>${enlaceHV(x.URL_Acta, "Ver acta ↗")}` : ""}</td></tr>`), "Sin seguimientos.")}` },
       { t: "Compromisos", d: `${comps.length} · ${abiertos} abiertos${vencidosC ? ` · ${vencidosC} vencidos` : ""}`, h: `      ${tabla(["Compromiso", "Origen", "Responsable", "Fecha límite", "Estado", "Seguimiento"], comps.map((c) => {
         const hilo = comentariosDe(c.ID_Compromiso);
-        return `<tr><td>${t(c.Compromiso)}</td><td>${esc(origen(c))}</td><td>${t(c.Responsable)}</td><td class="hv-nw">${fecha(c.Fecha_Compromiso)}</td>
+        return `<tr><td>${t(c.Compromiso)}</td><td>${esc(origen(c))}</td><td>${t(c.Responsable)}</td><td class="hv-nw">${fecha(c.Fecha_Compromiso)}${c.Plazo ? `<br><small>${esc(textoPlazo(c))}</small>` : ""}</td>
           <td>${esc(R.estadoCompromiso(c))}${R.cerrado(c) && c.Fecha_Cierre ? `<br><small>cerrado ${fecha(c.Fecha_Cierre)}</small>` : ""}</td>
           <td>${hilo.length ? hilo.map((x) => `<div class="hv-com"><small>${fechaEv(String(x.Fecha_Hora))} · ${esc(nombreUsuario(x.Autor))}</small><br>${wbr(resumenCom(x))}</div>`).join("") : "—"}</td></tr>`;
       }), "Sin compromisos.")}` },
@@ -3508,7 +3510,7 @@ ${x.h}</section>`).join("")}
       ${tabla(["Proyecto", "Fecha", "Avance", "Logros", "Próximos pasos", "Bloqueos"], segsSem.map((s) => `<tr><td>${nomP(s.ID_Proyecto)}</td><td class="hv-nw">${fecha(s.Fecha_Corte)}</td><td>${pct(s.Avance_Real)}</td><td>${t(s.Logros)}</td><td>${t(s.Proximos_Pasos)}</td><td>${t(s.Bloqueos)}</td></tr>`), "No se reportaron seguimientos esta semana.")}
       <h2>3. Compromisos</h2>
       <p class="hv-p"><b>${acordadosSem.length}</b> acordados en la semana · <b>${cerradosSem.length}</b> cerrados en la semana · <b>${vencidos.length}</b> vencidos a la fecha.</p>
-      ${tabla(["Compromiso vencido", "Proyecto", "Responsable", "Fecha límite", "Estado"], vencidos.sort((a, b) => String(a.Fecha_Compromiso).localeCompare(String(b.Fecha_Compromiso))).map((c) => `<tr><td>${t(c.Compromiso)}</td><td>${nomP(c.ID_Proyecto)}</td><td>${t(c.Responsable)}</td><td class="hv-nw">${fecha(c.Fecha_Compromiso)}</td><td>${esc(R.estadoBase(c))}</td></tr>`), "Sin compromisos vencidos.")}
+      ${tabla(["Compromiso vencido", "Proyecto", "Responsable", "Fecha límite", "Estado"], vencidos.sort((a, b) => String(a.Fecha_Compromiso).localeCompare(String(b.Fecha_Compromiso))).map((c) => `<tr><td>${t(c.Compromiso)}</td><td>${nomP(c.ID_Proyecto)}</td><td>${t(c.Responsable)}</td><td class="hv-nw">${fecha(c.Fecha_Compromiso)}${c.Plazo ? `<br><small>${esc(textoPlazo(c))}</small>` : ""}</td><td>${esc(R.estadoBase(c))}</td></tr>`), "Sin compromisos vencidos.")}
       ${cerradosSem.length ? tabla(["Cerrado en la semana", "Proyecto", "Responsable", "Cerrado"], cerradosSem.map((c) => `<tr><td>${t(c.Compromiso)}</td><td>${nomP(c.ID_Proyecto)}</td><td>${t(c.Responsable)}</td><td class="hv-nw">${fecha(c.Fecha_Cierre)}</td></tr>`), "") : ""}
       <h2>4. Riesgos altos activos</h2>
       ${tabla(["Riesgo", "Proyecto", "Nivel", "Mitigación"], riesgosAltos.map((r) => `<tr><td>${t(r.Descripcion)}</td><td>${nomP(r.ID_Proyecto)}</td><td>${R.nivelRiesgo(Number(r.Calificacion_Residual) || Number(r.Calificacion_Inherente) || 0)}</td><td>${t(r.Plan_Mitigacion)}</td></tr>`), "Sin riesgos altos abiertos.")}
@@ -4488,6 +4490,7 @@ ${x.h}</section>`).join("")}
       try {
         await S.api.actualizarPorId(cfg.tabla, cfg.idCol, cfg.id, { [cfg.campo]: v, ...(cfg.extra ? cfg.extra(v) : {}) });
         if (cfg.despues) await cfg.despues(v);
+        if (cfg.tabla === "Hitos") await sincronizarPlazosHito();
         armarCatalogos(); fin(); toast(`${cfg.etiqueta || "Dato"} actualizado`);
       } catch (e) { toast("No se pudo guardar: " + e.message, true); td.innerHTML = previo; td.classList.remove("editando"); }
     };
@@ -7844,7 +7847,7 @@ ${x.h}</section>`).join("")}
         <div class="comp-previos">${abiertos.map((c) => `<div class="cp-fila"><span>${esc(c.Compromiso)} <span class="sub">${esc(c.Responsable || "sin responsable")} · ${fecha(c.Fecha_Compromiso)}</span> ${R.estadoCompromiso(c) === "Vencido" ? pill("Vencido") : ""}</span>
           <select class="cp-estado" data-cp="${esc(c.ID_Compromiso)}" aria-label="Estado de ${esc(c.Compromiso)}">${R.ESTADOS_COMPROMISO.map((e) => `<option ${e === R.estadoBase(c) ? "selected" : ""}>${esc(e)}</option>`).join("")}</select></div>`).join("")}</div>` : ""}
       <div class="form-seccion">${abiertos.length ? "5" : "4"}. Compromisos nuevos<span class="sub"> · acuerdos que quedaron en este seguimiento (opcional)</span></div>
-      <div class="comp-cab"><span>Compromiso</span><span>Responsable(s)</span><span>Fecha límite</span><span>Estado</span><span></span></div>
+      <div class="comp-cab"><span>Compromiso</span><span>Responsable(s)</span><span>Plazo y fecha límite</span><span>Estado</span><span></span></div>
       <div id="comp-nuevos">${filaComp()}</div>
       <button type="button" class="btn chico" id="b-add-comp">+ Agregar otro compromiso</button>`;
     const init = (m) => {
@@ -7967,7 +7970,9 @@ ${x.h}</section>`).join("")}
         if (!t && !r && !d) continue;
         if (d && fd.Fecha_Corte && d < fd.Fecha_Corte) return { error: `La fecha del compromiso «${t || "sin descripción"}» no puede ser anterior a la fecha de corte.` };
         const inp = f.querySelector(".c-resp");
-        nuevos.push({ Compromiso: t || "(sin descripción)", Responsable: r, Fecha_Compromiso: d, Estado: f.querySelector(".c-estado").value, _nuevos: inp._nuevos || new Set() });
+        const pz = f.querySelector(".c-plazo"), hs = f.querySelector(".c-hito");
+        const plazo = pz ? pz.value : "", ref = plazo === "Antes de" && hs ? hs.value : "";
+        nuevos.push({ Compromiso: t || "(sin descripción)", Responsable: r, Fecha_Compromiso: d || (plazo ? fechaPlazo(plazo, fd.Fecha_Corte, ref) : ""), Plazo: plazo, Plazo_Ref: ref, Estado: f.querySelector(".c-estado").value, _nuevos: inp._nuevos || new Set() });
       }
       const cambiosEstado = [...m.querySelectorAll(".cp-estado")].map((sel) => ({ c: abiertos.find((x) => x.ID_Compromiso === sel.dataset.cp), estado: sel.value })).filter((x) => x.c && x.estado !== R.estadoBase(x.c));
       return { datos: { nuevos, cambiosEstado } };
@@ -8283,7 +8288,13 @@ ${x.h}</section>`).join("")}
       .map((s) => [s.ID_Seguimiento, `Sesión del ${fecha(s.Fecha_Corte)}${s.Fecha_Acta && s.Fecha_Acta !== s.Fecha_Corte ? ` (acta ${fecha(s.Fecha_Acta)})` : ""}`]);
     let leerResp = () => [];
     const extra = {
-      init: (m) => { leerResp = selectorResponsables(m, pid, nuevo ? [] : responsablesDe(c, false)); },
+      init: (m) => {
+        leerResp = selectorResponsables(m, pid, nuevo ? [] : responsablesDe(c, false));
+        const pz = m.querySelector("[name=Plazo]"), hs = m.querySelector("[name=Plazo_Ref]"), fe = m.querySelector("[name=Fecha_Compromiso]");
+        const base = () => (nuevo ? R.hoyISO() : fechaCreacion(c) || R.hoyISO());
+        const ver = (calc) => { hs.closest("label").hidden = pz.value !== "Antes de"; if (calc && pz.value) fe.value = fechaPlazo(pz.value, base(), hs.value); };
+        pz.addEventListener("change", () => ver(true)); hs.addEventListener("change", () => ver(true)); ver(false);
+      },
       recoger: (m) => {
         const pend = m.querySelector("#rs-buscar").value.trim();
         if (pend) return { error: `Elige «${pend}» de la lista de responsables (o bórralo) antes de guardar.` };
@@ -8295,6 +8306,8 @@ ${x.h}</section>`).join("")}
       { k: "ID_Seguimiento", label: "¿De qué sesión salió?", tipo: "select", opciones: sesiones, ancho: true, textoVacio: "Sin sesión (solo del proyecto)",
         ayuda: sesiones.length ? "Elige la sesión de seguimiento donde se acordó, o déjalo sin sesión." : "Este proyecto aún no tiene sesiones; quedará atado solo al proyecto." },
       { html: `<div id="fc-resp" class="fc-resp"></div>` },
+      { k: "Plazo", label: "Plazo", tipo: "select", opciones: PLAZOS, textoVacio: "Fecha", ayuda: `Lo antes posible = ${DIAS_LO_ANTES} días hábiles · Por definir = fin de mes · Antes de un hito = la fecha del hito (se mueve con él).` },
+      { k: "Plazo_Ref", label: "Hito", tipo: "select", opciones: (S.datos.Hitos || []).filter((h) => h.ID_Proyecto === pid).map((h) => [h.ID_Hito, `${h.Hito} · ${fecha(h.Fecha_Plan)}`]), textoVacio: "Elige el hito…" },
       { k: "Fecha_Compromiso", label: "Fecha límite", tipo: "date" },
       { k: "Dias_Alerta", label: "Avisar con (días de anticipación)", tipo: "number", min: 0, max: 60, def: R.DIAS_COMPROMISO_POR_VENCER, ayuda: "Desde ese día aparece en «Por vencer» y en la campana 🔔." },
       ...(nuevo ? [{ k: "Comentario", label: "Comentario inicial (opcional)", tipo: "textarea", placeholder: "Contexto o primer avance" }] : [
@@ -8305,7 +8318,8 @@ ${x.h}</section>`).join("")}
     if (nuevo) {
       modal(`Nuevo compromiso · ${pNuevo.Nombre}`, campos, { ID_Seguimiento: segSugerida || "" }, (fd, resp) => {
         const fila = { ID_Compromiso: R.siguienteIdHijo("CMP", S.datos.Compromisos, "ID_Compromiso", pNuevo.ID_Proyecto), ID_Proyecto: pNuevo.ID_Proyecto, ID_Seguimiento: fd.ID_Seguimiento || "",
-          Compromiso: fd.Compromiso || "(sin descripción)", Dias_Alerta: fd.Dias_Alerta === "" ? "" : fd.Dias_Alerta, Fecha_Compromiso: fd.Fecha_Compromiso, Estado: "Pendiente", Fecha_Cierre: "", Registrado_Por: S.usuario.Correo };
+          Compromiso: fd.Compromiso || "(sin descripción)", Dias_Alerta: fd.Dias_Alerta === "" ? "" : fd.Dias_Alerta, Fecha_Compromiso: fd.Fecha_Compromiso || (fd.Plazo ? fechaPlazo(fd.Plazo, R.hoyISO(), fd.Plazo_Ref) : ""),
+          Plazo: fd.Plazo, Plazo_Ref: fd.Plazo === "Antes de" ? fd.Plazo_Ref : "", Estado: "Pendiente", Fecha_Cierre: "", Registrado_Por: S.usuario.Correo };
         guardar(async () => {
           Object.assign(fila, await resolverResponsables(resp, true));
           await S.api.agregarFila("Compromisos", fila);
@@ -8316,6 +8330,8 @@ ${x.h}</section>`).join("")}
     }
     const coms = comentariosDe(c.ID_Compromiso);
     modal("Editar compromiso", campos, { ...c, Estado: R.estadoBase(c), Fecha_Creacion: fechaCreacion(c) }, (fd, resp) => {
+      if (fd.Plazo !== "Antes de") fd.Plazo_Ref = "";
+      if (fd.Plazo && !fd.Fecha_Compromiso) fd.Fecha_Compromiso = fechaPlazo(fd.Plazo, fechaCreacion(c) || R.hoyISO(), fd.Plazo_Ref);
       if (fd.Estado === "Cerrado" && !fd.Fecha_Cierre) fd.Fecha_Cierre = R.hoyISO();
       if (fd.Estado !== "Cerrado") fd.Fecha_Cierre = "";
       const cambioEstado = fd.Estado !== R.estadoBase(c);
@@ -8332,11 +8348,73 @@ ${x.h}</section>`).join("")}
       }, "Compromiso eliminado") } });
   }
 
+  // ---------- Plazo de los compromisos: fecha exacta, «Lo antes posible», «Antes de» un hito, «Por definir» ----------
+  const PLAZOS = [["", "Fecha"], ["Lo antes posible", "Lo antes posible"], ["Antes de", "Antes de un hito"], ["Por definir", "Por definir"]];
+  const DIAS_LO_ANTES = 3;   // «Lo antes posible» = fecha de la sesión + 3 días hábiles
+  const sumarHabiles = (d, n) => { let x = d; for (let i = 0; i < n;) { x = R.sumarDias(x, 1); if (horasDia(x) > 0) i += 1; } return x; };
+  const habilesEntre = (a, b) => { let n = 0; for (let x = R.sumarDias(a, 1); x <= b; x = R.sumarDias(x, 1)) if (horasDia(x) > 0) n += 1; return n; };
+  const finMesHabil = (d) => { let x = finDeMesISO(d); while (!horasDia(x)) x = R.sumarDias(x, -1); return x; };
+  const hitoPorId = (id) => (S.datos.Hitos || []).find((h) => h.ID_Hito === id);
+  // «Por definir» = último día hábil del mes; si quedan menos de 3 días hábiles, el del mes siguiente.
+  function fechaPlazo(plazo, base, ref) {
+    base = base || R.hoyISO();
+    if (plazo === "Lo antes posible") return sumarHabiles(base, DIAS_LO_ANTES);
+    const finMes = () => { const f = finMesHabil(base); return habilesEntre(base, f) < 3 ? finMesHabil(sumarMeses(base.slice(0, 8) + "01", 1)) : f; };
+    if (plazo === "Por definir") return finMes();
+    if (plazo === "Antes de") { const h = hitoPorId(ref); return h && h.Fecha_Plan ? String(h.Fecha_Plan).slice(0, 10) : finMes(); }
+    return "";
+  }
+  // Plazo escrito en un acta → tipo de plazo (y el hito que más se parezca, si dice «antes de…»).
+  function plazoDeTexto(txt, pid) {
+    const t = String(txt || "");
+    if (/antes posible|m[aá]s pronto posible|inmediat/i.test(t)) return { Plazo: "Lo antes posible", Plazo_Ref: "" };
+    if (/sin fecha|por definir|por confirmar/i.test(t)) return { Plazo: "Por definir", Plazo_Ref: "" };
+    const m = t.match(/(?:antes de(?:l)?|a m[aá]s tardar)\s+(?:la |el |los |las )?(.+)/i);
+    if (m) {
+      const pal = normTxt(m[1]).split(/[^a-z0-9]+/).filter((w) => w.length > 3);
+      const h = (S.datos.Hitos || []).filter((x) => x.ID_Proyecto === pid && x.Estado !== "Cumplido").map((x) => ({ x, n: pal.filter((w) => normTxt(x.Hito).includes(w)).length })).sort((a, b) => b.n - a.n)[0];
+      return { Plazo: "Antes de", Plazo_Ref: h && h.n ? h.x.ID_Hito : m[1].trim() };
+    }
+    return null;
+  }
+  const textoPlazo = (c) => (!c.Plazo ? "" : c.Plazo === "Antes de" ? `Antes de ${(hitoPorId(c.Plazo_Ref) || {}).Hito || c.Plazo_Ref || "un hito"}` : c.Plazo);
+  const chipPlazo = (c) => (c.Plazo ? ` <span class="pill plazo" title="Plazo del compromiso">${esc(textoPlazo(c))}</span>` : "");
+  // Si un hito cambia de fecha, los compromisos «Antes de» ese hito se mueven con él.
+  async function sincronizarPlazosHito() {
+    const cambios = (S.datos.Compromisos || []).filter((c) => c.Plazo === "Antes de" && !R.cerrado(c)).map((c) => { const h = hitoPorId(c.Plazo_Ref); const f = h && h.Fecha_Plan ? String(h.Fecha_Plan).slice(0, 10) : ""; return f && f !== c.Fecha_Compromiso ? { id: c.ID_Compromiso, cambios: { Fecha_Compromiso: f } } : null; }).filter(Boolean);
+    if (cambios.length) { try { await S.api.actualizarVarios("Compromisos", "ID_Compromiso", cambios); } catch (e) { /* sin permiso: se ajusta la próxima vez */ } }
+  }
+  // Fila de compromiso (sesión): plazo + hito + fecha; se recalcula al cambiar el plazo, el hito o la fecha de la sesión.
+  document.addEventListener("change", (e) => {
+    const t = e.target;
+    if (t.matches && t.matches('#m-form [name="Fecha_Corte"]')) { document.querySelectorAll("#m-form .comp-fila").forEach((f) => { const pz = f.querySelector(".c-plazo"); if (pz && pz.value) recalcularFila(f); }); return; }
+    if (!t.matches || !t.matches(".c-plazo, .c-hito")) return;
+    recalcularFila(t.closest(".comp-fila"));
+  });
+  function recalcularFila(f) {
+    if (!f) return;
+    const pz = f.querySelector(".c-plazo"), hs = f.querySelector(".c-hito"), fe = f.querySelector(".c-fecha");
+    hs.hidden = pz.value !== "Antes de";
+    if (!pz.value) return;
+    const base = (document.querySelector('#m-form [name="Fecha_Corte"]') || {}).value || R.hoyISO();
+    fe.value = fechaPlazo(pz.value, base, hs.value);
+  }
+
   // Fila rápida de compromiso (registrar o editar una sesión).
   const filaComp = (c = {}) => `<div class="comp-fila">
       <textarea class="c-texto" rows="1" placeholder="Compromiso (qué se hará)" aria-label="Compromiso">${esc(String(c.Compromiso || "").replace(/\s*\n+\s*/g, " "))}</textarea>
       <input class="c-resp" placeholder="Responsable(s) de Recursos" title="Puedes elegir varias personas: se separan con «;»" aria-label="Responsables" data-recurso data-multi autocomplete="off" value="${esc(separarNombres(c.Responsable).join("; "))}">
-      <div class="c-fecha-w"><input class="c-fecha" type="date" aria-label="Fecha límite" value="${esc(c.Fecha_Compromiso || "")}" title="${esc(c.Fecha_Texto && !c.Fecha_Compromiso ? `En el acta: ${c.Fecha_Texto}` : "")}">${c.Fecha_Texto && !c.Fecha_Compromiso ? `<span class="c-plazo-acta" title="Plazo escrito en el acta">Acta: «${esc(c.Fecha_Texto)}»</span>` : ""}</div>
+      ${(() => {
+        const pid = S.pidForm, base = (document.querySelector('#m-form [name="Fecha_Corte"]') || {}).value || R.hoyISO();
+        const auto = !c.Plazo && c.Fecha_Texto && !c.Fecha_Compromiso ? plazoDeTexto(c.Fecha_Texto, pid) : null;
+        const plazo = c.Plazo || (auto ? auto.Plazo : ""), ref = c.Plazo_Ref || (auto ? auto.Plazo_Ref : "");
+        const hitos = (S.datos.Hitos || []).filter((h) => h.ID_Proyecto === pid).sort((a, b) => String(a.Fecha_Plan).localeCompare(String(b.Fecha_Plan)));
+        const f = c.Fecha_Compromiso || (plazo ? fechaPlazo(plazo, base, ref) : "");
+        const refTexto = plazo === "Antes de" && ref && !hitoPorId(ref) ? ref : "";
+        return `<div class="c-fecha-w"><select class="c-plazo" aria-label="Plazo">${PLAZOS.map(([v, t]) => `<option value="${esc(v)}" ${v === plazo ? "selected" : ""}>${esc(t)}</option>`).join("")}</select>
+          <select class="c-hito" aria-label="Hito" ${plazo === "Antes de" ? "" : "hidden"}>${refTexto ? `<option value="${esc(refTexto)}" selected>«${esc(corta(refTexto, 30))}» (no es un hito)</option>` : ""}<option value="">Elige el hito…</option>${hitos.map((h) => `<option value="${esc(h.ID_Hito)}" ${h.ID_Hito === ref ? "selected" : ""}>${esc(corta(h.Hito, 34))} · ${fecha(h.Fecha_Plan)}</option>`).join("")}</select>
+          <input class="c-fecha" type="date" aria-label="Fecha límite" value="${esc(f)}">${c.Fecha_Texto && !c.Fecha_Compromiso ? `<span class="c-plazo-acta" title="Plazo escrito en el acta">Acta: «${esc(c.Fecha_Texto)}»</span>` : ""}</div>`;
+      })()}
       <select class="c-estado" aria-label="Estado">${R.ESTADOS_COMPROMISO.map((e) => `<option ${e === (c.Estado || "Pendiente") ? "selected" : ""}>${esc(e)}</option>`).join("")}</select>
       <button type="button" class="btn chico c-quitar" aria-label="Quitar compromiso">✕</button></div>`;
   function formEditarSeguimiento(s) {

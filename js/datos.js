@@ -71,7 +71,7 @@
     Recursos: ["Tarifa_Hora"],
     Agenda: ["Correo", "Titulo", "Fila", "Hecha_Con", "Exige_Acta", "Cuenta_Estado", "Suma_Horas", "Reprograma_De"],
     Esfuerzo: ["Estado", "Motivo", "Fecha_Nueva"],
-    Compromisos: ["Correo_Responsable", "Dias_Alerta", "ID_Recurso", "Fecha_Creacion"],
+    Compromisos: ["Correo_Responsable", "Dias_Alerta", "ID_Recurso", "Fecha_Creacion", "Plazo", "Plazo_Ref"],
     Comentarios: ["Adjuntos", "Editado_El"],
     Cambios: ["Numero_CC", "URL_Documento"],
     Tareas: ["ID_Version", "ID_Externo"],

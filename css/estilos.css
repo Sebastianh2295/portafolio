@@ -1424,3 +1424,8 @@ span.oc { cursor: default; }
 .oc-sindato { color: var(--texto2); opacity: .45; border-style: dotted; }
 .c-fecha-w { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .c-plazo-acta { font-size: 11px; color: #8a5a1c; background: #fdf1e3; border-radius: 4px; padding: 2px 6px; line-height: 1.3; }
+/* v91 · Plazo de compromisos */
+.comp-cab, .comp-fila { grid-template-columns: 2fr 1.2fr 165px 120px 34px; }
+.c-fecha-w select { padding: 5px 6px; font-size: 12.5px; }
+.pill.plazo { background: #fdf1e3; color: #8a5a1c; font-weight: 600; margin-left: 4px; }
+@media (max-width: 760px) { .comp-cab { display: none; } .comp-fila { grid-template-columns: 1fr 1fr; } }
