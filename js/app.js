@@ -8336,7 +8336,7 @@ ${x.h}</section>`).join("")}
   const filaComp = (c = {}) => `<div class="comp-fila">
       <textarea class="c-texto" rows="1" placeholder="Compromiso (qué se hará)" aria-label="Compromiso">${esc(String(c.Compromiso || "").replace(/\s*\n+\s*/g, " "))}</textarea>
       <input class="c-resp" placeholder="Responsable(s) de Recursos" title="Puedes elegir varias personas: se separan con «;»" aria-label="Responsables" data-recurso data-multi autocomplete="off" value="${esc(separarNombres(c.Responsable).join("; "))}">
-      <input class="c-fecha" type="date" aria-label="Fecha límite" value="${esc(c.Fecha_Compromiso || "")}" title="${esc(c.Fecha_Texto && !c.Fecha_Compromiso ? `En el acta: ${c.Fecha_Texto}` : "")}">
+      <div class="c-fecha-w"><input class="c-fecha" type="date" aria-label="Fecha límite" value="${esc(c.Fecha_Compromiso || "")}" title="${esc(c.Fecha_Texto && !c.Fecha_Compromiso ? `En el acta: ${c.Fecha_Texto}` : "")}">${c.Fecha_Texto && !c.Fecha_Compromiso ? `<span class="c-plazo-acta" title="Plazo escrito en el acta">Acta: «${esc(c.Fecha_Texto)}»</span>` : ""}</div>
       <select class="c-estado" aria-label="Estado">${R.ESTADOS_COMPROMISO.map((e) => `<option ${e === (c.Estado || "Pendiente") ? "selected" : ""}>${esc(e)}</option>`).join("")}</select>
       <button type="button" class="btn chico c-quitar" aria-label="Quitar compromiso">✕</button></div>`;
   function formEditarSeguimiento(s) {

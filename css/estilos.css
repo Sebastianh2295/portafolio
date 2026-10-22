@@ -1422,3 +1422,5 @@ span.oc { cursor: default; }
 .ag-ck.fila { display: inline-flex; flex-direction: row; vertical-align: middle; }
 .ag-evw.dl-reprog .ag-ev { opacity: .55; font-style: italic; }
 .oc-sindato { color: var(--texto2); opacity: .45; border-style: dotted; }
+.c-fecha-w { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.c-plazo-acta { font-size: 11px; color: #8a5a1c; background: #fdf1e3; border-radius: 4px; padding: 2px 6px; line-height: 1.3; }

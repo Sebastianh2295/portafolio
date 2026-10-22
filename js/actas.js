@@ -22,11 +22,21 @@
     const t = String(texto || "").toLowerCase().replace(/\s+/g, " ").trim();
     let m = t.match(/(\d{1,2}) de ([a-záéíóúñ]+) (?:de|del) (\d{4})/);
     if (m && MESES[m[2]]) return `${m[3]}-${pad(MESES[m[2]])}-${pad(m[1])}`;
-    m = t.match(/(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})/);
-    if (m) return `${m[3]}-${pad(m[2])}-${pad(m[1])}`;
+    m = t.match(/(\d{1,2})\s*[/.-]\s*(\d{1,2})\s*[/.-]\s*(\d{4})/) || t.match(/\b(\d{1,2}) (\d{1,2}) (\d{4})\b/);   // también «27 / 10 / 2026» o «27 10 2026» (PDF partido)
+    if (m && +m[2] >= 1 && +m[2] <= 12 && +m[1] >= 1 && +m[1] <= 31) return `${m[3]}-${pad(m[2])}-${pad(m[1])}`;
     m = t.match(/(\d{4})-(\d{2})-(\d{2})/);
     if (m) return `${m[1]}-${m[2]}-${m[3]}`;
     return "";
+  }
+
+  // Plazos escritos con palabras (o fechas) que quedaron pegados al responsable: se pasan a la fecha.
+  const RX_PLAZO = /\b(sin fecha(?:\s+expl[ií]cita)?|lo (?:antes|m[aá]s pronto) posible|por (?:definir|confirmar)|a m[aá]s tardar\b.*|antes de(?:l)?\b.*|inmediat[oa]|permanente|continuo|esta semana|pr[oó]xim[ao]s? (?:semana|sesi[oó]n|reuni[oó]n|comit[eé]).*|\d{1,2}\s*[/.-]\s*\d{1,2}(?:\s*[/.-]\s*\d{2,4})?|\d{1,2} \d{1,2} \d{4})/i;
+  function separarPlazo(c) {
+    const r = String(c.Responsable || ""), m = r.match(RX_PLAZO);
+    if (!m) return c;
+    const resp = (r.slice(0, m.index) + " " + r.slice(m.index + m[0].length)).replace(/\s+/g, " ").replace(/\s+(de|del|la|y)$/i, "").trim();
+    const txt = `${m[0].trim()} ${c.Fecha_Texto || ""}`.trim();
+    return { ...c, Responsable: resp, Fecha_Texto: txt, Fecha_Compromiso: c.Fecha_Compromiso || fechaISO(txt) };
   }
 
   // Extrae los fragmentos de texto de cada página con su posición (y crece hacia abajo).
@@ -127,11 +137,54 @@
       if (fin) terminado = true;
       const celdas = items.filter((i) => i.y > desde && i.y < hasta);
       const numeros = celdas.filter((i) => /^\d{1,3}\.?$/.test(i.t) && i.x < cols.L1).sort((a, b) => a.y - b.y);
-      if (!numeros.length) continue;
+      if (!numeros.length) {
+        // Página sin números nuevos: todo es continuación de la última fila (texto largo que pasó de página).
+        const colN = (i) => (i.x < cols.L1 ? 0 : i.x < cols.L2 - 2 ? 1 : i.x < cols.L3 - 2 ? 2 : 3);
+        const u = filas[filas.length - 1];
+        if (u && cols.centradas !== undefined) {
+          const [d, r, f] = [1, 2, 3].map((c) => unir(celdas.filter((i) => colN(i) === c)));
+          if (d) u.Compromiso = `${u.Compromiso} ${d}`.trim();
+          if (r) u.Responsable = `${u.Responsable} ${r}`.trim();
+          if (f) { u.Fecha_Texto = `${u.Fecha_Texto || ""} ${f}`.trim(); u.Fecha_Compromiso = fechaISO(u.Fecha_Texto); }
+        }
+        continue;
+      }
+      // Límite Responsable | Fecha: si en un mismo renglón hay dos textos separados dentro de «Responsable»,
+      // el de la derecha ya es la columna Fecha (p. ej. «Lo antes posible» o «Sin fecha explícita» junto al nombre).
+      {
+        const enResp = celdas.filter((i) => i.x >= cols.L2 - 2 && i.x < cols.L3 - 2).sort((a, b) => a.y - b.y || a.x - b.x);
+        const cand = [];
+        enResp.forEach((i, j) => { const prev = enResp[j - 1]; if (prev && Math.abs(prev.y - i.y) < 3 && i.x - (prev.x + prev.w) > 6) cand.push(i.x); });
+        const nuevo = cand.length ? Math.min(...cand) : Infinity;
+        if (nuevo > cols.L2 + 30 && nuevo < cols.L3) cols.L3 = nuevo;
+      }
       const col = (i) => (i.x < cols.L1 ? 0 : i.x < cols.L2 - 2 ? 1 : i.x < cols.L3 - 2 ? 2 : 3);
       const contenido = celdas.filter((i) => col(i) > 0);
-      // Si hay texto por encima del primer número, las celdas están centradas verticalmente.
-      const centradas = contenido.some((i) => i.y < numeros[0].y - 3);
+      // Si en la primera página hay texto por encima del primer número, las celdas están centradas verticalmente.
+      // En las páginas siguientes, el texto de arriba es la continuación de la fila que venía de la página anterior.
+      const primeraPag = cols.centradas === undefined;
+      if (primeraPag) cols.centradas = contenido.some((i) => i.y < numeros[0].y - 3);
+      const centradas = cols.centradas;
+      const cont = [[], [], []];
+      if (!primeraPag && filas.length) {
+        const limite = numeros[0].y - 3;
+        if (centradas) {
+          // Bloques que terminan antes del primer número de la página: continuación.
+          for (let c = 1; c <= 3; c++) {
+            const its = contenido.filter((i) => col(i) === c).sort((a, b) => a.y - b.y);
+            const arriba = []; for (const i of its) { const u = arriba[arriba.length - 1]; if (i.y < limite && (!u || i.y - u.y <= Math.max(u.h, i.h) * 1.55)) arriba.push(i); else break; }
+            if (arriba.length && (its[arriba.length] === undefined || its[arriba.length].y - arriba[arriba.length - 1].y > arriba[arriba.length - 1].h * 1.55)) cont[c - 1].push(...arriba);
+          }
+        } else contenido.filter((i) => i.y < limite).forEach((i) => cont[col(i) - 1].push(i));
+        const usados = new Set(cont.flat());
+        for (let c = contenido.length - 1; c >= 0; c--) if (usados.has(contenido[c])) contenido.splice(c, 1);
+        if (usados.size) {
+          const u = filas[filas.length - 1], [d, r, f] = cont.map(unir);
+          if (d) u.Compromiso = `${u.Compromiso} ${d}`.trim();
+          if (r) u.Responsable = `${u.Responsable} ${r}`.trim();
+          if (f) { u.Fecha_Texto = `${u.Fecha_Texto || ""} ${f}`.trim(); u.Fecha_Compromiso = fechaISO(u.Fecha_Texto); }
+        }
+      }
       const grupos = numeros.map((n) => ({ n: n.t.replace(".", ""), items: [[], [], []] }));
       const cercano = (y) => numeros.reduce((mejor, n, j) => (Math.abs(n.y - y) < Math.abs(numeros[mejor].y - y) ? j : mejor), 0);
       if (centradas) {
@@ -341,13 +394,13 @@
   async function leerActa(archivo) {
     const datos = new Uint8Array(await archivo.arrayBuffer());
     const esWord = /\.docx$/i.test(archivo.name || "") || (datos[0] === 0x50 && datos[1] === 0x4b);
-    if (esWord) return { ...(await leerWord(datos)), datos, tipo: TIPO_DOCX, word: true };
+    if (esWord) { const w = await leerWord(datos); return { ...w, compromisos: (w.compromisos || []).map(separarPlazo), datos, tipo: TIPO_DOCX, word: true }; }
     const paginas = await fragmentos(datos);
     const fecha = leerFecha(paginas) || (() => { for (const l of renglones(paginas)) { if (/fecha/i.test(l.t)) { const f = fechaISO(l.t); if (f) return f; } } return ""; })();
     let r = leerCompromisos(paginas);   // formato FSFB (GC-GME-FT-010)
     if (r.compromisos.length) r.formato = "FSFB";
     else { const g = leerGenerico(paginas, (fecha || new Date().toISOString()).slice(0, 4)); if (g.compromisos.length || !r.titulo) r = g; }
-    return { fecha, ...r, datos, tipo: "application/pdf" };
+    return { fecha, ...r, compromisos: (r.compromisos || []).map(separarPlazo), datos, tipo: "application/pdf" };
   }
 
   // Base64 por partes para no bloquear el navegador con archivos grandes.
