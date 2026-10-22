@@ -1,7 +1,7 @@
 /* Lógica de negocio: roles, frecuencias, estado de seguimiento, compromisos, IDs y KPIs.
    No toca Excel ni pantallas; solo calcula. */
 (function () {
-  const DIAS_FRECUENCIA = { Semanal: 7, Quincenal: 15, Mensual: 30 };
+  const DIAS_FRECUENCIA = { Diario: 1, Semanal: 7, Quincenal: 15, Mensual: 30 };
   const DIAS_POR_VENCER = 2;
   const DIAS_COMPROMISO_POR_VENCER = 3;
 
@@ -62,14 +62,17 @@
   function estadoSeguimiento(p, segs, hoy = hoyISO()) {
     const lista = avancesDe(p.ID_Proyecto, segs);
     const ultimo = lista.length ? lista[lista.length - 1] : null;
+    const diario = p.Frecuencia_Seguimiento === "Diario";
     const dias = DIAS_FRECUENCIA[p.Frecuencia_Seguimiento] || 7;
     const base = (ultimo && ultimo.Fecha_Corte) || p.Fecha_Inicio || hoy;
-    const proximo = sumarDias(base, dias);
+    // Diario: el siguiente día hábil (lunes a viernes) después del último reporte.
+    let proximo = sumarDias(base, dias);
+    if (diario) { while ([0, 6].includes(aFecha(proximo).getDay())) proximo = sumarDias(proximo, 1); }
     const faltan = difDias(proximo, hoy);
     let estado = "Al día";
     if (p.Estado !== "Activo") estado = "No aplica";
     else if (faltan < 0) estado = "Vencido";
-    else if (faltan <= DIAS_POR_VENCER) estado = "Por vencer";
+    else if (faltan <= (diario ? 0 : DIAS_POR_VENCER)) estado = "Por vencer";
     const hace90 = sumarDias(hoy, -90);
     return { ultimo, ultimaFecha: ultimo ? ultimo.Fecha_Corte : "", proximo, faltan, estado, en90: lista.filter((s) => s.Fecha_Corte >= hace90).length };
   }

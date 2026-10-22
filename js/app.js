@@ -145,6 +145,7 @@
     Object.entries(CATALOGOS_BASE).forEach(([k, v]) => { if (!S.cat[k]) S.cat[k] = v.slice(); });
     S.cat.Estado_Riesgo = [...new Set([...ESTADOS_RIESGO, ...(S.cat.Estado_Riesgo || [])])];
     S.cat.Tipo_Riesgo = [...new Set(["Amenaza", "Oportunidad", ...(S.cat.Tipo_Riesgo || [])])];
+    S.cat.Frecuencia_Seguimiento = [...new Set(["Diario", ...(S.cat.Frecuencia_Seguimiento || ["Semanal", "Quincenal", "Mensual"])])];
   }
   // Listas nuevas que se crean solas en la tabla Catalogos la primera vez (luego se editan desde Catálogos).
   const CATALOGOS_BASE = { Rol_Stakeholder: ["Sponsor", "Líder funcional", "Product Owner"], Estado_Ticket: ["Abierto", "En curso", "Resuelto", "Cerrado"],
@@ -733,16 +734,16 @@
         <td class="opc">${comps.length ? `<ul class="mini">${comps.map((c) => `<li>${esc(c.Compromiso)} <span class="sub">(${esc(c.Responsable)}, ${fecha(c.Fecha_Compromiso)})</span></li>`).join("")}</ul>` : "—"}</td></tr>`;
     }).join("");
     const reportaron = new Set(deSemana.map((s) => s.ID_Proyecto));
-    const sinReporte = filtrados().filter((p) => p.Estado === "Activo" && p.Frecuencia_Seguimiento === "Semanal" && !reportaron.has(p.ID_Proyecto));
+    const sinReporte = filtrados().filter((p) => p.Estado === "Activo" && ["Diario", "Semanal"].includes(p.Frecuencia_Seguimiento) && !reportaron.has(p.ID_Proyecto));
     el.innerHTML = `
       <div class="titulo-fila"><h1>Avances de la semana</h1><button class="btn primario" id="b-informe">📄 Informe semanal (PDF)</button></div>
       ${barraFiltros()}
       <div class="filtros"><label class="filtro"><span>Semana</span><select id="sel-semana">${semanas.map((w) => `<option ${w === S.semana ? "selected" : ""}>${w}</option>`).join("")}</select></label>
-        <span class="sub">${deSemana.length} seguimiento(s) reportado(s) · ${sinReporte.length} proyecto(s) semanal(es) sin reporte</span></div>
+        <span class="sub">${deSemana.length} seguimiento(s) reportado(s) · ${sinReporte.length} proyecto(s) diario(s) o semanal(es) sin reporte</span></div>
       <div class="card"><div class="tabla-scroll"><table>
         <thead><tr><th>Proyecto</th><th>Avance</th><th>Semáforo</th><th>Logros</th><th class="opc">Próximos pasos</th><th>Bloqueos</th><th class="opc">Compromisos</th></tr></thead>
         <tbody>${filas || `<tr><td colspan="7">${vacio("No hay seguimientos reportados en esta semana con los filtros actuales.")}</td></tr>`}</tbody></table></div></div>
-      <div class="card"><h2>Proyectos semanales sin reporte en ${esc(S.semana)}</h2>
+      <div class="card"><h2>Proyectos diarios y semanales sin reporte en ${esc(S.semana)}</h2>
         ${sinReporte.length ? `<ul class="lista">${sinReporte.map((p) => `<li class="clic" data-pid="${esc(p.ID_Proyecto)}"><b>${esc(p.Nombre)}</b> · ${esc(nombreUsuario(p.PM))}</li>`).join("")}</ul>` : vacio("Todos los proyectos semanales reportaron.")}</div>`;
     $("#b-informe").addEventListener("click", () => informeSemanal(S.semana));
     enlazarFiltros();
@@ -771,12 +772,12 @@
       <div class="card"><h2>Control de seguimiento</h2><div class="tabla-scroll"><table>
         <thead><tr><th>Proyecto</th><th>Frecuencia</th><th>Último</th><th>Próximo</th><th>Estado</th><th class="opc">En 90 días</th><th></th></tr></thead>
         <tbody>${filas.map(({ p, e }) => `<tr class="clic" data-pid="${esc(p.ID_Proyecto)}">
-          <td><b>${esc(p.Nombre)}</b><div class="sub">${esc(nombreUsuario(p.PM))}</div></td><td${ed({ puede: R.puedeEditar(S.usuario, p, "editarFrecuencia"), tabla: "Proyectos", idCol: "ID_Proyecto", id: p.ID_Proyecto, campo: "Frecuencia_Seguimiento", tipo: "select", opciones: Object.keys(R.DIAS_FRECUENCIA), valor: p.Frecuencia_Seguimiento, extra: () => sello(), etiqueta: "Frecuencia" })}>${esc(p.Frecuencia_Seguimiento)}</td>
+          <td><b>${esc(p.Nombre)}</b><div class="sub">${esc(nombreUsuario(p.PM))}</div></td><td${ed({ puede: R.puedeEditar(S.usuario, p, "editarFrecuencia"), tabla: "Proyectos", idCol: "ID_Proyecto", id: p.ID_Proyecto, campo: "Frecuencia_Seguimiento", tipo: "select", opciones: S.cat.Frecuencia_Seguimiento, valor: p.Frecuencia_Seguimiento, extra: () => sello(), etiqueta: "Frecuencia" })}>${esc(p.Frecuencia_Seguimiento)}</td>
           <td>${e.ultimaFecha ? fecha(e.ultimaFecha) : "Sin reportes"}</td><td>${fecha(e.proximo)}</td>
           <td>${pill(e.estado)}<div class="sub">${e.faltan < 0 ? `${-e.faltan} día(s) de retraso` : `faltan ${e.faltan} día(s)`}</div></td>
           <td class="opc">${e.en90}</td>
           <td class="derecha">${R.puedeEditar(S.usuario, p, "seguimiento") ? `<button class="btn chico" data-reportar="${esc(p.ID_Proyecto)}">Reportar</button>` : ""}</td></tr>`).join("") || `<tr><td colspan="7">${vacio("No hay proyectos activos con los filtros actuales.")}</td></tr>`}</tbody></table></div>
-        <p class="sub">Próximo seguimiento = último reporte + frecuencia (Semanal 7, Quincenal 15, Mensual 30 días).</p></div>
+        <p class="sub">Próximo seguimiento = último reporte + frecuencia (Diario: siguiente día hábil; Semanal 7, Quincenal 15, Mensual 30 días). Si el proyecto tiene agenda de seguimiento, se mide contra sus sesiones.</p></div>
       <div class="card"><h2>Compromisos abiertos <span class="contador">${comps.length}</span></h2>${tablaCompromisos(comps, true)}</div>`;
     enlazarFiltros();
     el.querySelectorAll("[data-reportar]").forEach((b) => b.addEventListener("click", () => formSeguimiento(proyecto(b.dataset.reportar))));
