@@ -3960,17 +3960,17 @@ ${x.h}</section>`).join("")}
     const segmentos = () => input.value.split(";");
     const actualTxt = () => (multi ? segmentos().pop() : input.value).trim();
     const elegir = (r, nuevo, esG) => {
+      // «+ Agregar como recurso nuevo»: se abre la ficha del recurso encima (sin cerrar el formulario de abajo) y, al guardarla, queda elegido.
+      if (!r && !esG && nuevo) { lista.hidden = true; formRecursoRapido(nuevo, (rec) => { elegir(rec); input.focus(); }); return; }
       if (multi) {
         const previos = segmentos().slice(0, -1).map((x) => x.trim()).filter(Boolean);
         const nombre = r ? r.Nombre : nuevo;
-        if (!r && !esG) (input._nuevos = input._nuevos || new Set()).add(normTxt(nombre));
         input.value = [...previos.filter((x) => normTxt(x) !== normTxt(nombre)), nombre].join("; ") + "; ";
         lista.hidden = true;
         input.dispatchEvent(new Event("change", { bubbles: true }));
         input.focus();
         return;
       }
-      if (!r && !esG) (input._nuevos = input._nuevos || new Set()).add(normTxt(nuevo));
       input.value = r ? r.Nombre : nuevo;
       input.dataset.idRecurso = r ? r.ID_Recurso : "";
       lista.hidden = true;
@@ -4016,6 +4016,53 @@ ${x.h}</section>`).join("")}
     if (document.activeElement !== input) input.focus(); else pintar();
   }
   document.addEventListener("focusin", (e) => { if (e.target.matches && e.target.matches("input[data-recurso]")) comboRecurso(e.target); });
+
+  // Ventana para crear un recurso con todos sus datos, encima de cualquier formulario (acta, proyecto, compromiso…).
+  function formRecursoRapido(nombre, alCrear) {
+    const viejo = $("#modal2"); if (viejo) viejo.remove();
+    const empresas = [["", "Interno (FSFB)"], ...proveedoresActivos("").map((v) => [v.ID_Proveedor, v.Nombre])];
+    const opt = (ops, sel) => ops.map((o) => { const [v, t] = Array.isArray(o) ? o : [o, o]; return `<option value="${esc(v)}" ${String(v) === String(sel) ? "selected" : ""}>${esc(t)}</option>`; }).join("");
+    const verTarifa = R.puede(S.usuario, "verTodo");
+    const m = document.createElement("div");
+    m.id = "modal2";
+    m.innerHTML = `<div class="modal-caja" role="dialog" aria-modal="true" aria-label="Nuevo recurso">
+      <div class="titulo-fila"><h2>Nuevo recurso</h2><button type="button" class="btn enlace" id="rn-cerrar" aria-label="Cerrar">✕</button></div>
+      <p class="sub">Queda en el directorio de Recursos y elegido en el formulario de abajo.</p>
+      <form id="rn-form" novalidate><div class="form-grid">
+        <label class="ancho"><span class="etq">Nombre y apellido</span><input name="Nombre" value="${esc(nombre)}"></label>
+        <label><span class="etq">Correo</span><input name="Correo" type="email" placeholder="nombre@fsfb.org.co"></label>
+        <label><span class="etq">Teléfono</span><input name="Telefono"></label>
+        <label><span class="etq">Cargo</span><input name="Cargo"></label>
+        <label><span class="etq">Área</span><select name="Area"><option value="">Seleccione…</option>${opt(S.cat.Cliente_Area || [], "")}</select></label>
+        <label><span class="etq">Empresa</span><select name="ID_Proveedor">${opt(empresas, "")}</select><span class="sub">Interno o el proveedor al que pertenece.</span></label>
+        <label><span class="etq">Capacidad disponible (%)</span><input name="Capacidad" type="number" min="0" max="100" value="100"><span class="sub">100 = tiempo completo; 50 = medio tiempo.</span></label>
+        ${verTarifa ? `<label><span class="etq">Tarifa por hora (COP, opcional)</span><input name="Tarifa_Hora" type="number" min="0"></label>` : ""}
+        <label><span class="etq">¿Activo?</span><select name="Activo">${opt(["Sí", "No"], "Sí")}</select></label>
+      </div><div class="error-campo" id="rn-error" role="alert"></div>
+      <div class="acciones derecha"><button type="button" class="btn" id="rn-cancelar">Cancelar</button><button type="submit" class="btn primario">Crear recurso</button></div></form></div>`;
+    document.body.appendChild(m);
+    const cerrar = () => m.remove();
+    m.querySelector("#rn-cerrar").addEventListener("click", cerrar);
+    m.querySelector("#rn-cancelar").addEventListener("click", cerrar);
+    m.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); cerrar(); } });
+    const f = m.querySelector("#rn-form"), err = m.querySelector("#rn-error");
+    f.addEventListener("submit", async (ev) => {
+      ev.preventDefault(); ev.stopPropagation();
+      const fd = Object.fromEntries([...f.querySelectorAll("[name]")].map((i) => [i.name, i.value.trim()]));
+      if (!fd.Nombre) { err.textContent = "Escribe el nombre."; return; }
+      if (fd.Correo && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(fd.Correo)) { err.textContent = "Correo no válido."; return; }
+      const cap = fd.Capacidad === "" ? 100 : Number(fd.Capacidad);
+      if (Number.isNaN(cap) || cap < 0 || cap > 100) { err.textContent = "La capacidad debe estar entre 0 y 100."; return; }
+      const d = dupRecurso(fd);
+      if (d) { cerrar(); toast(`«${d.Nombre}» ya existe en Recursos: quedó elegido.`); alCrear(d); return; }
+      const fila = { ID_Recurso: nuevoIdRecurso(), Nombre: fd.Nombre, Correo: fd.Correo, Telefono: fd.Telefono, Cargo: fd.Cargo, Area: fd.Area, ID_Proveedor: fd.ID_Proveedor, Capacidad: cap, Activo: fd.Activo || "Sí", ...(verTarifa ? { Tarifa_Hora: fd.Tarifa_Hora === "" ? "" : Number(fd.Tarifa_Hora) } : {}) };
+      cargando(true, "Creando recurso…");
+      try { await S.api.agregarFila("Recursos", fila); cerrar(); toast(`Recurso «${fila.Nombre}» creado`); alCrear(fila); }
+      catch (e) { err.textContent = "No se pudo crear: " + e.message; }
+      finally { cargando(false); }
+    });
+    const n = m.querySelector('[name="Nombre"]'); n.focus(); n.setSelectionRange(n.value.length, n.value.length);
+  }
 
   // ---------- Riesgos interactivos: indicadores, mapa de calor que filtra, tarjetas y filtros ----------
   const califActual = (r) => Number(r.Calificacion_Residual) || Number(r.Calificacion_Inherente) || 0;
