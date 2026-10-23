@@ -1435,3 +1435,11 @@ span.oc { cursor: default; }
 #modal3 { position: fixed; inset: 0; background: rgba(10, 20, 35, .35); display: flex; align-items: flex-start; justify-content: center; padding: 80px 12px; overflow-y: auto; z-index: 26; }
 #modal3 > .modal-caja { max-width: 520px; box-shadow: 0 24px 64px rgba(16,24,40,.32); }
 select option[value="__nuevo__"] { color: var(--azul); font-weight: 600; }
+/* v94 · Personas en las láminas de capacidad del informe */
+.inf-per { border: 1px solid var(--borde); border-radius: 8px; padding: 10px 12px; }
+.inf-per[hidden] { display: none; }
+.inf-per .inf-lista { max-height: 180px; overflow-y: auto; }
+.inf-per input[type=search] { margin: 4px 0 6px; }
+.inf-per .inf-op { flex-direction: row !important; display: flex !important; align-items: flex-start; }
+.inf-per .inf-op input[type=checkbox] { width: auto !important; flex: 0 0 auto; margin: 3px 0 0 !important; }
+.inf-per .inf-op[hidden] { display: none !important; }

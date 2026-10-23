@@ -5348,9 +5348,18 @@ ${x.h}</section>`).join("")}
       { k: "Incluir", label: "Láminas a incluir", tipo: "checks", opciones: [["pm", "Resumen y sección por cada PM"], ["proyectos", "Estado de los proyectos"], ["capacidad", "Capacidad del equipo"], ["seguimientos", "Seguimientos"], ["compromisos", "Compromisos y riesgos"], ["gantt", "Cronograma del portafolio (Gantt agrupado por PM)"], ["valor", "Valor para la FSFB (portafolio y, con la lámina por proyecto, el de cada uno)"],
         ["fichas", "Una lámina por proyecto (logros, próximos pasos, hitos)"], ["edt", "EDT y cronograma de cada proyecto (los que tienen cronograma cargado)"]],
         def: "pm, proyectos, gantt, valor, capacidad, seguimientos, compromisos, edt" },
+      { html: (() => {
+        const visIds = new Set(vis.map((p) => p.ID_Proyecto)), todo = R.puede(S.usuario, "verTodo");
+        const gente = capacidad(R.hoyISO()).filter((x) => x.asign.some((a) => visIds.has(a.p.ID_Proyecto)) || (todo && x.otras.length) || lc(x.correo) === lc(S.usuario.Correo))
+          .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre), "es"));
+        return `<div class="inf-per" id="inf-per"><div class="inf-cab"><b>Personas en las láminas de capacidad</b> <span class="sub" id="inf-nper"></span> <button type="button" class="btn enlace" data-inf-todos="inf-pe">Todas</button> <button type="button" class="btn enlace" data-inf-ninguno="inf-pe">Ninguna</button></div>
+          <p class="sub">Marca una o varias personas. Si no marcas ninguna, salen todas las de los proyectos del alcance.</p>
+          <input type="search" id="inf-qp" placeholder="Buscar persona" aria-label="Buscar persona">
+          <div class="inf-lista inf-lista-pe">${gente.map((x) => ck("inf-pe", x.k, x.nombre, `${x.total}% asignado`, false, `data-txt="${esc(normTxt(`${x.nombre} ${x.correo}`))}"`)).join("")}</div></div>`;
+      })() },
     ];
     const marcados = (m, cls) => [...m.querySelectorAll(`.${cls}:checked`)].map((i) => i.value);
-    modal("Informe de estado en PowerPoint", campos, {}, (fd, sel) => { cerrarModal(); generarInformePPT({ pms: new Set(sel.pms), pids: new Set(sel.pids), corte: fd.Corte || R.hoyISO(), incluir: new Set(String(fd.Incluir).split(/,\s*/).filter(Boolean)) }); },
+    modal("Informe de estado en PowerPoint", campos, {}, (fd, sel) => { cerrarModal(); generarInformePPT({ pms: new Set(sel.pms), pids: new Set(sel.pids), personas: new Set(sel.personas), corte: fd.Corte || R.hoyISO(), incluir: new Set(String(fd.Incluir).split(/,\s*/).filter(Boolean)) }); },
       (fd) => (fd.Corte && !/^\d{4}-\d{2}-\d{2}$/.test(fd.Corte) ? "Fecha de corte no válida." : ""),
       { textoBoton: "Generar PowerPoint", antes: `<p class="sub">Presentación sobre la plantilla FSFB (portada, resumen ejecutivo y las láminas que elijas). Se descarga como .pptx y la puedes editar en PowerPoint.</p>`,
         init: (m) => {
@@ -5368,12 +5377,20 @@ ${x.h}</section>`).join("")}
           m.querySelectorAll("[data-inf-todos]").forEach((b) => b.addEventListener("click", () => { m.querySelectorAll(`.${b.dataset.infTodos}`).forEach((i) => { i.checked = true; }); resumir(); }));
           m.querySelectorAll("[data-inf-ninguno]").forEach((b) => b.addEventListener("click", () => { m.querySelectorAll(`.${b.dataset.infNinguno}`).forEach((i) => { i.checked = false; }); resumir(); filtrar(); }));
           if (yoPM) m.querySelectorAll(".inf-pm").forEach((i) => { i.checked = true; });
+          // Personas: solo si se incluyen las láminas de capacidad.
+          const per = m.querySelector("#inf-per"), capCk = m.querySelector('[data-checks="Incluir"] input[value="capacidad"]'), qp = m.querySelector("#inf-qp");
+          const verPer = () => { per.hidden = !(capCk && capCk.checked); const n = marcados(m, "inf-pe").length; m.querySelector("#inf-nper").textContent = n ? `(${n})` : "(todas)"; };
+          if (capCk) capCk.addEventListener("change", verPer);
+          m.addEventListener("change", (e) => { if (e.target.matches(".inf-pe")) verPer(); });
+          qp.addEventListener("input", () => { const t = normTxt(qp.value); m.querySelectorAll(".inf-lista-pe .inf-op").forEach((l) => { l.hidden = !(l.querySelector("input").checked || !t || l.dataset.txt.includes(t)); }); });
+          m.querySelectorAll('[data-inf-todos="inf-pe"], [data-inf-ninguno="inf-pe"]').forEach((b) => b.addEventListener("click", verPer));
+          verPer();
           filtrar(); resumir();
         },
-        recoger: (m) => ({ datos: { pms: marcados(m, "inf-pm"), pids: marcados(m, "inf-pr") } }) });
+        recoger: (m) => ({ datos: { pms: marcados(m, "inf-pm"), pids: marcados(m, "inf-pr"), personas: marcados(m, "inf-pe") } }) });
   }
 
-  async function generarInformePPT({ pms = new Set(), pids = new Set(), corte, incluir }) {
+  async function generarInformePPT({ pms = new Set(), pids = new Set(), personas = new Set(), corte, incluir }) {
     cargando(true, "Generando PowerPoint…");
     try {
       // Fondos, detalle de esquina y logo tomados de la plantilla FSFB_Plantilla_2026.pptx.
@@ -5466,6 +5483,8 @@ ${x.h}</section>`).join("")}
       };
       const M = metricas(ps);
       const cap = capacidad(corte).filter((x) => x.asign.some((a) => M.ids.has(a.p.ID_Proyecto)) || (pm && lc(x.correo) === pm));
+      // Personas elegidas para las láminas de capacidad (vacío = las del alcance).
+      const capSel = personas.size ? capacidad(corte).filter((x) => personas.has(x.k)) : cap;
       // ---- Valor para la FSFB ----
       const COL_NIV = { "Crítico": "8E1B3E", Alto: PPT.azul, Medio: PPT.claro, Bajo: "AEB8C6" };
       const nivCelda = (n, i) => (n ? { text: n, options: { fill: { color: COL_NIV[n] || PPT.gris }, color: n === "Medio" || n === "Bajo" ? PPT.texto : PPT.blanco, bold: true, fontSize: 10, align: "center", valign: "middle" } } : celda("—", i, { align: "center" }));
@@ -5760,6 +5779,7 @@ ${x.h}</section>`).join("")}
 
       // 6. Capacidad
       if (incluir.has("capacidad")) {
+        const cap = capSel;
         const s = lamina("Capacidad del equipo", `Dedicación a ${fecha(corte)}: proyectos activos o en pausa + otras actividades (operación, comités, demanda…). Las ausencias reducen la capacidad.`);
         const l = cap.slice().sort((a, b) => b.total / Math.max(1, b.cap) - a.total / Math.max(1, a.cap)).slice(0, 14);
         const capT = cap.reduce((t, x) => t + x.capBase, 0), otrasT = cap.reduce((t, x) => t + x.tOtras, 0);
@@ -5780,7 +5800,7 @@ ${x.h}</section>`).join("")}
 
       // 6b. Capacidad real (horas de las últimas 4 semanas)
       if (incluir.has("capacidad")) {
-        const D = datosCapacidadReal([...new Set([...cap.map((x) => x.k), ...[...gruposPM].map((g) => g.c).filter(Boolean)])], corte);
+        const D = datosCapacidadReal(personas.size ? [...personas] : [...new Set([...cap.map((x) => x.k), ...[...gruposPM].map((g) => g.c).filter(Boolean)])], corte);
         const s = lamina("Capacidad real del equipo", `Horas de las últimas 4 semanas a ${fecha(corte)} sobre las disponibles (jornada de ${hTxt(jornadaSemanal())} por semana, sin festivos ni ausencias). Real = semana cerrada en «Mi semana»; * = estimado, sin cerrar.`);
         const T = D.T;
         tile(s, 0.5, 1.5, 2.95, 1.3, "Disponible", hTxt(T.disp), `${D.filas.length} persona(s) · 4 semanas`);
