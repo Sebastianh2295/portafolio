@@ -1955,6 +1955,93 @@
 
   /* Formulario genérico. campos: [{ k, label, tipo, opciones, req, min, max, def, bloqueado, ayuda, placeholder, ancho } | { seccion, ayuda }]
      extra (opcional): { antes, despues, init(m), recoger(m, fd) → { error } | { datos } } para partes a la medida. */
+  // ---------- Crear valores nuevos desde cualquier lista (sin ir a Catálogos) ----------
+  // Las listas editables de Catálogos y la de proveedores tienen al final «+ Crear nuevo…»: abre una ventanita encima,
+  // guarda el valor y lo deja elegido en el formulario o en la celda que se estaba editando.
+  const puedeCrearListas = () => !!S.usuario && (R.puede(S.usuario, "editarProyecto") || R.puede(S.usuario, "catalogos"));
+  function listaCrear(campo, opciones, cat) {
+    if (!puedeCrearListas()) return null;
+    if (campo === "ID_Proveedor") return { prov: true };
+    const creables = CATALOGOS_EDITABLES.filter((x) => !x.correo).map((x) => x.lista);
+    const k = cat || (Array.isArray(opciones) ? Object.keys(S.cat).find((n) => S.cat[n] === opciones) : "");
+    return k && creables.includes(k) ? { cat: k } : null;
+  }
+  const attrCrear = (campo, opciones, cat) => { const l = listaCrear(campo, opciones, cat); return !l ? "" : l.prov ? "data-prov" : `data-cat="${esc(l.cat)}"`; };
+  const optCrear = (campo, opciones, cat) => { const l = listaCrear(campo, opciones, cat); return !l ? "" : `<option value="__nuevo__">${l.prov ? "+ Crear proveedor nuevo…" : "+ Crear nuevo…"}</option>`; };
+  // Ventanita encima de todo (formulario de una o más casillas).
+  function ventanaCapa(titulo, cuerpo, alGuardar, alCancelar) {
+    const viejo = $("#modal3"); if (viejo) viejo.remove();
+    const m = document.createElement("div");
+    m.id = "modal3";
+    m.innerHTML = `<div class="modal-caja" role="dialog" aria-modal="true" aria-label="${esc(titulo)}"><div class="titulo-fila"><h2>${esc(titulo)}</h2><button type="button" class="btn enlace" data-c3="x" aria-label="Cerrar">✕</button></div>
+      <form novalidate><div class="form-grid">${cuerpo}</div><div class="error-campo" data-c3="err" role="alert"></div>
+      <div class="acciones derecha"><button type="button" class="btn" data-c3="cancelar">Cancelar</button><button type="submit" class="btn primario">Crear</button></div></form></div>`;
+    document.body.appendChild(m);
+    const cerrar = (cancelo) => { m.remove(); if (cancelo && alCancelar) alCancelar(); };
+    m.querySelector('[data-c3="x"]').addEventListener("click", () => cerrar(true));
+    m.querySelector('[data-c3="cancelar"]').addEventListener("click", () => cerrar(true));
+    m.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); cerrar(true); } });
+    const f = m.querySelector("form"), err = m.querySelector('[data-c3="err"]');
+    f.addEventListener("submit", async (ev) => {
+      ev.preventDefault(); ev.stopPropagation();
+      const fd = Object.fromEntries([...f.querySelectorAll("[name]")].map((i) => [i.name, i.value.trim()]));
+      cargando(true, "Guardando…");
+      try { const msg = await alGuardar(fd); if (msg) { err.textContent = msg; return; } cerrar(false); }
+      catch (e) { err.textContent = "No se pudo guardar: " + e.message; }
+      finally { cargando(false); }
+    });
+    const i = m.querySelector("input, select"); if (i) i.focus();
+  }
+  function crearValorCatalogo(lista, alCrear, alCancelar) {
+    const c = CATALOGOS_EDITABLES.find((x) => x.lista === lista) || { t: lista };
+    ventanaCapa(`Nuevo valor · ${c.t}`, `<label class="ancho"><span class="etq">Nombre</span><input name="Valor" maxlength="60" placeholder="Ej.: Comité de ética"></label><p class="sub ancho">Queda en Catálogos para todos y elegido aquí.</p>`, async (fd) => {
+      if (!fd.Valor) return "Escribe el nombre.";
+      const ya = (S.cat[lista] || []).find((v) => lc(v) === lc(fd.Valor));
+      if (ya) { alCrear(ya); toast(`«${ya}» ya existía: quedó elegido.`); return ""; }
+      await S.api.agregarFila("Catalogos", { Lista: lista, Valor: fd.Valor });
+      armarCatalogos();
+      toast(`«${fd.Valor}» agregado a ${c.t}`);
+      alCrear(fd.Valor);
+      return "";
+    }, alCancelar);
+  }
+  function crearProveedorRapido(alCrear, alCancelar) {
+    ventanaCapa("Nuevo proveedor", `<label class="ancho"><span class="etq">Nombre del proveedor</span><input name="Nombre"></label>
+      <label><span class="etq">NIT</span><input name="NIT"></label><label><span class="etq">Servicio / producto</span><input name="Servicio"></label>
+      <label><span class="etq">Persona de contacto</span><input name="Contacto"></label><label><span class="etq">Correo</span><input name="Correo" type="email"></label>
+      <label><span class="etq">Teléfono</span><input name="Telefono"></label>`, async (fd) => {
+      if (!fd.Nombre) return "Escribe el nombre del proveedor.";
+      if (fd.Correo && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(fd.Correo)) return "Correo no válido.";
+      const ya = (S.datos.Proveedores || []).find((x) => lc(x.Nombre) === lc(fd.Nombre));
+      if (ya) { alCrear(ya); toast(`«${ya.Nombre}» ya existía: quedó elegido.`); return ""; }
+      const max = (S.datos.Proveedores || []).reduce((mx, x) => Math.max(mx, parseInt(String(x.ID_Proveedor).slice(4), 10) || 0), 0);
+      const fila = { ID_Proveedor: `PRV-${String(max + 1).padStart(4, "0")}`, Nombre: fd.Nombre, NIT: fd.NIT, Servicio: fd.Servicio, Contacto: fd.Contacto, Correo: fd.Correo, Telefono: fd.Telefono, Activo: "Sí" };
+      await S.api.agregarFila("Proveedores", fila);
+      toast(`Proveedor «${fila.Nombre}» creado`);
+      alCrear(fila);
+      return "";
+    }, alCancelar);
+  }
+  document.addEventListener("focusin", (e) => { const t = e.target; if (t.matches && t.matches("select[data-cat], select[data-prov]") && t.value !== "__nuevo__") t.dataset.prev = t.value; }, true);
+  document.addEventListener("change", (e) => {
+    const sel = e.target;
+    if (!sel.matches || !sel.matches("select[data-cat], select[data-prov]") || sel.value !== "__nuevo__") return;
+    e.stopImmediatePropagation();
+    const prev = sel.dataset.prev || "";
+    sel.value = prev;
+    const td = sel.closest("[data-ed]"), cfg = td && ED.get(td.dataset.ed);
+    const listo = (valor, texto) => {
+      if (td && cfg) { guardarCelda(td, cfg, valor, td.innerHTML); return; }   // edición en la tabla: se guarda de una vez
+      if (!sel.isConnected) return;
+      let o = [...sel.options].find((x) => x.value === valor);
+      if (!o) { o = new Option(texto, valor); sel.insertBefore(o, sel.querySelector('option[value="__nuevo__"]')); }
+      sel.value = valor; sel.dataset.prev = valor;
+      sel.dispatchEvent(new Event("input", { bubbles: true })); sel.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+    if (sel.dataset.cat) crearValorCatalogo(sel.dataset.cat, (v) => listo(v, v));
+    else crearProveedorRapido((p) => listo(p.ID_Proveedor, p.Nombre));
+  }, true);
+
   function modal(titulo, campos, valores, alGuardar, validarExtra, extra = {}) {
     cerrarModal();
     const m = document.createElement("div");
@@ -1970,7 +2057,7 @@
         const ops = c.opciones || [];
         const existe = ops.some((o) => String(Array.isArray(o) ? o[0] : o) === String(v));
         const todas = v !== "" && !existe ? [String(v), ...ops] : ops;   // un valor ya quitado del catálogo se conserva
-        return `<select name="${c.k}" ${dis}><option value="">${esc(c.textoVacio || "Seleccione…")}</option>${todas.map((o) => { const [val, txt] = Array.isArray(o) ? o : [o, o]; return `<option value="${esc(val)}" ${String(val) === String(v) ? "selected" : ""}>${esc(txt)}</option>`; }).join("")}</select>`;
+        return `<select name="${c.k}" ${dis} ${attrCrear(c.k, c.opciones, c.cat)}><option value="">${esc(c.textoVacio || "Seleccione…")}</option>${todas.map((o) => { const [val, txt] = Array.isArray(o) ? o : [o, o]; return `<option value="${esc(val)}" ${String(val) === String(v) ? "selected" : ""}>${esc(txt)}</option>`; }).join("")}${optCrear(c.k, c.opciones, c.cat)}</select>`;
       }
       if (c.tipo === "textarea") return `<textarea name="${c.k}" rows="3" placeholder="${esc(c.placeholder || "")}" ${dis}>${esc(v)}</textarea>`;
       const dl = c.sugerencias ? `<datalist id="dl-${c.k}">${c.sugerencias.map((o) => `<option value="${esc(o)}">`).join("")}</datalist>` : "";
@@ -4033,8 +4120,8 @@ ${x.h}</section>`).join("")}
         <label><span class="etq">Correo</span><input name="Correo" type="email" placeholder="nombre@fsfb.org.co"></label>
         <label><span class="etq">Teléfono</span><input name="Telefono"></label>
         <label><span class="etq">Cargo</span><input name="Cargo"></label>
-        <label><span class="etq">Área</span><select name="Area"><option value="">Seleccione…</option>${opt(S.cat.Cliente_Area || [], "")}</select></label>
-        <label><span class="etq">Empresa</span><select name="ID_Proveedor">${opt(empresas, "")}</select><span class="sub">Interno o el proveedor al que pertenece.</span></label>
+        <label><span class="etq">Área</span><select name="Area" ${attrCrear("Area", S.cat.Cliente_Area)}><option value="">Seleccione…</option>${opt(S.cat.Cliente_Area || [], "")}${optCrear("Area", S.cat.Cliente_Area)}</select></label>
+        <label><span class="etq">Empresa</span><select name="ID_Proveedor" ${attrCrear("ID_Proveedor")}>${opt(empresas, "")}${optCrear("ID_Proveedor")}</select><span class="sub">Interno o el proveedor al que pertenece.</span></label>
         <label><span class="etq">Capacidad disponible (%)</span><input name="Capacidad" type="number" min="0" max="100" value="100"><span class="sub">100 = tiempo completo; 50 = medio tiempo.</span></label>
         ${verTarifa ? `<label><span class="etq">Tarifa por hora (COP, opcional)</span><input name="Tarifa_Hora" type="number" min="0"></label>` : ""}
         <label><span class="etq">¿Activo?</span><select name="Activo">${opt(["Sí", "No"], "Sí")}</select></label>
@@ -4488,7 +4575,7 @@ ${x.h}</section>`).join("")}
     if (cfg.tipo === "select") {
       const ops = cfg.opciones || [];
       const todas = v0 !== "" && !ops.some((o) => String(Array.isArray(o) ? o[0] : o) === String(v0)) ? [String(v0), ...ops] : ops;
-      ctl = `<select class="ed-ctl">${cfg.vacio !== undefined ? `<option value="">${esc(cfg.vacio)}</option>` : ""}${todas.map((o) => { const [val, t] = Array.isArray(o) ? o : [o, o]; return `<option value="${esc(val)}" ${String(val) === String(v0) ? "selected" : ""}>${esc(t)}</option>`; }).join("")}</select>`;
+      ctl = `<select class="ed-ctl" ${attrCrear(cfg.campo, cfg.opciones, cfg.cat)}>${cfg.vacio !== undefined ? `<option value="">${esc(cfg.vacio)}</option>` : ""}${todas.map((o) => { const [val, t] = Array.isArray(o) ? o : [o, o]; return `<option value="${esc(val)}" ${String(val) === String(v0) ? "selected" : ""}>${esc(t)}</option>`; }).join("")}${optCrear(cfg.campo, cfg.opciones, cfg.cat)}</select>`;
     } else if (cfg.tipo === "multi") {
       const sel = String(v0).split(/[,;]\s*/).map((x) => x.trim()).filter(Boolean);
       ctl = `<div class="ed-ctl ed-multi" tabindex="-1">${(cfg.opciones || []).map((o) => { const [val, t] = Array.isArray(o) ? o : [o, o]; return `<label class="check"><input type="checkbox" value="${esc(val)}" ${sel.includes(String(val)) ? "checked" : ""}> ${esc(t)}</label>`; }).join("")}<button type="button" class="btn chico primario ed-listo">Listo</button></div>`;
@@ -4854,7 +4941,7 @@ ${x.h}</section>`).join("")}
     const cfg0 = cfgSes(a || { ID_Proyecto: p.ID_Proyecto, Tipo: "Seguimiento" });
     const tipos = [...new Set([...(S.cat.Tipo_Sesion_Agenda || CATALOGOS_BASE.Tipo_Sesion_Agenda), "Reunión con proveedor"])];
     const campos = [
-      { k: "Tipo", label: "Tipo de sesión", tipo: "select", opciones: tipos, def: "Seguimiento" },
+      { k: "Tipo", label: "Tipo de sesión", tipo: "select", opciones: tipos, cat: "Tipo_Sesion_Agenda", def: "Seguimiento" },
       { k: "Titulo", label: "Nombre (opcional)", placeholder: "Ej.: Comité directivo, Mesa con Sonda" },
       ...(unaVez ? [{ k: "Desde", label: "Fecha", tipo: "date", def: R.hoyISO() }] : [
         { k: "Frecuencia", label: "Frecuencia", tipo: "select", opciones: FREC_AG, def: "Semanal", ayuda: "Quincenal: semana de por medio desde «Desde». Mensual: la misma semana del mes que «Desde»." },
