@@ -2477,10 +2477,19 @@
     const caja = (t, a, cls = "") => `<div class="ed-caja ${claseAvance(a.real, a.plan)} ${cls}" title="${esc(`${t.EDT || ""} · ${t.Nombre}${t.Inicio ? ` · ${fecha(t.Inicio)} → ${fecha(t.Fin)}` : ""}${t.Responsable ? ` · ${t.Responsable}` : ""}`)}">
         <div class="ed-tit"><span class="ed-num">${esc(num(t))}</span> ${t.Hito === "Sí" ? "◆ " : ""}${esc(t.Nombre)}</div>
         <div class="ed-av">Real <b>${a.real}%</b> <span>/ ${a.plan}%</span> ${dif(a)}</div></div>`;
-    const columnas = fases.map((i) => {
-      const subs = hijosDe(i).filter((j) => niv(j) === niv(i) + 1);
-      return `<div class="ed-col">${caja(ts[i], avance(i), "ed-fase")}${subs.length ? `<div class="ed-subs">${subs.map((j) => caja(ts[j], avance(j))).join("")}</div>` : ""}</div>`;
-    }).join("");
+    // Filtro de la vista (solo en pantalla): todo · en ejecución · atrasado. Se conserva el árbol: fase + sus tareas que cumplen.
+    const FE = conLado ? ((S.edtF || {})[p.ID_Proyecto] || "todo") : "todo";
+    const avC = new Map(), av = (i) => { if (!avC.has(i)) avC.set(i, avance(i)); return avC.get(i); };
+    const d10 = (v) => String(v || "").slice(0, 10);
+    const enEjec = (i) => { const a = av(i), t = ts[i]; return a.real < 100 && (a.real > 0 || (!!t.Inicio && d10(t.Inicio) <= corte && (!t.Fin || d10(t.Fin) >= corte))); };
+    const atrasado = (i) => { const a = av(i); return a.real < 100 && a.plan - a.real > 5; };
+    const cumple = (i) => FE === "todo" || (FE === "ejec" ? enEjec(i) : atrasado(i));
+    const subsDe = (i) => hijosDe(i).filter((j) => niv(j) === niv(i) + 1);
+    const nodos = fases.flatMap((i) => (subsDe(i).length ? subsDe(i) : [i]));
+    const nEjec = nodos.filter(enEjec).length, nAtr = nodos.filter(atrasado).length;
+    const colsVis = fases.map((i) => { const subs = subsDe(i); const ok = subs.filter(cumple); return { i, subs: FE === "todo" ? subs : ok, ver: FE === "todo" || (subs.length ? ok.length > 0 : cumple(i)) }; }).filter((x) => x.ver);
+    const columnas = colsVis.map(({ i, subs }) => `<div class="ed-col">${caja(ts[i], av(i), "ed-fase")}${subs.length ? `<div class="ed-subs">${subs.map((j) => caja(ts[j], av(j))).join("")}</div>` : ""}</div>`).join("");
+    const filtroEDT = conLado ? `<div class="ed-filtro" role="group" aria-label="Filtrar la EDT">${[["todo", "Todo", nodos.length], ["ejec", "En ejecución", nEjec], ["atr", "Atrasado", nAtr]].map(([v, t, n]) => `<button type="button" class="btn chico ${FE === v ? "primario" : ""} ${v === "atr" && n ? "ed-f-atr" : ""}" data-edtf="${esc(p.ID_Proyecto)}|${v}">${t} <span class="contador">${n}</span></button>`).join("")}<span class="sub">${FE === "ejec" ? "Tareas sin terminar que ya empezaron o están en sus fechas al corte." : FE === "atr" ? "Tareas sin terminar más de 5 pp por debajo del plan al corte." : ""}</span></div>` : "";
     const ult = R.avancesDe(p.ID_Proyecto, S.datos.Seguimientos).slice(-1)[0];
     // Paneles de la última sesión: se puede agregar o quitar ítems aquí mismo (quedan en esa sesión de seguimiento).
     const puedeSeg = R.puedeEditar(S.usuario, p, "seguimiento");
@@ -2496,10 +2505,10 @@
     };
     const lista = (txt) => { const l = String(txt || "").split(/\n|•|·|;|(?:^|\s)-\s/).map((x) => x.trim()).filter(Boolean); return l.length ? `<ul>${l.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : `<p class="sub">Sin registrar.</p>`; };
     const equipo = [["Gerente de proyecto", nombreUsuario(p.PM)], ...stakeholdersDe(p.ID_Proyecto).map((x) => [x.Rol, x.Nombre])].filter(([, n]) => n);
-    return `<div class="ed-wrap ${conLado ? "" : "sin-lado"} ${fases.length > 5 ? "muchas" : ""}">
-      <div class="ed-arbol">
+    return `<div class="ed-wrap ${conLado ? "" : "sin-lado"} ${colsVis.length > 5 ? "muchas" : ""}">
+      <div class="ed-arbol">${filtroEDT}
         <div class="ed-raiz">${caja({ EDT: edtRaiz, Nombre: raizTxt }, raizAv, "ed-root")}</div>
-        <div class="ed-fases" style="grid-template-columns:repeat(${Math.max(1, fases.length)},minmax(128px,1fr));--ed-l:${(100 / (2 * Math.max(1, fases.length))).toFixed(2)}%">${columnas}</div>
+        ${colsVis.length ? `<div class="ed-fases" style="grid-template-columns:repeat(${Math.max(1, colsVis.length)},minmax(128px,1fr));--ed-l:${(100 / (2 * Math.max(1, colsVis.length))).toFixed(2)}%">${columnas}</div>` : `<p class="sub ed-vacio">${FE === "ejec" ? "No hay tareas en ejecución" : "No hay tareas atrasadas"} al corte del ${fecha(corte)}.</p>`}
         <div class="ed-leyenda"><span><i class="ed-comp"></i>Completado</span><span><i class="ed-ok"></i>En plazo (≤ 5 pp)</span><span><i class="ed-warn"></i>Atraso 6-15 pp</span><span><i class="ed-bad"></i>Atraso ≥ 16 pp</span><span><i class="ed-noini"></i>No iniciado</span><span class="sub">Real / plan al corte ${fecha(corte)}</span></div>
       </div>
       ${conLado ? `<aside class="ed-lado">
@@ -7533,6 +7542,7 @@ ${x.h}</section>`).join("")}
 
   // ---------- Enlaces comunes (se llaman al final de cada render) ----------
   function enlazarEsfuerzo(el) {
+    el.querySelectorAll("[data-edtf]").forEach((b) => b.addEventListener("click", () => { const [pid, v] = b.dataset.edtf.split("|"); S.edtF = { ...(S.edtF || {}), [pid]: v }; const y = window.scrollY; render(); window.scrollTo(0, y); }));
     el.querySelectorAll("[data-efper]").forEach((b) => b.addEventListener("click", () => { const [pid, v] = b.dataset.efper.split("|"); S.efPer = { ...(S.efPer || {}), [pid]: v }; const y = window.scrollY; render(); window.scrollTo(0, y); }));
     el.querySelectorAll("[data-ef-nuevo]").forEach((b) => b.addEventListener("click", () => formEsfuerzo({ ID_Proyecto: b.dataset.efNuevo })));
     el.querySelectorAll("[data-ir-vista]").forEach((b) => b.addEventListener("click", () => ir(b.dataset.irVista)));

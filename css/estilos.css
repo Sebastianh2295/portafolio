@@ -1443,3 +1443,7 @@ select option[value="__nuevo__"] { color: var(--azul); font-weight: 600; }
 .inf-per .inf-op { flex-direction: row !important; display: flex !important; align-items: flex-start; }
 .inf-per .inf-op input[type=checkbox] { width: auto !important; flex: 0 0 auto; margin: 3px 0 0 !important; }
 .inf-per .inf-op[hidden] { display: none !important; }
+/* v96 · Filtro de la EDT */
+.ed-filtro { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 12px; }
+.ed-filtro .btn.ed-f-atr:not(.primario) { border-color: var(--rojo); color: var(--rojo); }
+.ed-vacio { text-align: center; padding: 24px 0; }
