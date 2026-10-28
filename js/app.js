@@ -1107,7 +1107,7 @@
         <div class="titulo-fila"><h2 id="rc-tit">Recordatorio</h2><button class="btn enlace" id="rc-x" aria-label="Cerrar">✕</button></div>
         <div class="rc-canal" role="tablist" aria-label="Enviar por"><button type="button" role="tab" data-canal="teams">💬 Chat de Teams</button><button type="button" role="tab" data-canal="correo">✉ Correo (Outlook)</button></div>
         <div id="rc-teams"><div class="rec-dest"><b>Chat con:</b> ${para.length ? para.map((c) => `<span class="chip-mail">${esc(c)}</span>`).join(" ") : `<span class="baja">El responsable no tiene correo registrado: se abrirá Teams para que lo busques y pegues el mensaje.</span>`}</div>
-          <p class="sub">${para.length > 1 ? "Se abre un chat grupal con los responsables. " : ""}El mensaje se copia al abrir el chat: en Teams solo tienes que pegarlo con Ctrl+V (a veces Teams ya lo deja escrito).</p>
+          <p class="sub">${para.length > 1 ? "Se abre un chat grupal con los responsables. " : ""}Al abrir el chat el mensaje queda copiado: en Teams haz clic en «Escriba un mensaje» y pégalo con Ctrl+V (el Teams nuevo no deja que otra aplicación lo escriba por ti).</p>
           <details class="rec-prev" open><summary>Vista previa del mensaje</summary><pre id="rc-msg"></pre></details></div>
         <div id="rc-correo">
         <div class="rec-dest"><b>Para:</b> ${para.length ? para.map((c) => `<span class="chip-mail">${esc(c)}</span>`).join(" ") : `<span class="baja">El responsable no tiene correo registrado: escríbelo en Outlook.</span>`}</div>
@@ -1127,7 +1127,7 @@
       const pintarCanal = () => {
         o.querySelectorAll("[data-canal]").forEach((b) => { const on = b.dataset.canal === canal; b.classList.toggle("activa", on); b.setAttribute("aria-selected", String(on)); });
         o.querySelector("#rc-teams").hidden = canal !== "teams"; o.querySelector("#rc-correo").hidden = canal !== "correo";
-        o.querySelector("#rc-abrir").textContent = canal === "teams" ? "Abrir chat en Teams" : "Abrir en Outlook";
+        o.querySelector("#rc-abrir").textContent = canal === "teams" ? "Copiar y abrir Teams" : "Abrir en Outlook";
         o.querySelector("#rc-tit").textContent = canal === "teams" ? "💬 Recordatorio por Teams" : "✉ Recordatorio por correo";
       };
       o.querySelectorAll("[data-canal]").forEach((b) => b.addEventListener("click", () => { canal = b.dataset.canal; guardarLocal("pmo_canal_rec", canal); pintarCanal(); }));
@@ -1150,7 +1150,7 @@
           const copiado = await abrirTeams(tm.href, tm.mensaje);
           o.querySelector(".rec-caja").innerHTML = `<div class="titulo-fila"><h2>💬 Pega el mensaje en Teams</h2></div>
             <div class="rc-pasos"><div><b>1.</b> Se abrió el chat${tm.para.length ? ` con <b>${esc(tm.para.join(", "))}</b>` : ""}.</div>
-              <div><b>2.</b> ${copiado ? `<span class="rc-ok">✓ El mensaje ya está copiado.</span> Si Teams no lo dejó escrito, haz clic en «Escriba un mensaje» y pega con <kbd>Ctrl</kbd>+<kbd>V</kbd>.` : `Copia el mensaje con el botón de abajo y pégalo en Teams con <kbd>Ctrl</kbd>+<kbd>V</kbd>.`}</div>
+              <div><b>2.</b> ${copiado ? `<span class="rc-ok">✓ El mensaje ya está copiado.</span> En Teams haz clic en «Escriba un mensaje» y pega con <kbd>Ctrl</kbd>+<kbd>V</kbd>.` : `Copia el mensaje con el botón de abajo y pégalo en Teams con <kbd>Ctrl</kbd>+<kbd>V</kbd>.`}</div>
               <div><b>3.</b> Envíalo y confirma aquí para dejar constancia en el compromiso.</div></div>
             <textarea id="rc-txt" class="rc-txt" rows="7" readonly>${esc(tm.mensaje)}</textarea>
             <div class="acciones derecha"><button class="btn" id="rc-no">No lo envié</button><button class="btn" id="rc-cp">📋 Copiar mensaje</button><button class="btn" id="rc-otra">Volver a abrir Teams</button><button class="btn primario" id="rc-si">Sí, lo envié</button></div>`;
