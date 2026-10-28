@@ -1848,7 +1848,7 @@
     : res.titulo ? "Encontré la sección de compromisos, pero no pude separar sus filas" : "No encontré compromisos en el acta");
   // Revisión de los compromisos leídos de un acta antes de agregarlos a la sesión.
   function revisarCompromisosActa(s, lista) {
-    const filas = lista.map((c) => ({ ...c, dup: yaExisteComp(s.ID_Proyecto, c) }));
+    const filas = lista.map((c) => ({ ...respDeActa(c, s.ID_Proyecto), dup: yaExisteComp(s.ID_Proyecto, c) }));
     const html = `<p class="sub">Revisa y ajusta antes de agregar. Los que ya existen en el proyecto vienen desmarcados.</p>
       <div class="ra-lista">${filas.map((c, i) => `<div class="ra-fila ${c.dup ? "dup" : ""}"><label class="check"><input type="checkbox" class="ra-ok" data-i="${i}" ${c.dup ? "" : "checked"}></label>
         <textarea class="ra-t" rows="2" data-i="${i}">${esc(c.Compromiso)}</textarea>
@@ -1920,7 +1920,11 @@
       cargando(false);
       await guardar(async () => {
         await subirActa(idSeg, res.datos, archivo.name);
-        await S.api.actualizarPorId("Seguimientos", "ID_Seguimiento", idSeg, { Acta_Archivo: archivo.name, ...(s.Fecha_Acta ? {} : { Fecha_Acta: res.fecha }) });
+        const caja = document.createElement("div"); caja.innerHTML = `<textarea name="Logros"></textarea><textarea name="Proximos_Pasos"></textarea><textarea name="Bloqueos"></textarea>`;
+        ["Logros", "Proximos_Pasos", "Bloqueos"].forEach((k) => { caja.querySelector(`[name=${k}]`).value = s[k] || ""; });
+        llenarResumenActa(caja, { ...res, compromisos: s.Logros || s.Proximos_Pasos ? [] : res.compromisos });
+        const resu = {}; ["Logros", "Proximos_Pasos", "Bloqueos"].forEach((k) => { const v = caja.querySelector(`[name=${k}]`).value; if (!String(s[k] || "").trim() && v) resu[k] = v; });
+        await S.api.actualizarPorId("Seguimientos", "ID_Seguimiento", idSeg, { Acta_Archivo: archivo.name, ...(s.Fecha_Acta ? {} : { Fecha_Acta: res.fecha }), ...resu });
       }, "Acta adjuntada");
       if (res.compromisos.length) revisarCompromisosActa(s, res.compromisos);
       else toast(`Acta adjuntada. ${msgActa(res)}.`);
@@ -4421,6 +4425,7 @@ ${x.h}</section>`).join("")}
       ul._pintarVer = () => { const k = [...ul.children].filter((li) => li.tagName === "LI").length; if (k <= LIM_LISTA + 1) ul.classList.remove("recortada"); ul._verTodos.hidden = k <= LIM_LISTA + 1; ul._verTodos.textContent = ul.classList.contains("recortada") ? `Ver todos (${k}) ▾` : "Ver menos ▴"; };
       ul._pintarVer();
     });
+    reaplicarOrden(raiz);   // orden por columna que el usuario dejó en esta pantalla
     // 2) Tablas largas en las vistas: se ven las primeras filas (sigue funcionando el orden por columna).
     raiz.querySelectorAll("#vista table:not(.raci):not(.no-recortar) > tbody").forEach((tb) => {
       const tabla = tb.closest("table");
@@ -4428,12 +4433,13 @@ ${x.h}</section>`).join("")}
       const n = tb.rows.length;
       if (n <= LIM_TABLA + 3) return;
       tabla.dataset.compacto = "1";
-      tabla.classList.add("recortada");
+      const kAb = claveTabla(tabla), abiertas = () => leerLocal("pmo_tablas_abiertas", []) || [];
+      if (!abiertas().includes(kAb)) tabla.classList.add("recortada");
       const b = document.createElement("button");
       b.type = "button"; b.className = "btn chico ver-todos-tabla";
       const txt = () => (tabla.classList.contains("recortada") ? `Ver las ${n} filas ▾` : "Ver menos ▴");
       b.textContent = txt();
-      b.addEventListener("click", () => { tabla.classList.toggle("recortada"); b.textContent = txt(); });
+      b.addEventListener("click", () => { tabla.classList.toggle("recortada"); b.textContent = txt(); const l = abiertas().filter((x) => x !== kAb); guardarLocal("pmo_tablas_abiertas", tabla.classList.contains("recortada") ? l : [...l, kAb]); });
       (tabla.closest(".tabla-scroll") || tabla).after(b);
     });
     // 3) Tarjetas con título: botón para minimizarlas (se recuerda en este equipo).
@@ -4484,19 +4490,40 @@ ${x.h}</section>`).join("")}
   }).observe(document.body || document.documentElement, { childList: true, subtree: true });
 
   // Ordenar cualquier tabla con clic en el encabezado (ignora tablas agrupadas o de edición).
-  document.addEventListener("click", (e) => {
-    const th = e.target.closest && e.target.closest("#vista table:not(.raci):not(.no-orden) thead th");
-    if (!th || e.target.closest("button, a, input, select")) return;
-    const tabla = th.closest("table"), tb = tabla.tBodies[0];
-    if (!tb || tb.querySelector("tr.grupo, td[colspan]")) return;
+  // El orden elegido se recuerda por pantalla (y en este equipo): al volver de la ficha la tabla sigue ordenada igual.
+  const claveTabla = (tabla) => { const t = [...document.querySelectorAll("#vista table")].indexOf(tabla); return `${S.vista === "ficha" ? `ficha:${S.fichaTab || "resumen"}` : S.vista}|${t}`; };
+  const textoTh = (th) => th.textContent.replace(/\s+/g, " ").trim();
+  const ordenesTabla = () => leerLocal("pmo_orden_tablas", {}) || {};
+  function ordenarTabla(tabla, th, dir) {
+    const tb = tabla.tBodies[0];
+    if (!tb || tb.querySelector("tr.grupo, td[colspan]")) return false;
     const col = [...th.parentNode.children].indexOf(th);
-    const dir = th.dataset.orden === "asc" ? "desc" : "asc";
     tabla.querySelectorAll("thead th").forEach((x) => delete x.dataset.orden);
     th.dataset.orden = dir;
-    const val = (tr) => { const t = (tr.children[col] ? tr.children[col].innerText : "").trim(); const f = t.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+    const val = (tr) => { const t = (tr.children[col] ? tr.children[col].innerText || tr.children[col].textContent : "").trim(); const f = t.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
       if (f) return `${f[3]}${f[2]}${f[1]}`; const n = parseFloat(t.replace(/[$.\s]/g, "").replace(",", ".")); return /^[$\d]/.test(t) && !Number.isNaN(n) ? n : normTxt(t); };
     const filas = [...tb.rows].sort((a, b) => { const x = val(a), y = val(b); const r = typeof x === "number" && typeof y === "number" ? x - y : String(x).localeCompare(String(y), "es", { numeric: true }); return dir === "asc" ? r : -r; });
     filas.forEach((f) => tb.appendChild(f));
+    return true;
+  }
+  function reaplicarOrden(raiz) {
+    const o = ordenesTabla();
+    raiz.querySelectorAll("#vista table:not(.raci):not(.no-orden)").forEach((tabla) => {
+      if (tabla.dataset.ordenVisto) return;
+      tabla.dataset.ordenVisto = "1";
+      const g = o[claveTabla(tabla)];
+      if (!g) return;
+      const th = [...tabla.querySelectorAll("thead th")].find((x) => textoTh(x) === g.th);
+      if (th) ordenarTabla(tabla, th, g.dir);
+    });
+  }
+  document.addEventListener("click", (e) => {
+    const th = e.target.closest && e.target.closest("#vista table:not(.raci):not(.no-orden) thead th");
+    if (!th || e.target.closest("button, a, input, select")) return;
+    const tabla = th.closest("table");
+    const dir = th.dataset.orden === "asc" ? "desc" : "asc";
+    if (!ordenarTabla(tabla, th, dir)) return;
+    const o = ordenesTabla(); o[claveTabla(tabla)] = { th: textoTh(th), dir }; guardarLocal("pmo_orden_tablas", o);
   });
 
   // ---------- Búsqueda global (Ctrl+K) ----------
@@ -8113,13 +8140,16 @@ ${x.h}</section>`).join("")}
             if (res.fecha <= R.hoyISO()) m.querySelector("[name=Fecha_Corte]").value = res.fecha;
           }
           [...cont.querySelectorAll(".comp-fila")].forEach((f) => { if (![...f.querySelectorAll("input")].some((i) => i.value)) f.remove(); });
+          res.compromisos = res.compromisos.map((c) => respDeActa(c, p.ID_Proyecto));
           res.compromisos.forEach((c) => cont.insertAdjacentHTML("beforeend", filaComp(c)));
           if (!cont.children.length) cont.insertAdjacentHTML("beforeend", filaComp());
           enlazar();
+          const msgRes = llenarResumenActa(m, res), libres = sinRecurso(res.compromisos);
           const sinFecha = res.compromisos.filter((c) => !c.Fecha_Compromiso).length;
           est.className = "acta-estado ok";
           est.innerHTML = `<b>${esc(archivo.name)}</b> se guardará con la sesión. ${res.fecha ? `Fecha del acta: ${fecha(res.fecha)}. ` : "No encontré la fecha del acta. "}` +
-            (res.compromisos.length ? `${msgActa(res)} y los cargué abajo${sinFecha ? ` (${sinFecha} sin fecha en el acta)` : ""}; revísalos antes de guardar.` : `${msgActa(res)}; escríbelos abajo si hay.`);
+            (res.compromisos.length ? `${msgActa(res)} y los cargué abajo${sinFecha ? ` (${sinFecha} sin fecha en el acta)` : ""}; revísalos antes de guardar.` : `${msgActa(res)}; escríbelos abajo si hay.`) +
+            esc(msgRes) + (libres ? ` <span class="texto-rojo">${libres} responsable(s) no están en Recursos (en gris): elígelos de la lista o créalos.</span>` : "");
         } catch (e) {
           acta = null;
           est.className = "acta-estado error"; est.textContent = "No se pudo leer el acta: " + e.message;
@@ -8564,6 +8594,51 @@ ${x.h}</section>`).join("")}
     fe.value = fechaPlazo(pz.value, base, hs.value);
   }
 
+
+  // Nombre del acta → persona del directorio de Recursos (sin tildes, sin títulos, nombre parcial o con un error de letra).
+  function recursoParecido(nombre, pid) {
+    const limpio = String(nombre || "").replace(/\(.*?\)/g, " ").replace(/\s[-–—|,]\s.*$/, "").replace(/^(ing|dr|dra|sr|sra|lic|enf|mg|md)\.?\s+/i, "").trim();
+    if (!limpio || esGrupo(limpio)) return null;
+    const correo = (String(nombre).match(/[\w.+-]+@[\w-]+\.[\w.]+/) || [])[0];
+    const ya = recursoPor({ correo, nombre: limpio });
+    if (ya) return ya;
+    const L = (S.datos.Recursos || []).filter((r) => r.Activo !== "No" && r.Nombre);
+    const tok = (t) => normTxt(t).replace(/[^a-z ]/g, " ").split(" ").filter((x) => x.length > 1);
+    const casi = (a, b) => { if (a === b) return true; if (Math.abs(a.length - b.length) > 1 || a.length < 5) return false; let i = 0; while (i < a.length && a[i] === b[i]) i++; return a.slice(i + 1) === b.slice(i + 1) || a.slice(i) === b.slice(i + 1) || a.slice(i + 1) === b.slice(i); };
+    const q = tok(limpio);
+    if (!q.length) return null;
+    const cand = L.filter((r) => { const t = tok(r.Nombre); return q.every((x) => t.some((y) => casi(x, y) || (x.length >= 3 && y.startsWith(x) && q.length > 1))); });
+    if (cand.length === 1) return cand[0];
+    if (cand.length > 1 && pid) {   // varias coincidencias (p. ej. solo el nombre): se prefiere quien es stakeholder del proyecto
+      const del = cand.filter((r) => (S.datos.Stakeholders || []).some((x) => x.ID_Proyecto === pid && (x.ID_Recurso === r.ID_Recurso || normTxt(x.Nombre) === normTxt(r.Nombre))));
+      if (del.length === 1) return del[0];
+    }
+    return null;
+  }
+  // Responsables leídos del acta → los nombres tal como están en Recursos.
+  const respDeActa = (c, pid) => ({ ...c, Responsable: separarNombres(c.Responsable).map((n) => (recursoParecido(n, pid) || {}).Nombre || n).join("; ") });
+  // Logros, próximos pasos y bloqueos del acta → campos del formulario (no reemplaza lo que ya escribiste).
+  function llenarResumenActa(m, res) {
+    const r = res.resumen || {}, comps = res.compromisos || [];
+    const vi = (t) => `• ${t}`;
+    const prox = [...(r.proximos || []).map(vi)];
+    if (!r.proximosActa && comps.length) {
+      comps.slice(0, 8).forEach((c) => { const q = [separarNombres(c.Responsable).join(", "), c.Fecha_Compromiso ? fecha(c.Fecha_Compromiso) : c.Fecha_Texto].filter(Boolean).join(" · "); prox.push(vi(`${c.Compromiso}${q ? ` (${q})` : ""}`)); });
+      if (comps.length > 8) prox.push(`• … y ${comps.length - 8} compromiso(s) más`);
+    }
+    if (r.proxReunion) prox.push(`Próxima sesión: ${r.proxReunion}`);
+    const val = { Logros: (r.logros || []).map(vi).join("\n"), Proximos_Pasos: prox.join("\n"), Bloqueos: (r.bloqueos || []).map(vi).join("\n") };
+    const llenos = [], respetados = [];
+    Object.entries(val).forEach(([k, v]) => {
+      const x = m.querySelector(`[name=${k}]`);
+      if (!x || !v) return;
+      if (x.value.trim() && x.dataset.auto !== x.value) { respetados.push(k); return; }
+      x.value = v; x.dataset.auto = v; x.dispatchEvent(new Event("input", { bubbles: true })); llenos.push(k);
+    });
+    const N = { Logros: "logros", Proximos_Pasos: "próximos pasos", Bloqueos: "bloqueos" };
+    return (llenos.length ? ` Llené ${llenos.map((k) => N[k]).join(", ")} con lo que dice el acta.` : "") + (respetados.length ? ` No cambié ${respetados.map((k) => N[k]).join(", ")} porque ya tenían texto.` : "");
+  }
+  const sinRecurso = (lista) => lista.reduce((n, c) => n + separarNombres(c.Responsable).filter((x) => !esGrupo(x) && !recursoPor({ nombre: x })).length, 0);
   // Fila rápida de compromiso (registrar o editar una sesión).
   const filaComp = (c = {}) => `<div class="comp-fila">
       <textarea class="c-texto" rows="1" placeholder="Compromiso (qué se hará)" aria-label="Compromiso">${esc(String(c.Compromiso || "").replace(/\s*\n+\s*/g, " "))}</textarea>
@@ -8641,10 +8716,11 @@ ${x.h}</section>`).join("")}
           accionActa = { tipo: "subir", bytes: res.datos, nombre: archivo.name };
           if (res.fecha) m.querySelector("[name=Fecha_Acta]").value = res.fecha;
           est.className = "acta-estado ok";
-          const nuevosActa = res.compromisos.filter((c) => !yaExisteComp(s.ID_Proyecto, c));
+          const nuevosActa = res.compromisos.filter((c) => !yaExisteComp(s.ID_Proyecto, c)).map((c) => respDeActa(c, s.ID_Proyecto));
+          const msgRes = llenarResumenActa(m, res);
           nuevosActa.forEach((c) => contN.insertAdjacentHTML("beforeend", filaComp(c))); enlazarN();
           if (typeof enlazarRecursos === "function") enlazarRecursos(contN);
-          est.textContent = `${archivo.name} se guardará al dar Guardar. ${msgActa(res)}${res.compromisos.length ? `: ${nuevosActa.length} nuevo(s) cargados abajo en «Compromisos nuevos» para revisar${res.compromisos.length - nuevosActa.length ? ` (${res.compromisos.length - nuevosActa.length} ya existían)` : ""}` : ""}.`;
+          est.textContent = `${archivo.name} se guardará al dar Guardar. ${msgActa(res)}${res.compromisos.length ? `: ${nuevosActa.length} nuevo(s) cargados abajo en «Compromisos nuevos» para revisar${res.compromisos.length - nuevosActa.length ? ` (${res.compromisos.length - nuevosActa.length} ya existían)` : ""}` : ""}.${msgRes}`;
           accionActa.compromisos = [];
         } catch (e) { est.className = "acta-estado error"; est.textContent = "No se pudo leer el acta: " + e.message; }
       }));

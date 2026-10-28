@@ -340,6 +340,70 @@
     return { encontrada: comps.length > 0, titulo: true, compromisos: comps, formato: "lista" };
   }
 
+
+  /* ---------- Resumen de la sesión: logros, próximos pasos y bloqueos ---------- */
+  const RX_ENC = /(nivel 2:|gesti[oó]n para el mejoramiento|formato acta de reuni|GC-GME|fecha vigente|^calidad\b|^c[oó]digo:|^versi[oó]n:)/i;
+  // Renglones del PDF sin el encabezado ni el pie institucional que se repiten en cada página.
+  function lineasPDF(paginas) {
+    const L = renglones(paginas), out = [];
+    paginas.forEach((_, pg) => {
+      const ls = L.filter((l) => l.pg === pg);
+      const enc = ls.filter((l) => RX_ENC.test(l.t) && l.y < 220).map((l) => l.y);
+      const yMax = ls.reduce((m, l) => Math.max(m, l.y), 0);
+      const pie = ls.filter((l) => RX_PIE.test(l.t) && !RX_ENC.test(l.t) && l.y > yMax * 0.6).map((l) => l.y);
+      const yEnc = enc.length ? Math.max(...enc) + 16 : -1, yPie = pie.length ? Math.min(...pie) - 2 : Infinity;
+      ls.forEach((l) => { if (l.y > yEnc && l.y < yPie && !RX_PIE.test(l.t) && !RX_ENC.test(l.t)) out.push(l.t); });
+    });
+    return out;
+  }
+  const SECCIONES = [
+    ["contenido", /^(contenido|temas tratados|temas|desarrollo(?: de la (?:reuni[oó]n|sesi[oó]n))?|notas(?: de la reuni[oó]n)?|resumen(?: de la (?:reuni[oó]n|sesi[oó]n))?|puntos tratados|agenda tratada|orden del d[ií]a)\b/i],
+    ["logros", /^(logros(?: del periodo)?|avances?(?: del periodo)?|resultados|conclusiones|decisiones)\b/i],
+    ["proximos", /^(pr[oó]ximos pasos|siguientes pasos|pasos a seguir)\b/i],
+    ["bloqueos", /^(bloqueos|impedimentos|riesgos(?: identificados)?|alertas|dificultades|problemas(?: identificados)?)\b/i],
+    ["fin", /^(seguimiento a (?:los )?compromisos|compromisos(?: de la reuni[oó]n)?|acuerdos|lista de participantes|participantes|asistentes|asistencia|hora de finalizaci|fecha\s*[–-]\s*hora|pr[oó]xima reuni|firmas?|aprobaci[oó]n del acta)\b/i],
+  ];
+  // ¿El renglón es el título de una sección? Devuelve [clave, texto que sigue al título en el mismo renglón].
+  function seccionDe(t) {
+    for (const [k, rx] of SECCIONES) {
+      const m = t.match(rx);
+      if (!m) continue;
+      const resto = t.slice(m[0].length);
+      const dos = resto.match(/^[^:]{0,30}:\s*/);   // «Seguimiento a los compromisos anteriores:», «Riesgos identificados:»
+      if (dos) return [k, resto.slice(dos[0].length)];
+      if (!resto.trim() && t.length < 45) return [k, ""];
+    }
+    return null;
+  }
+  const RX_ITEM = /^\s*(\d{1,2}[.)]|[-•●▪◦*–·✓])\s+/;
+  function itemsDe(lineas) {
+    const out = [];
+    lineas.forEach((t) => { if (RX_ITEM.test(t) || !out.length) out.push(t.replace(RX_ITEM, "")); else out[out.length - 1] += " " + t; });
+    return out.map((t) => t.replace(/\s+/g, " ").replace(/\s+[—–-]\s+/, ": ").trim()).filter((t) => t.length > 3);
+  }
+  const RX_BLOQ = /\b(bloque|riesgo|impedi|dependencia|depende(?:mos)? de|retras|atras[oa]|demora|no se ha(?:n)? |no ha(?:n)? (?:sido|llegado|entregado|respondido|enviado)|sin respuesta|a la espera|en espera|pendiente(?:s)? (?:de|por) (?:respuesta|entrega|aprobaci|definici|confirmaci)|incidente|falla|problema|dificultad|escal(?:a|ar|amos|ó)|preocupa|no se pudo|no fue posible|sin (?:acceso|ambiente|licencia|presupuesto))/i;
+  const RX_PROX = /\b(pr[oó]xim[ao]s? (?:paso|semana|sesi[oó]n|reuni[oó]n|comit[eé])|siguientes? pasos?|se (?:realizar[aá]|programar[aá]|har[aá]|iniciar[aá]|enviar[aá]|validar[aá]|revisar[aá]|definir[aá])|vamos a|quedamos en|acordamos|se acord[oó]|planeamos)/i;
+  function resumenDe(lineas) {
+    const sec = { contenido: [], logros: [], proximos: [], bloqueos: [] };
+    let act = null, proxReunion = "";
+    lineas.forEach((t0) => {
+      const t = String(t0 || "").trim(); if (!t) return;
+      const pr = t.match(/^(?:fecha\s*[–-]\s*hora\s*-?\s*lugar de la pr[oó]xima reuni[oó]n|pr[oó]xima reuni[oó]n)\s*:?\s*(.*)$/i);
+      if (pr && pr[1].trim()) proxReunion = pr[1].trim();
+      const s = seccionDe(t);
+      if (s) { act = s[0] === "fin" ? null : s[0]; if (act && s[1]) sec[act].push(s[1]); return; }
+      if (act) sec[act].push(t);
+    });
+    const it = { contenido: itemsDe(sec.contenido), logros: itemsDe(sec.logros), proximos: itemsDe(sec.proximos), bloqueos: itemsDe(sec.bloqueos) };
+    const logros = [...it.logros], proximos = [...it.proximos], bloqueos = [...it.bloqueos];
+    it.contenido.forEach((t) => {
+      if (RX_BLOQ.test(t)) { if (!it.bloqueos.length) bloqueos.push(t); }
+      else if (RX_PROX.test(t)) { if (!it.proximos.length) proximos.push(t); }
+      else if (!it.logros.length) logros.push(t);
+    });
+    return { logros, proximos, bloqueos, proxReunion, proximosActa: it.proximos.length > 0 };
+  }
+
   /* ---------- Actas en Word (.docx) ---------- */
   let cargaXLSX = null;
   function libZip() {
@@ -362,6 +426,7 @@
       else if (n.localName === "tbl") bloques.push({ tabla: hijos(n, "tr").map((tr) => hijos(tr, "tc").map(texto)) });
     });
     const todo = bloques.flatMap((b) => (b.p ? [b.p] : b.tabla.flat()));
+    const resumen = resumenDe(bloques.flatMap((b) => (b.p ? [b.p] : b.tabla.flatMap((f) => f.flatMap((c) => c.split("\n"))))));
     const etFecha = todo.find((t) => /^fecha\s*:/i.test(t) && fechaISO(t));
     const fecha = etFecha ? fechaISO(etFecha) : "";
     const anio = (fecha || new Date().toISOString()).slice(0, 4);
@@ -378,16 +443,16 @@
       const val = (f, t) => f.filter((_, j) => tipos[j] === t).join(" ").replace(/\s+/g, " ").trim();
       const comps = b.tabla.slice(iEnc + 1).filter((f) => !f.every((c) => !c.trim())).map((f) => ({ Compromiso: val(f, "desc"), Responsable: val(f, "resp"), Fecha_Texto: val(f, "fecha"), Fecha_Compromiso: fechaEntrega(val(f, "fecha"), anio) }))
         .filter((c) => c.Compromiso.length >= 3 && !RX_FIN.test(c.Compromiso));
-      if (comps.length) return { fecha, encontrada: true, titulo: true, compromisos: comps, formato: "Word" };
+      if (comps.length) return { fecha, resumen, encontrada: true, titulo: true, compromisos: comps, formato: "Word" };
     }
     // 2) Lista de párrafos bajo el título.
     const iT = bloques.findIndex((b) => b.p && RX_TIT.test(b.p) && !RX_NO_TIT.test(b.p) && b.p.length < 90);
     if (iT >= 0) {
       const comps = [];
       for (let k = iT + 1; k < bloques.length; k++) { const b = bloques[k]; if (!b.p) break; if (RX_FIN.test(b.p) || (RX_TIT.test(b.p) && b.p.length < 60)) break; const c = compromisoDeLinea(b.p, anio); if (c) comps.push(c); }
-      return { fecha, encontrada: comps.length > 0, titulo: true, compromisos: comps, formato: "Word" };
+      return { fecha, resumen, encontrada: comps.length > 0, titulo: true, compromisos: comps, formato: "Word" };
     }
-    return { fecha, encontrada: false, titulo, compromisos: [], formato: "Word" };
+    return { fecha, resumen, encontrada: false, titulo, compromisos: [], formato: "Word" };
   }
 
   const TIPO_DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
@@ -400,7 +465,7 @@
     let r = leerCompromisos(paginas);   // formato FSFB (GC-GME-FT-010)
     if (r.compromisos.length) r.formato = "FSFB";
     else { const g = leerGenerico(paginas, (fecha || new Date().toISOString()).slice(0, 4)); if (g.compromisos.length || !r.titulo) r = g; }
-    return { fecha, ...r, compromisos: (r.compromisos || []).map(separarPlazo), datos, tipo: "application/pdf" };
+    return { fecha, ...r, resumen: resumenDe(lineasPDF(paginas)), compromisos: (r.compromisos || []).map(separarPlazo), datos, tipo: "application/pdf" };
   }
 
   // Base64 por partes para no bloquear el navegador con archivos grandes.
@@ -435,5 +500,5 @@
     }
   }
 
-  window.ACTAS = { leerActa, fechaISO, aBase64, deBase64, mostrar, leerCompromisos, leerGenerico, compromisoDeLinea, TIPO_DOCX };
+  window.ACTAS = { leerActa, resumenDe, _lineasPDF: async (f) => lineasPDF(await fragmentos(new Uint8Array(await f.arrayBuffer()))), fechaISO, aBase64, deBase64, mostrar, leerCompromisos, leerGenerico, compromisoDeLinea, TIPO_DOCX };
 })();
