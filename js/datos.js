@@ -35,6 +35,8 @@
     // Enlaces a documentos de cada proyecto (SharePoint, OneDrive, Teams…), para encontrarlos rápido.
     Documentos: ["ID_Documento", "ID_Proyecto", "Nombre", "URL", "Tipo", "Descripcion", "Registrado_Por", "Fecha_Registro"],
     // Líneas base del proyecto (LB0 = original; cada re-planeación aprobada crea una nueva).
+    // Recomendaciones del Analista PMO que se marcaron como hechas o se descartaron (con motivo).
+    Recomendaciones: ["ID_Rec", "ID_Proyecto", "Clave", "Huella", "Titulo", "Estado", "Motivo", "Fecha", "Registrado_Por"],
     LineasBase: ["ID_LB", "ID_Proyecto", "Numero", "Fecha", "Fecha_Inicio", "Fecha_Fin", "Presupuesto", "Motivo", "ID_Cambio", "Registrado_Por"],
     // Cronograma importado (Planner en Excel o MS Project en XML): una fila por tarea; se reemplaza en cada importación.
     Tareas: ["ID_Tarea", "ID_Proyecto", "Orden", "EDT", "Nivel", "Nombre", "Grupo", "Inicio", "Fin", "Duracion_Dias", "Pct_Completado", "Hito", "Resumen", "Responsable", "Inicio_Base", "Fin_Base", "Predecesoras", "Origen", "Fecha_Importacion"],

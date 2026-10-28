@@ -309,6 +309,7 @@
   function render() {
     ED.clear();
     invalidarEsf();
+    PMO_CACHE = null;
     S.charts.forEach((c) => c.destroy());
     S.charts = [];
     if (!S.usuario) return pantallaLogin();
@@ -331,6 +332,7 @@
           <div class="ab-der">
             <button class="modo ${S.modo} ${S.conexion === "error" ? "desconectado" : ""}" id="b-conexion" title="${S.modo === "demo" ? esc(etiquetaModo) : S.conexion === "error" ? "Sin conexión con Excel · clic para reconectar" : "Conectado con Excel · clic para reconectar si algo se queda pegado"}"><span class="punto-con"></span>${S.modo === "demo" ? "Demo" : "Excel"}</button>
             ${R.puede(u, "seguimiento") ? `<button class="btn chico primario ab-esf" id="b-esf" title="Registrar una reunión no agendada o una gestión (correos, coordinación, informes)">+ <span>Esfuerzo</span></button>` : ""}
+            ${(() => { const n = S.datos ? recsPortafolio().filter((r) => r.sev === "alta").length : 0; return `<button class="ab-pmo ${S.pmoAbierto ? "activo" : ""}" id="b-pmo" title="Analista PMO: salud de los proyectos y recomendaciones de buenas prácticas"><span class="pmo-ico" aria-hidden="true">✦</span><span class="ab-pmo-t">Analista PMO</span>${n ? `<span class="ab-badge">${n}</span>` : ""}</button>`; })()}
             <button class="ab-btn campana ${al.vencidos.length ? "roja" : nAl ? "ambar" : ""}" id="b-alertas" title="Compromisos vencidos o por vencer">${ico("campana")}${nAl ? `<span class="ab-badge">${nAl}</span>` : ""}</button>
             <button class="ab-btn" id="b-ayuda" title="Mostrar la ayuda de esta pantalla">${ico("ayuda")}</button>
             <div class="ab-usuario"><button class="ab-avatar" id="b-usuario" aria-haspopup="true" aria-expanded="false" title="${esc(u.Nombre || u.Correo)}">${avatar(u.Nombre || u.Correo)}</button>
@@ -369,6 +371,7 @@
     $("#b-tema").addEventListener("click", () => { aplicarTema(oscuro ? "claro" : "oscuro"); render(); });
     $("#b-salir").addEventListener("click", () => { S.usuario = null; S.avisoAlertas = false; guardarSesion(""); render(); });
     $("#b-alertas").addEventListener("click", panelAlertas);
+    $("#b-pmo").addEventListener("click", () => { if (S.pmoAbierto) { S.pmoAbierto = false; S.pmoPid = null; panelPMO(); $("#b-pmo").classList.remove("activo"); } else { abrirPMO(); $("#b-pmo").classList.add("activo"); } });
     if ($("#b-esf")) $("#b-esf").addEventListener("click", () => formEsfuerzo());
     if (!S.avisoSemana && S.datos) {
       S.avisoSemana = true;
@@ -405,6 +408,8 @@
     enlazarClics(el);
     enlazarActas(el);
     enlazarEsfuerzo(el);
+    enlazarPMO(el);
+    panelPMO();
     animarVista(el);
   }
   // Entrada suave de la pantalla y contadores que suben en los indicadores (se respeta «reducir movimiento»).
@@ -426,7 +431,7 @@
       requestAnimationFrame(paso);
     });
   }
-  function ir(vista, pid) { S.vista = vista; if (pid) S.pid = pid; render(); window.scrollTo(0, 0); }
+  function ir(vista, pid) { S.vista = vista; if (pid) S.pid = pid; S.pmoPid = null; render(); window.scrollTo(0, 0); }
   // Cualquier elemento con data-pid abre la ficha del proyecto.
   function enlazarClics(el) {
     el.querySelectorAll("button[data-pid]:not(.chip-proy)").forEach((b) => b.addEventListener("click", (ev) => { ev.stopPropagation(); ir("ficha", b.dataset.pid); }));
@@ -689,6 +694,7 @@
           const spi = pv > 0 ? ev / pv : null, cpi = ac > 0 ? evc / ac : null, f = (x) => (x === null ? "—" : x.toFixed(2).replace(".", ","));
           return tarjeta("Desempeño (valor ganado)", `${f(spi)} · ${f(cpi)}`, "SPI cronograma · CPI costo (1 = según plan)", (spi !== null && spi < 0.9) || (cpi !== null && cpi < 0.9), "activos"); })()}
       </div>
+      ${cardAnalistaPMO()}
       ${cardAlertasEsfuerzo(ps)}
 
       <div class="card"><div class="titulo-fila"><h2>Salud del portafolio</h2><span class="sub">${activos.length} proyecto(s) activos por semáforo · clic para ver</span></div>${activos.length ? salud : vacio("No hay proyectos activos en la selección.")}</div>
@@ -1363,7 +1369,7 @@
         <span class="sub">${lista.length} resultado(s)</span>
       </div>
       <div class="card"><div class="tabla-scroll"><table>
-        <thead><tr><th>Proyecto</th><th class="opc">Área</th><th>PM</th><th class="opc" title="% de dedicación del PM a este proyecto (se usa en Capacidad del equipo)">Dedicación PM</th><th class="opc">Metodología</th><th class="opc">Fase</th><th>Estado</th><th>Semáforo</th><th>Avance real / plan</th><th class="opc">Fin plan</th><th class="opc">Valor FSFB</th><th class="opc" title="Horas reales o estimadas del mes a la fecha / planeadas a la fecha">Horas del mes</th><th>Seguimiento</th></tr></thead>
+        <thead><tr><th>Proyecto</th><th class="opc">Área</th><th>PM</th><th class="opc" title="% de dedicación del PM a este proyecto (se usa en Capacidad del equipo)">Dedicación PM</th><th class="opc">Metodología</th><th class="opc">Fase</th><th>Estado</th><th>Semáforo</th><th>Avance real / plan</th><th class="opc">Fin plan</th><th class="opc">Valor FSFB</th><th class="opc" title="Horas reales o estimadas del mes a la fecha / planeadas a la fecha">Horas del mes</th><th title="Salud según el Analista PMO (0-100): clic para ver sus recomendaciones">Salud</th><th>Seguimiento</th></tr></thead>
         <tbody>${lista.map((p) => `<tr class="clic ${["Cerrado", "Cancelado"].includes(p.Estado) ? "fila-inactiva" : ""}" data-pid="${esc(p.ID_Proyecto)}" tabindex="0">
           <td><b>${esc(p.Nombre)}</b><div class="sub">${esc(p.ID_Proyecto)} · prioridad ${esc(String(p.Prioridad).toLowerCase())}</div></td><td class="opc"${EP(p, "Cliente_Area", { tipo: "select", opciones: S.cat.Cliente_Area, etiqueta: "Área" })}>${esc(p.Cliente_Area)}</td>
           <td${EP(p, "PM", { tipo: "select", opciones: pmsEd, puede: R.puede(S.usuario, "verTodo"), etiqueta: "PM" })}>${persona(nombreUsuario(p.PM))}</td><td class="opc nowrap"${EP(p, "Dedicacion_PM", { tipo: "number", min: 0, max: 100, etiqueta: "Dedicación del PM", despues: (v) => sincronizarDedPM(p.ID_Proyecto, v) })}>${dedPM(p) !== null ? `<b>${dedPM(p)}%</b>` : `<span class="sub">—</span>`}</td><td class="opc"${EP(p, "Metodologia", { tipo: "select", opciones: S.cat.Metodologia, etiqueta: "Metodología" })}>${esc(p.Metodologia)}</td>
@@ -1371,7 +1377,7 @@
           <td${EP(p, "Semaforo", { tipo: "select", opciones: S.cat.Semaforo, vacio: "—", etiqueta: "Semáforo" })}>${p.Estado === "Activo" || p.Semaforo ? chipSemaforo(p.Semaforo) : `<span class="sub">—</span>`}</td>
           <td class="celda-avance"${EP(p, "Avance_Real", { tipo: "number", min: 0, max: 100, requerido: true, etiqueta: "Avance real" })}>${barraAvance(p.Avance_Real, p.Avance_Planeado)}</td><td class="opc"${EP(p, "Fecha_Fin_Plan", { tipo: "date", requerido: true, antes: edFin(p), validar: (v) => (p.Fecha_Inicio && v < p.Fecha_Inicio ? "El fin no puede ser anterior al inicio." : ""), etiqueta: "Fin planeado" })}>${fecha(p.Fecha_Fin_Plan)}</td>
           <td class="opc"${EP(p, "Nivel_Valor", { tipo: "select", opciones: NIVELES_VALOR, vacio: `Automático (${valorProyecto(p).sugerido || "sin datos"})`, etiqueta: "Nivel de valor" })}>${(() => { const V = valorProyecto(p); return V.nivel ? `${chipNivel(V.nivel)}${V.indice !== null ? `<div class="sub">logro ${V.indice}%</div>` : ""}` : `<span class="sub">—</span>`; })()}</td>
-          <td class="opc">${CUENTAN(p) ? celdaHorasMes(p) : `<span class="sub">—</span>`}</td><td>${pill(R.estadoSeguimiento(p, S.datos.Seguimientos).estado)}</td></tr>`).join("") || `<tr><td colspan="13">${vacio(visibles().length ? "No hay proyectos con estos filtros. Prueba «Limpiar filtros»." : "Aún no tienes proyectos. Registra el primero con «+ Nueva iniciativa».")}</td></tr>`}</tbody>
+          <td class="opc">${CUENTAN(p) ? celdaHorasMes(p) : `<span class="sub">—</span>`}</td><td>${chipSalud(analisisPMO(p), true)}</td><td>${pill(R.estadoSeguimiento(p, S.datos.Seguimientos).estado)}</td></tr>`).join("") || `<tr><td colspan="14">${vacio(visibles().length ? "No hay proyectos con estos filtros. Prueba «Limpiar filtros»." : "Aún no tienes proyectos. Registra el primero con «+ Nueva iniciativa».")}</td></tr>`}</tbody>
       </table></div></div>`;
     enlazarFiltros();
     $("#f-texto").addEventListener("change", (e) => { FL.texto = e.target.value; render(); });
@@ -1480,7 +1486,7 @@
     }[tab]();
     el.innerHTML = `
       <button class="btn enlace" id="b-volver">← Volver a proyectos</button>
-      <div class="titulo-fila"><div><h1>${esc(p.Nombre)}</h1><div class="ficha-chips">${chipEstadoP(p.Estado)}${chipFase(p.Fase)}${p.Semaforo ? chipSemaforo(p.Semaforo) : ""}</div><div class="sub">${esc(p.ID_Proyecto)}${p.Codigo_Almera ? ` · Almera ${esc(p.Codigo_Almera)}` : ""} · ${esc(p.Cliente_Area)} · PM ${esc(nombreUsuario(p.PM))}</div></div>
+      <div class="titulo-fila"><div><h1>${esc(p.Nombre)}</h1><div class="ficha-chips">${chipEstadoP(p.Estado)}${chipFase(p.Fase)}${p.Semaforo ? chipSemaforo(p.Semaforo) : ""}${(() => { const a = analisisPMO(p); return a.puntaje !== null ? `<span class="salud-chip">Salud ${chipSalud(a, true)}</span>` : ""; })()}</div><div class="sub">${esc(p.ID_Proyecto)}${p.Codigo_Almera ? ` · Almera ${esc(p.Codigo_Almera)}` : ""} · ${esc(p.Cliente_Area)} · PM ${esc(nombreUsuario(p.PM))}</div></div>
         <div class="acciones">
           ${enlace(p.URL_Repositorio, "Repositorio")}${enlace(p.URL_Documentos, "Documentos")}
           ${puedeP("seguimiento") && p.Estado === "Activo" ? `<button class="btn primario" id="b-seg">Registrar seguimiento</button>` : ""}
@@ -1489,6 +1495,7 @@
         </div></div>
       ${p.Estado === "Activo" && e.estado !== "Al día" ? `<div class="aviso ${e.estado === "Vencido" ? "rojo" : ""}">${e.estado === "Vencido" ? `El seguimiento está vencido desde el ${fecha(e.proximo)}.` : `El próximo seguimiento vence el ${fecha(e.proximo)}.`}${puedeP("seguimiento") ? " Usa «Registrar seguimiento»." : ""}</div>` : ""}
       ${pestanas}
+      ${pistasPMO(p, tab)}
       ${cuerpo}`
     $("#b-volver").addEventListener("click", () => ir("proyectos"));
     if ($("#b-seg")) $("#b-seg").addEventListener("click", () => formSeguimiento(p));
@@ -7565,6 +7572,226 @@ ${x.h}</section>`).join("")}
     if (!al.length) return "";
     return `<div class="card ef-alertas"><div class="titulo-fila"><h2>Capacidad y esfuerzo</h2><div class="acciones"><button class="btn chico" data-ir-vista="capacidad">Ver capacidad</button><button class="btn chico primario" data-ir-vista="misemana">Mi semana</button></div></div>
       <ul class="lista">${al.map((a) => `<li class="ef-al ${a.n}"><span>${a.t}</span>${a.pid ? `<button class="btn chico" data-pid="${esc(a.pid)}">Ver proyecto</button>` : a.k ? `<button class="btn chico" data-ef-ms="${esc(a.k)}|${a.l}">Ver semana</button>` : ""}</li>`).join("")}</ul></div>`;
+  }
+
+  // ---------- Analista PMO (reglas, sin IA) ----------
+  // Revisa cada proyecto como lo haría un profesional de PMO: puntaje de salud (0-100), recomendaciones priorizadas con su porqué y una acción en un clic.
+  // Cada recomendación puede marcarse como hecha o descartarse (con motivo): queda en la tabla Recomendaciones del Excel.
+  const plural = (n, uno, varios) => `${n} ${n === 1 ? uno : varios}`;
+  const SEV = { alta: 0, media: 1, baja: 2 };
+  const SEV_TXT = { alta: "Prioridad alta", media: "Prioridad media", baja: "Sugerencia" };
+  const esAgil = (p) => /scrum|[aá]gil|kanban|h[ií]brid/i.test(String(p.Metodologia || ""));
+  const palabrasClave = (t) => new Set(normTxt(t).replace(/[^a-z ]/g, " ").split(" ").filter((w) => w.length > 4));
+  const parecidos = (a, b) => { const A = palabrasClave(a), B = palabrasClave(b); let n = 0; A.forEach((w) => { if (B.has(w)) n += 1; }); return n >= 3 || (n >= 2 && Math.min(A.size, B.size) <= 4); };
+  const irTab = (p, tab) => () => { S.fichaTab = tab; ir("ficha", p.ID_Proyecto); };
+  function abrirRiesgoDesde(p, texto, idSeg) {
+    formRiesgo(p);
+    setTimeout(() => {
+      const d = document.querySelector('#m-form [name="Descripcion"]'); if (d) d.value = `Si no se resuelve «${corta(texto, 160)}», entonces se retrasa el proyecto.`;
+      const s = document.querySelector('#m-form [name="ID_Seguimiento"]'); if (s && idSeg) s.value = idSeg;
+      const o = document.querySelector('#m-form [name="Origen"]'); if (o && !o.value) o.value = "Bloqueo repetido en las sesiones (Analista PMO)";
+    }, 0);
+  }
+  function abrirCambioDesde(p, tipo, texto) {
+    formCambio(p);
+    setTimeout(() => {
+      const ch = [...document.querySelectorAll('#m-form input[type="checkbox"]')].find((x) => normTxt(x.value) === normTxt(tipo)); if (ch && !ch.checked) ch.click();
+      const d = document.querySelector('#m-form [name="Descripcion"]'); if (d && !d.value) d.value = texto;
+    }, 0);
+  }
+
+  // Todas las recomendaciones de un proyecto (sin filtrar las descartadas).
+  function revisarProyecto(p, hoy = R.hoyISO()) {
+    const out = [], pid = p.ID_Proyecto, activo = p.Estado === "Activo";
+    const add = (id, sev, peso, tab, titulo, porque, accion, huella = "") => out.push({ id, key: `${pid}|${id}`, pid, sev, peso, tab, titulo, porque, accion, huella: String(huella) });
+    const puedeSeg = R.puedeEditar(S.usuario, p, "seguimiento"), puedeEd = R.puedeEditar(S.usuario, p, "editarProyecto");
+    if (["Cerrado", "Cancelado"].includes(p.Estado)) {
+      const cierre = String(p.Fecha_Actualizacion || p.Fecha_Fin_Real || "").slice(0, 10);
+      if (!leccionesDe(pid).length && (!cierre || R.difDias(hoy, cierre) <= 120))
+        add("lecciones", "media", 0, "lecciones", "Registra las lecciones aprendidas del proyecto", "El cierre formal incluye lecciones aprendidas: es lo que evita repetir errores en los próximos proyectos y alimenta la base de conocimiento de la PMO.", puedeEd ? { txt: "Registrar lección", fn: () => formLeccion(p) } : null);
+      return out;
+    }
+    if (!activo) return out;
+    // 1) Seguimiento
+    const e = R.estadoSeguimiento(p, S.datos.Seguimientos, hoy);
+    if (e.estado === "Vencido") add("seg", "alta", 15, "resumen", `Registra el seguimiento: está vencido desde el ${fecha(e.proximo)}`, "El estado del portafolio se arma con los seguimientos. Sin reporte reciente el proyecto llega al comité con datos viejos y el semáforo deja de ser confiable.", puedeSeg ? { txt: "Registrar seguimiento", fn: () => formSeguimiento(p) } : null, e.proximo);
+    else if (e.estado === "Por vencer") add("seg-pronto", "baja", 2, "resumen", `El seguimiento vence el ${fecha(e.proximo)}`, "Reportar a tiempo mantiene el tablero al día y evita que el proyecto aparezca vencido.", puedeSeg ? { txt: "Registrar seguimiento", fn: () => formSeguimiento(p) } : null, e.proximo);
+    // 2) Acta de la última sesión
+    const regs = R.seguimientosDe(pid, S.datos.Seguimientos).filter((s) => s.Fecha_Corte && R.difDias(hoy, s.Fecha_Corte) <= 30);
+    const ultReg = regs[regs.length - 1];
+    if (ultReg && !ultReg.Acta_Archivo && !ultReg.URL_Acta) add("acta", "media", 5, "seguimientos", `Adjunta el acta de la sesión del ${fecha(ultReg.Fecha_Corte)}`, "El acta es la evidencia de lo acordado: respalda los compromisos, las decisiones y los cambios. Al subirla, la app además llena los logros, próximos pasos y bloqueos.", puedeSeg ? { txt: "Adjuntar acta", fn: () => adjuntarActa(ultReg.ID_Seguimiento) } : null, ultReg.ID_Seguimiento);
+    // 3) Cronograma
+    const ts = tareasDe(pid), vig = versionVigente(pid);
+    if (!ts.length) add("crono", "media", 6, "gantt", "Carga el cronograma del proyecto", "Con el cronograma (MS Project o Planner) el avance real y planeado salen de las tareas y no de una estimación; además se ven las tareas atrasadas y la EDT.", { txt: "Ir a Cronograma", fn: irTab(p, "gantt") });
+    else {
+      const f = (vig && vig.Fecha_Importacion) || p.Cronograma_Fecha, dias = f ? R.difDias(hoy, String(f).slice(0, 10)) : null;
+      if (dias !== null && dias > 15) add("crono-viejo", "media", 8, "gantt", `Actualiza el cronograma: tiene ${dias} días`, "Un cronograma desactualizado hace que el avance reportado no refleje la realidad. La buena práctica es actualizarlo al menos cada dos semanas, antes del comité.", { txt: "Ir a Cronograma", fn: irTab(p, "gantt") }, vig ? vig.Numero : f);
+      const atr = calcCronograma(ts, hoy).atrasadas.length;
+      if (atr >= 3) add("tareas-atr", atr >= 8 ? "alta" : "media", atr >= 8 ? 8 : 5, "gantt", `${atr} tareas atrasadas en el cronograma`, "Varias tareas por debajo de lo planeado anticipan un atraso en hitos. Revisa la EDT con el filtro «Atrasado» y acuerda acciones con los responsables.", { txt: "Ver atrasadas", fn: () => { S.edtF = { ...(S.edtF || {}), [pid]: "atr" }; irTab(p, "gantt")(); } }, atr);
+    }
+    // 4) Línea base y control de cambios
+    const lb = lineaBase(p), pendCC = cambiosDe(pid).filter((c) => c.Estado === "Solicitado");
+    if (!lb.tiene && p.Fecha_Fin_Plan) add("lb", "media", 6, "cambios", "Fija la línea base del proyecto", "Sin línea base no se puede medir cuánto se ha desviado el proyecto ni justificar los cambios ante el comité. Se fija con el inicio, el fin y el presupuesto aprobados.", R.puede(S.usuario, "verTodo") ? { txt: "Fijar línea base", fn: () => fijarLineaBase(p) } : { txt: "Ir a Cambios", fn: irTab(p, "cambios") });
+    if (pendCC.length) add("cc-pend", "media", 4, "cambios", `${plural(pendCC.length, "control de cambios espera", "controles de cambios esperan")} decisión`, "Un cambio solicitado sin decisión deja al equipo trabajando sobre un plan que no está aprobado. Llévalo al comité o al sponsor.", { txt: "Ver cambios", fn: irTab(p, "cambios") }, pendCC.map((c) => c.ID_Cambio).join(","));
+    else {
+      if (lb.dias > 0) add("cc-tiempo", "alta", 12, "cambios", `El fin se movió ${lb.dias} días frente a la línea base sin control de cambios`, "Mover la fecha comprometida sin un cambio aprobado rompe la trazabilidad: el comité ve un proyecto «a tiempo» que en realidad se corrió. Registra el control de cambios de tiempo.", puedeEd ? { txt: "Registrar cambio", fn: () => abrirCambioDesde(p, "Tiempo", `Mover el fin planeado del ${fecha(lb.fb)} al ${fecha(p.Fecha_Fin_Plan)} (+${lb.dias} días).`) } : null, p.Fecha_Fin_Plan);
+      if (lb.pctCosto > 0) add("cc-costo", "alta", 10, "cambios", `El presupuesto subió ${lb.pctCosto}% frente a la línea base sin control de cambios`, "Un aumento de presupuesto debe quedar aprobado y documentado; si no, la línea base deja de servir para medir el desempeño de costo.", puedeEd ? { txt: "Registrar cambio", fn: () => abrirCambioDesde(p, "Costo", `Ajustar el presupuesto de ${cop(lb.pb)} a ${cop(p.Presupuesto)} (+${lb.pctCosto}%).`) } : null, p.Presupuesto);
+    }
+    // 5) Desempeño: costo, atraso y semáforo
+    const bac = bacDe(p), real = Number(p.Avance_Real) || 0, plan = Number(p.Avance_Planeado) || 0, desv = plan - real;
+    if (bac && Number(p.Ejecutado) > bac) add("sobrecosto", "alta", 10, "resumen", `El ejecutado (${cop(p.Ejecutado)}) supera el presupuesto`, "Un sobrecosto sin aprobación es una alerta para el comité. Revisa el pronóstico de costo final y, si se necesita más presupuesto, tramita el control de cambios.", puedeEd ? { txt: "Registrar cambio", fn: () => abrirCambioDesde(p, "Costo", `El ejecutado (${cop(p.Ejecutado)}) supera el presupuesto (${cop(bac)}).`) } : null, p.Ejecutado);
+    if (p.Avance_Planeado !== "" && desv > 15) add("atraso", "alta", 10, "compromisos", `Atraso de ${desv} puntos: define un plan de recuperación`, "Con más de 15 puntos de atraso el proyecto difícilmente se recupera solo. Acuerda acciones concretas (más recursos, re-secuenciar, reducir alcance) y déjalas como compromisos con responsable y fecha.", puedeSeg ? { txt: "Crear compromiso", fn: () => formCompromiso(null, p) } : null, desv);
+    if (p.Avance_Planeado !== "" && p.Semaforo) {
+      const v = evmDe(p), s = R.semaforoSugerido(real, plan, v ? v.CPI : null);
+      if ((R.ORDEN_SEM || { Verde: 0, Amarillo: 1, Rojo: 2 })[s.semaforo] > ({ Verde: 0, Amarillo: 1, Rojo: 2 })[p.Semaforo]) add("semaforo", "media", 6, "resumen", `El semáforo está en ${p.Semaforo}, pero los datos indican ${s.semaforo}`, `Con ${desv > 0 ? `${desv} puntos de atraso` : "estos datos"}${v && v.CPI !== null ? ` y CPI ${v.CPI.toFixed(2).replace(".", ",")}` : ""}, la regla de la PMO sugiere ${s.semaforo}. Un semáforo optimista esconde el problema hasta que es tarde para actuar.`, puedeSeg ? { txt: "Registrar seguimiento", fn: () => formSeguimiento(p) } : null, `${p.Semaforo}>${s.semaforo}`);
+    }
+    // 6) Compromisos vencidos
+    const venc = S.datos.Compromisos.filter((c) => c.ID_Proyecto === pid && R.estadoCompromiso(c, hoy) === "Vencido");
+    if (venc.length) add("comp-venc", venc.length >= 3 ? "alta" : "media", venc.length >= 3 ? 12 : 6, "compromisos", `${plural(venc.length, "compromiso vencido", "compromisos vencidos")}`, "Los compromisos vencidos son la primera señal de que el plan no se está cumpliendo. Ciérralos, reprográmalos con justificación o escálalos; y envía el recordatorio al responsable.", { txt: "Ver compromisos", fn: irTab(p, "compromisos") }, venc.length);
+    // 7) Riesgos
+    const rs = S.datos.Riesgos.filter((r) => r.ID_Proyecto === pid && riesgoActivo(r));
+    const sinPlan = rs.filter((r) => !String(r.Plan_Mitigacion || "").trim());
+    if (sinPlan.length) add("riesgo-plan", "media", 6, "riesgos", `${plural(sinPlan.length, "riesgo abierto no tiene", "riesgos abiertos no tienen")} plan de mitigación`, "Un riesgo identificado sin plan es solo una preocupación: la gestión de riesgos exige una acción para reducir la probabilidad o el impacto, con responsable.", puedeSeg ? { txt: "Completar plan", fn: () => formRiesgo(p, sinPlan[0]) } : { txt: "Ver riesgos", fn: irTab(p, "riesgos") }, sinPlan.length);
+    else if (!rs.length && real >= 5 && real < 95) add("sin-riesgos", "baja", 4, "riesgos", "No hay riesgos abiertos registrados", "Todo proyecto en ejecución tiene riesgos (proveedores, recursos, dependencias, cambios normativos). Revisarlos periódicamente con el equipo evita sorpresas.", puedeSeg ? { txt: "Registrar riesgo", fn: () => formRiesgo(p) } : null);
+    // 8) Bloqueo que se repite en las sesiones → riesgo
+    const conBloq = R.seguimientosDe(pid, S.datos.Seguimientos).filter((s) => String(s.Bloqueos || "").trim()).slice(-2);
+    if (conBloq.length === 2 && parecidos(conBloq[0].Bloqueos, conBloq[1].Bloqueos)) {
+      const yaRiesgo = S.datos.Riesgos.some((r) => r.ID_Proyecto === pid && (parecidos(r.Descripcion, conBloq[1].Bloqueos) || (r.Fecha_Identificacion && r.Fecha_Identificacion >= conBloq[0].Fecha_Corte)));
+      if (!yaRiesgo) add("bloqueo-riesgo", "alta", 10, "riesgos", "Un bloqueo se repite en las últimas dos sesiones: conviértelo en riesgo", `«${corta(conBloq[1].Bloqueos, 120)}». Si un bloqueo persiste, ya no es un tema de la semana: amenaza las fechas y debe gestionarse como riesgo con plan y dueño, y escalarse si no depende del equipo.`, puedeSeg ? { txt: "Crear riesgo", fn: () => abrirRiesgoDesde(p, conBloq[1].Bloqueos, conBloq[1].ID_Seguimiento) } : null, conBloq[1].ID_Seguimiento);
+    }
+    // 9) Hitos
+    const hs = (S.datos.Hitos || []).filter((h) => h.ID_Proyecto === pid && h.Estado !== "Cumplido" && !h.Fecha_Real && h.Fecha_Plan);
+    const hVenc = hs.filter((h) => h.Fecha_Plan < hoy), hProx = hs.filter((h) => h.Fecha_Plan >= hoy && R.difDias(h.Fecha_Plan, hoy) <= 7);
+    if (hVenc.length) add("hitos-venc", "alta", 10, "hitos", `${plural(hVenc.length, "hito pasó", "hitos pasaron")} su fecha sin cumplirse`, `${hVenc.slice(0, 2).map((h) => `«${h.Hito}» (${fecha(h.Fecha_Plan)})`).join(", ")}. Marca la fecha real si ya se cumplió o define la nueva fecha; si mueve el fin del proyecto, requiere control de cambios.`, { txt: "Ver hitos", fn: irTab(p, "hitos") }, hVenc.map((h) => h.ID_Hito).join(","));
+    else if (hProx.length) add("hitos-prox", "baja", 0, "hitos", `Hito en los próximos 7 días: «${corta(hProx[0].Hito, 60)}» (${fecha(hProx[0].Fecha_Plan)})`, "Confirma con el equipo que el hito llega a tiempo y que sus entregables están listos; si no, anticípalo en el seguimiento.", { txt: "Ver hitos", fn: irTab(p, "hitos") }, hProx[0].ID_Hito);
+    // 10) Cierre y lecciones
+    if (real >= 100 && p.Fase !== "Cierre") add("cierre", "media", 4, "resumen", "El avance llegó a 100%: pasa el proyecto a la fase de Cierre", "Al terminar la ejecución corresponde el cierre formal: entrega y aceptación, liberación del equipo, lecciones aprendidas y cierre administrativo.", puedeEd ? { txt: "Editar proyecto", fn: () => formProyecto(p) } : null);
+    if (p.Fase === "Cierre" && !leccionesDe(pid).length) add("lecciones", "media", 4, "lecciones", "Registra las lecciones aprendidas", "El cierre formal incluye lecciones aprendidas: es lo que evita repetir errores en los próximos proyectos.", puedeEd ? { txt: "Registrar lección", fn: () => formLeccion(p) } : null);
+    // 11) Sesiones agendadas
+    if (agendaDe(pid).some((a) => a.Activa !== "No")) {
+      const C = cumplimiento(pid, R.sumarDias(hoy, -30), hoy), meta = metaDe(p);
+      if (C.total >= 3 && C.pct < meta) add("sesiones", C.pct < meta - 20 ? "alta" : "media", C.pct < meta - 20 ? 8 : 5, "seguimientos", `Cumplimiento de sesiones ${C.pct}% (meta ${meta}%)`, `En los últimos 30 días ${C.no} sesión(es) no se hicieron y ${C.pend} no se marcaron. La cadencia de reuniones es la que mantiene al equipo alineado; si la agenda no se puede cumplir, ajústala.`, { txt: "Ver sesiones", fn: irTab(p, "seguimientos") }, C.pct);
+    } else if (esAgil(p)) add("daily", "baja", 4, "seguimientos", "Configura la daily y las ceremonias del proyecto", "En un proyecto ágil la daily, la planning, la review y la retro son el ritmo del equipo. Agéndalas en «Sesiones del proyecto» para marcar si se hacen y medir su cumplimiento.", { txt: "Ir a sesiones", fn: irTab(p, "seguimientos") });
+    // 12) Datos básicos
+    const falta = [["Fecha_Fin_Plan", "fin planeado"], ["Presupuesto", "presupuesto"], ["Codigo_Almera", "código Almera"], ["Metodologia", "metodología"], ["Dedicacion_PM", "dedicación del PM"]].filter(([k]) => p[k] === "" || p[k] === undefined || p[k] === null).map(([, t]) => t);
+    if (falta.length) add("datos", "baja", Math.min(6, falta.length * 2), "resumen", `Completa los datos del proyecto: ${falta.join(", ")}`, "Con los datos completos el proyecto aparece bien en los informes, la curva S, la capacidad del equipo y los filtros del portafolio.", puedeEd ? { txt: "Editar proyecto", fn: () => formProyecto(p) } : null, falta.join(","));
+    if (!(S.datos.Stakeholders || []).some((x) => x.ID_Proyecto === pid && /sponsor|patrocinador/i.test(x.Rol || ""))) add("sponsor", "baja", 3, "resumen", "El proyecto no tiene sponsor registrado", "El sponsor es quien toma las decisiones que superan al PM (alcance, presupuesto, prioridades). Tenerlo identificado agiliza el escalamiento.", { txt: "Ir al resumen", fn: irTab(p, "resumen") });
+    return out;
+  }
+
+  // Recomendaciones vigentes (sin las descartadas o marcadas como hechas recientemente).
+  const recsGuardadas = () => S.datos.Recomendaciones || [];
+  function oculta(r, hoy) {
+    return recsGuardadas().some((g) => g.ID_Proyecto === r.pid && g.Clave === r.id && (
+      (g.Estado === "Descartada" && String(g.Huella || "") === r.huella) ||
+      (g.Estado === "Hecha" && String(g.Huella || "") === r.huella && R.difDias(hoy, String(g.Fecha).slice(0, 10)) < 7)));
+  }
+  let PMO_CACHE = null;
+  function analisisPMO(p) {
+    const hoy = R.hoyISO();
+    if (!PMO_CACHE || PMO_CACHE.hoy !== hoy || PMO_CACHE.datos !== S.datos || PMO_CACHE.v !== (S.pmoVer || 0)) PMO_CACHE = { hoy, datos: S.datos, v: S.pmoVer || 0, m: new Map() };
+    if (PMO_CACHE.m.has(p.ID_Proyecto)) return PMO_CACHE.m.get(p.ID_Proyecto);
+    const todas = revisarProyecto(p, hoy);
+    const recs = todas.filter((r) => !oculta(r, hoy)).sort((a, b) => SEV[a.sev] - SEV[b.sev] || b.peso - a.peso);
+    // El puntaje no cambia al descartar: mide el estado real del proyecto.
+    const puntaje = p.Estado === "Activo" ? Math.max(0, 100 - todas.reduce((s, r) => s + r.peso, 0)) : null;
+    const res = { p, recs, puntaje, nivel: puntaje === null ? "" : puntaje >= 80 ? "bien" : puntaje >= 55 ? "medio" : "mal" };
+    PMO_CACHE.m.set(p.ID_Proyecto, res);
+    return res;
+  }
+  const invalidarPMO = () => { S.pmoVer = (S.pmoVer || 0) + 1; };
+  const chipSalud = (a, clic) => (a.puntaje === null ? `<span class="sub">—</span>` : `<button type="button" class="salud ${a.nivel}" ${clic ? `data-pmo-abrir="${esc(a.p.ID_Proyecto)}"` : "tabindex=\"-1\""} title="Salud según el Analista PMO${a.recs.length ? ` · ${plural(a.recs.length, "recomendación", "recomendaciones")}` : ""}">${a.puntaje}</button>`);
+  const proyectosAnalista = () => visibles().filter((p) => p.Estado === "Activo" || ["Cerrado", "Cancelado"].includes(p.Estado));
+  const recsPortafolio = () => proyectosAnalista().flatMap((p) => analisisPMO(p).recs).sort((a, b) => SEV[a.sev] - SEV[b.sev] || b.peso - a.peso);
+  // Para la lista del portafolio: máximo 2 por proyecto, para que no la llene un solo tipo de alerta.
+  const variadas = (recs, n) => { const c = new Map(), out = []; recs.forEach((r) => { const k = c.get(r.pid) || 0; if (k < 2 && out.length < n) { c.set(r.pid, k + 1); out.push(r); } }); return out; };
+  const buscarRec = (key) => { const [pid] = key.split("|"); const p = proyecto(pid); return p ? analisisPMO(p).recs.find((r) => r.key === key) : null; };
+
+  // Los seguimientos vencidos se agrupan en un solo bloque (si no, llenan la lista del portafolio).
+  function bloqueSeg(recs) {
+    const l = recs.filter((r) => r.id === "seg");
+    if (!l.length) return "";
+    return `<div class="pmo-rec alta pmo-segs"><b>${plural(l.length, "proyecto con el seguimiento vencido", "proyectos con el seguimiento vencido")}</b>
+      <div class="pmo-acc">${l.map((r) => `<button type="button" class="btn chico" ${r.accion ? `data-pmo-acc="${esc(r.key)}"` : `data-pmo-ver="${esc(r.pid)}"`} title="${esc(r.titulo)}">${esc(corta((proyecto(r.pid) || {}).Nombre, 28))}</button>`).join("")}</div></div>`;
+  }
+  function itemRec(r, conProyecto) {
+    const p = proyecto(r.pid) || {}, puede = R.puedeEditar(S.usuario, p, "seguimiento");
+    return `<li class="pmo-rec ${r.sev}">
+      <div class="pmo-rec-t"><span class="pmo-sev" title="${SEV_TXT[r.sev]}"></span><div><b>${esc(r.titulo)}</b>${conProyecto ? `<div class="sub">${esc(p.Nombre)}</div>` : ""}</div></div>
+      <details class="pmo-porque"><summary>¿Por qué?</summary><p>${esc(r.porque)}</p></details>
+      <div class="pmo-acc">${r.accion ? `<button type="button" class="btn chico primario" data-pmo-acc="${esc(r.key)}">${esc(r.accion.txt)}</button>` : ""}
+        ${puede ? `<button type="button" class="btn chico" data-pmo-hecha="${esc(r.key)}" title="Ya lo hiciste: se oculta 7 días; si la situación sigue, vuelve a aparecer">✓ Hecha</button><button type="button" class="btn chico enlace" data-pmo-desc="${esc(r.key)}" title="No aplica: se oculta mientras la situación no cambie">Descartar</button>` : ""}</div></li>`;
+  }
+  // Pistas dentro de la ficha: lo que corresponde a la pestaña que estás viendo.
+  function pistasPMO(p, tab) {
+    const recs = analisisPMO(p).recs.filter((r) => r.tab === tab && r.sev !== "baja" && !/^seg/.test(r.id)).slice(0, 2);   // el seguimiento vencido ya tiene su aviso en la ficha
+    return recs.map((r) => `<div class="pmo-pista ${r.sev}"><span class="pmo-ico" aria-hidden="true">✦</span><span class="pmo-pista-t"><b>Analista PMO:</b> ${esc(r.titulo)}. <button type="button" class="btn enlace" data-pmo-porque="${esc(r.key)}">¿Por qué?</button></span>
+      ${r.accion ? `<button type="button" class="btn chico" data-pmo-acc="${esc(r.key)}">${esc(r.accion.txt)}</button>` : ""}</div>`).join("");
+  }
+  // Tarjeta del dashboard: lo más importante de la semana.
+  function cardAnalistaPMO() {
+    const recs = recsPortafolio(), top = variadas(recs.filter((r) => r.sev !== "baja" && r.id !== "seg"), 5);
+    const ps = proyectosAnalista().filter((p) => p.Estado === "Activo").map(analisisPMO).filter((a) => a.puntaje !== null);
+    if (!ps.length) return "";
+    const prom = Math.round(ps.reduce((s, a) => s + a.puntaje, 0) / ps.length), bajos = ps.filter((a) => a.nivel === "mal").length;
+    return `<div class="card pmo-card"><div class="titulo-fila"><h2><span class="pmo-ico" aria-hidden="true">✦</span> Analista PMO</h2><button class="btn chico" data-pmo-abrir="">Abrir analista</button></div>
+      <p class="sub">Salud promedio <b>${prom}/100</b> en ${plural(ps.length, "proyecto activo", "proyectos activos")}${bajos ? ` · <span class="texto-rojo">${bajos} con salud baja</span>` : ""} · ${plural(recs.length, "recomendación", "recomendaciones")} en total.</p>
+      ${bloqueSeg(recs)}${top.length ? `<ul class="pmo-lista">${top.map((r) => itemRec(r, true)).join("")}</ul>` : vacio("Sin recomendaciones importantes esta semana. 👏")}</div>`;
+  }
+  // Panel lateral: portafolio o el proyecto que estás viendo.
+  function panelPMO() {
+    let pan = $("#pmo-panel");
+    const bp = $("#b-pmo"); if (bp) bp.classList.toggle("activo", !!S.pmoAbierto);
+    if (!S.pmoAbierto) { if (pan) pan.remove(); document.body.classList.remove("con-pmo"); return; }
+    if (!pan) { pan = document.createElement("aside"); pan.id = "pmo-panel"; pan.setAttribute("aria-label", "Analista PMO"); document.body.appendChild(pan); }
+    document.body.classList.add("con-pmo");
+    const pid = S.pmoPid !== undefined && S.pmoPid !== null ? S.pmoPid : S.vista === "ficha" ? S.pid : "";
+    const p = pid ? proyecto(pid) : null;
+    let cuerpo;
+    if (p) {
+      const a = analisisPMO(p);
+      const filtro = S.pmoSev || "todas", lista = a.recs.filter((r) => filtro === "todas" || r.sev === filtro);
+      cuerpo = `<div class="pmo-ctx"><div><div class="sub">Proyecto</div><b>${esc(p.Nombre)}</b><div class="sub">${esc(p.Metodologia || "")}${esAgil(p) ? " · modo ágil" : ""} · PM ${esc(nombreUsuario(p.PM))}</div></div>${a.puntaje !== null ? `<div class="pmo-score ${a.nivel}"><b>${a.puntaje}</b><span>de 100</span></div>` : ""}</div>
+        ${S.vista !== "ficha" || S.pid !== p.ID_Proyecto ? `<button type="button" class="btn chico" data-pmo-ir="${esc(p.ID_Proyecto)}">Abrir el proyecto</button> ` : ""}<button type="button" class="btn chico enlace" data-pmo-ver="">← Todo el portafolio</button>
+        <div class="pmo-filtro">${[["todas", "Todas"], ["alta", "Alta"], ["media", "Media"], ["baja", "Sugerencias"]].map(([k, t]) => `<button type="button" class="${filtro === k ? "activa" : ""}" data-pmo-sev="${k}">${t} <span>${k === "todas" ? a.recs.length : a.recs.filter((r) => r.sev === k).length}</span></button>`).join("")}</div>
+        ${lista.length ? `<ul class="pmo-lista">${lista.map((r) => itemRec(r, false)).join("")}</ul>` : vacio(a.recs.length ? "Nada en esta prioridad." : "Este proyecto está al día con las buenas prácticas de la PMO. 👏")}`;
+    } else {
+      const as = proyectosAnalista().filter((x) => x.Estado === "Activo").map(analisisPMO).sort((x, y) => x.puntaje - y.puntaje);
+      const recs = recsPortafolio(), altas = recs.filter((r) => r.sev === "alta");
+      cuerpo = `<div class="pmo-ctx"><div><div class="sub">${R.puede(S.usuario, "verTodo") ? "Portafolio" : "Tus proyectos"}</div><b>${plural(as.length, "proyecto activo", "proyectos activos")}</b><div class="sub">${plural(altas.length, "recomendación de prioridad alta", "recomendaciones de prioridad alta")}</div></div></div>
+        <div class="form-seccion">Salud por proyecto</div>
+        ${as.length ? `<ul class="pmo-proys">${as.map((a) => `<li><button type="button" data-pmo-ver="${esc(a.p.ID_Proyecto)}"><span class="salud ${a.nivel}">${a.puntaje}</span><span class="pmo-pn">${esc(a.p.Nombre)}<span class="sub">${esc(nombreUsuario(a.p.PM))} · ${plural(a.recs.length, "recomendación", "recomendaciones")}</span></span><span aria-hidden="true">›</span></button></li>`).join("")}</ul>` : vacio("No hay proyectos activos.")}
+        <div class="form-seccion">Lo primero que haría esta semana</div>
+        ${bloqueSeg(recs)}${recs.length ? `<ul class="pmo-lista">${(variadas(recs.filter((r) => r.sev !== "baja" && r.id !== "seg"), 8).length ? variadas(recs.filter((r) => r.sev !== "baja" && r.id !== "seg"), 8) : recs.filter((r) => r.id !== "seg").slice(0, 5)).map((r) => itemRec(r, true)).join("")}</ul>` : vacio("Todo al día. 👏")}`;
+    }
+    pan.innerHTML = `<div class="pmo-cab"><h2><span class="pmo-ico" aria-hidden="true">✦</span> Analista PMO</h2><button type="button" class="btn enlace" id="pmo-cerrar" aria-label="Cerrar el analista">✕</button></div>
+      <div class="pmo-cuerpo">${cuerpo}<p class="sub pmo-nota">Revisión con reglas de buenas prácticas de la PMO (sin IA). Las recomendaciones descartadas no vuelven mientras la situación no cambie.</p></div>`;
+    $("#pmo-cerrar").addEventListener("click", () => { S.pmoAbierto = false; S.pmoPid = null; panelPMO(); });
+    enlazarPMO(pan);
+  }
+  function abrirPMO(pid) { S.pmoAbierto = true; S.pmoPid = pid === undefined ? null : pid; panelPMO(); }
+  async function marcarRec(r, estado, motivo) {
+    await guardar(async () => {
+      const L = recsGuardadas();
+      await S.api.agregarFila("Recomendaciones", { ID_Rec: `REC-${String(L.reduce((m, x) => Math.max(m, parseInt(String(x.ID_Rec).slice(4), 10) || 0), 0) + 1).padStart(5, "0")}`,
+        ID_Proyecto: r.pid, Clave: r.id, Huella: r.huella, Titulo: r.titulo, Estado: estado, Motivo: motivo || "", Fecha: R.hoyISO(), Registrado_Por: S.usuario.Correo });
+      invalidarPMO();
+    }, estado === "Hecha" ? "Marcada como hecha" : "Recomendación descartada");
+  }
+  function enlazarPMO(el) {
+    el.querySelectorAll("[data-pmo-abrir]").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); abrirPMO(b.dataset.pmoAbrir || (S.vista === "ficha" ? S.pid : "")); }));
+    el.querySelectorAll("[data-pmo-ver]").forEach((b) => b.addEventListener("click", () => { S.pmoPid = b.dataset.pmoVer; S.pmoSev = "todas"; panelPMO(); }));
+    el.querySelectorAll("[data-pmo-ir]").forEach((b) => b.addEventListener("click", () => { S.fichaTab = "resumen"; S.pmoPid = null; ir("ficha", b.dataset.pmoIr); }));
+    el.querySelectorAll("[data-pmo-sev]").forEach((b) => b.addEventListener("click", () => { S.pmoSev = b.dataset.pmoSev; panelPMO(); }));
+    el.querySelectorAll("[data-pmo-acc]").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); const r = buscarRec(b.dataset.pmoAcc); if (r && r.accion) r.accion.fn(); }));
+    el.querySelectorAll("[data-pmo-porque]").forEach((b) => b.addEventListener("click", () => { const r = buscarRec(b.dataset.pmoPorque); if (r) modalInfo(r.titulo, `<p>${esc(r.porque)}</p>${r.accion ? `<p><button type="button" class="btn primario" id="pmo-mi-acc">${esc(r.accion.txt)}</button></p>` : ""}`, (m) => { const x = m.querySelector("#pmo-mi-acc"); if (x) x.addEventListener("click", () => { cerrarModal(); r.accion.fn(); }); }); }));
+    el.querySelectorAll("[data-pmo-hecha]").forEach((b) => b.addEventListener("click", () => { const r = buscarRec(b.dataset.pmoHecha); if (r) marcarRec(r, "Hecha"); }));
+    el.querySelectorAll("[data-pmo-desc]").forEach((b) => b.addEventListener("click", () => {
+      const r = buscarRec(b.dataset.pmoDesc); if (!r) return;
+      modal("Descartar recomendación", [{ html: `<p><b>${esc(r.titulo)}</b></p><p class="sub">${esc((proyecto(r.pid) || {}).Nombre || "")}. No vuelve a aparecer mientras la situación no cambie; queda registrada con tu motivo para la PMO.</p>` },
+        { k: "Motivo", label: "¿Por qué no aplica?", tipo: "textarea", placeholder: "Ej.: el sponsor aprobó el cambio por correo; se formaliza en el próximo comité" }], {},
+        (fd) => marcarRec(r, "Descartada", fd.Motivo), (fd) => (String(fd.Motivo || "").trim().length < 5 ? "Escribe brevemente el motivo." : ""), { textoBoton: "Descartar" });
+    }));
   }
 
   // ---------- Enlaces comunes (se llaman al final de cada render) ----------
