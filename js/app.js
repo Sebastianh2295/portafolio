@@ -1041,9 +1041,21 @@
     return { para, mensaje, href: enlaceTeams(para, mensaje, tema) };
   }
   // Abre un chat de Teams y deja el mensaje en el portapapeles (por si Teams no lo prellena).
+  // Copia al portapapeles; dentro de Excel el portapapeles moderno suele estar bloqueado, así que se usa el método clásico como respaldo.
+  async function copiarTexto(t) {
+    try { await navigator.clipboard.writeText(t); return true; } catch (e) { /* sigue con el respaldo */ }
+    const x = document.createElement("textarea");
+    x.value = t; x.setAttribute("readonly", ""); x.style.position = "fixed"; x.style.top = "-1000px"; x.style.opacity = "0";
+    document.body.appendChild(x); x.select(); x.setSelectionRange(0, t.length);
+    let ok = false; try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+    x.remove();
+    return ok;
+  }
+  // Copia el mensaje ANTES de abrir Teams (después la ventana pierde el foco y ya no se puede copiar).
   async function abrirTeams(href, mensaje) {
-    if (mensaje) { try { await navigator.clipboard.writeText(mensaje); } catch (e) { /* sin portapapeles */ } }
+    const ok = mensaje ? await copiarTexto(mensaje) : false;
     const a = document.createElement("a"); a.href = href; a.target = "_blank"; a.rel = "noopener"; document.body.appendChild(a); a.click(); a.remove();
+    return ok;
   }
   // Candidatos a copia: lista fija (Catálogos), PM y stakeholders de los proyectos involucrados.
   function candidatosCopia(items) {
@@ -1069,7 +1081,7 @@
         <div class="titulo-fila"><h2 id="rc-tit">Recordatorio</h2><button class="btn enlace" id="rc-x" aria-label="Cerrar">✕</button></div>
         <div class="rc-canal" role="tablist" aria-label="Enviar por"><button type="button" role="tab" data-canal="teams">💬 Chat de Teams</button><button type="button" role="tab" data-canal="correo">✉ Correo (Outlook)</button></div>
         <div id="rc-teams"><div class="rec-dest"><b>Chat con:</b> ${para.length ? para.map((c) => `<span class="chip-mail">${esc(c)}</span>`).join(" ") : `<span class="baja">El responsable no tiene correo registrado: se abrirá Teams para que lo busques y pegues el mensaje.</span>`}</div>
-          <p class="sub">${para.length > 1 ? "Se abre un chat grupal con los responsables. " : ""}El mensaje queda escrito en el chat y también copiado: si Teams no lo muestra, pégalo con Ctrl+V.</p>
+          <p class="sub">${para.length > 1 ? "Se abre un chat grupal con los responsables. " : ""}El mensaje se copia al abrir el chat: en Teams solo tienes que pegarlo con Ctrl+V (a veces Teams ya lo deja escrito).</p>
           <details class="rec-prev" open><summary>Vista previa del mensaje</summary><pre id="rc-msg"></pre></details></div>
         <div id="rc-correo">
         <div class="rec-dest"><b>Para:</b> ${para.length ? para.map((c) => `<span class="chip-mail">${esc(c)}</span>`).join(" ") : `<span class="baja">El responsable no tiene correo registrado: escríbelo en Outlook.</span>`}</div>
@@ -1102,18 +1114,26 @@
       o.querySelector("#rc-cancelar").addEventListener("click", () => cerrar(null));
       o.addEventListener("keydown", (e) => { if (e.key === "Escape") cerrar(null); });
       o.querySelector("#rc-copiar").addEventListener("click", async () => {
-        if (canal === "teams") { try { await navigator.clipboard.writeText(tm.mensaje); toast("Mensaje copiado: pégalo en el chat de Teams"); } catch (e) { o.querySelector("#rc-err").textContent = "No se pudo copiar automáticamente; selecciona el texto de la vista previa."; } return; }
+        if (canal === "teams") { if (await copiarTexto(tm.mensaje)) toast("Mensaje copiado: pégalo en el chat de Teams"); else o.querySelector("#rc-err").textContent = "No se pudo copiar automáticamente; selecciona el texto de la vista previa."; return; }
         const m = previa();
         try { await navigator.clipboard.writeText(`Para: ${m.para.join("; ")}\nCC: ${m.cc.join("; ")}\nAsunto: ${m.asunto}\n\n${m.cuerpo}`); toast("Texto copiado: pégalo en un correo nuevo"); }
         catch (e) { o.querySelector("#rc-err").textContent = "No se pudo copiar automáticamente; selecciona el texto de la vista previa."; }
       });
       o.querySelector("#rc-abrir").addEventListener("click", async () => {
         if (canal === "teams") {
-          await abrirTeams(tm.href, tm.mensaje);
-          o.querySelector(".rec-caja").innerHTML = `<div class="titulo-fila"><h2>💬 ¿Enviaste el mensaje?</h2></div>
-            <p>Se abrió el chat en Teams${tm.para.length ? ` con ${esc(tm.para.join(", "))}` : ""}. El mensaje también quedó copiado: si no aparece escrito, pégalo con Ctrl+V. Cuando lo envíes, confírmalo aquí para dejar constancia en el compromiso.</p>
-            <div class="acciones derecha"><button class="btn" id="rc-no">No lo envié</button><button class="btn" id="rc-otra">Volver a abrir Teams</button><button class="btn primario" id="rc-si">Sí, lo envié</button></div>`;
+          const copiado = await abrirTeams(tm.href, tm.mensaje);
+          o.querySelector(".rec-caja").innerHTML = `<div class="titulo-fila"><h2>💬 Pega el mensaje en Teams</h2></div>
+            <div class="rc-pasos"><div><b>1.</b> Se abrió el chat${tm.para.length ? ` con <b>${esc(tm.para.join(", "))}</b>` : ""}.</div>
+              <div><b>2.</b> ${copiado ? `<span class="rc-ok">✓ El mensaje ya está copiado.</span> Si Teams no lo dejó escrito, haz clic en «Escriba un mensaje» y pega con <kbd>Ctrl</kbd>+<kbd>V</kbd>.` : `Copia el mensaje con el botón de abajo y pégalo en Teams con <kbd>Ctrl</kbd>+<kbd>V</kbd>.`}</div>
+              <div><b>3.</b> Envíalo y confirma aquí para dejar constancia en el compromiso.</div></div>
+            <textarea id="rc-txt" class="rc-txt" rows="7" readonly>${esc(tm.mensaje)}</textarea>
+            <div class="acciones derecha"><button class="btn" id="rc-no">No lo envié</button><button class="btn" id="rc-cp">📋 Copiar mensaje</button><button class="btn" id="rc-otra">Volver a abrir Teams</button><button class="btn primario" id="rc-si">Sí, lo envié</button></div>`;
           o.querySelector("#rc-no").addEventListener("click", () => cerrar(null));
+          o.querySelector("#rc-cp").addEventListener("click", async (ev) => {
+            const ok = await copiarTexto(tm.mensaje);
+            if (!ok) { const t = o.querySelector("#rc-txt"); t.focus(); t.select(); }
+            ev.currentTarget.textContent = ok ? "✓ Copiado" : "Selecciona y copia (Ctrl+C)";
+          });
           o.querySelector("#rc-otra").addEventListener("click", () => abrirTeams(tm.href, tm.mensaje));
           o.querySelector("#rc-si").addEventListener("click", async () => {
             o.remove();

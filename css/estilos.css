@@ -1506,3 +1506,7 @@ body.con-pmo .shell { margin-right: 380px; }
 #rc-msg { white-space: pre-wrap; }
 .lk-teams { text-decoration: none; margin-left: 4px; }
 a.btn { text-decoration: none; display: inline-flex; align-items: center; }
+.rc-pasos { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 10px; }
+.rc-ok { color: var(--verde); font-weight: 600; }
+.rc-txt { font-size: 13px; resize: vertical; margin-bottom: 10px; }
+kbd { border: 1px solid var(--linea); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; font-size: 12px; background: var(--superficie-2); }
