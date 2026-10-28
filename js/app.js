@@ -1018,29 +1018,55 @@
   }
   // Mensaje corto para el chat de Teams (mismo contenido que el correo, en tono de chat).
   const enlaceTeams = (correos, mensaje, tema) => !correos.length ? "https://teams.microsoft.com/" : `https://teams.microsoft.com/l/chat/0/0?users=${encodeURIComponent(correos.join(","))}${tema && correos.length > 1 ? `&topicName=${encodeURIComponent(tema)}` : ""}${mensaje ? `&message=${encodeURIComponent(mensaje)}` : ""}`;
+  // Fechas como se dicen: «hoy», «mañana», «este viernes 30 de octubre», «el 9 de octubre».
+  const MESES_TXT = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+  const DIAS_TXT = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
+  function fechaHablada(iso, hoy = R.hoyISO()) {
+    if (!iso) return "";
+    const [y, m, d] = String(iso).slice(0, 10).split("-").map(Number), dif = R.difDias(iso, hoy);
+    const base = `${d} de ${MESES_TXT[m - 1]}${y !== Number(hoy.slice(0, 4)) ? ` de ${y}` : ""}`;
+    if (dif === 0) return "hoy";
+    if (dif === 1) return "mañana";
+    if (dif > 1 && dif < 7) return `este ${DIAS_TXT[new Date(y, m - 1, d).getDay()]} ${base}`;
+    return `el ${base}`;
+  }
+  // «Gestionar los comentarios del contrato.» → «gestionar los comentarios del contrato»
+  const textoComp = (t) => { const x = String(t || "").replace(/\s+/g, " ").trim().replace(/[.;:]+$/, ""); return /^[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(ar|er|ir)\b/.test(x) ? x.charAt(0).toLowerCase() + x.slice(1) : x; };
+    // Mensaje de chat en tono natural, como lo escribiría el PM (sin viñetas, rayas ni frases de plantilla).
   function mensajeTeams(items) {
-    const cs = items.map((x) => x.c);
+    const cs = items.map((x) => x.c), hoy = R.hoyISO();
     const para = [...new Set(cs.flatMap(correosDe))];
-    const nombres = [...new Set(cs.flatMap((c) => responsablesDe(c).map((x) => (x.r || {}).Nombre || x.Nombre)))];
+    // Solo se saluda por el nombre a personas (del directorio, o nombre y apellido); «Comité», «Proveedor» o un correo no se usan como nombre.
+    const rs = cs.flatMap((c) => responsablesDe(c)).filter((x) => x.Nombre && !esGrupo(x.Nombre));
+    const claves = [...new Set(rs.map((x) => normTxt((x.r || {}).Nombre || x.Nombre)))];
+    const varios = claves.length > 1 || para.length > 1;
+    const esPersona = (x) => !!x.r || /^[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+/.test(String(x.Nombre).trim());
+    const nombres = [...new Set(rs.filter(esPersona).map((x) => String((x.r || {}).Nombre || x.Nombre).trim()).filter((n) => !/^[A-ZÁÉÍÓÚÑ]{2,4}\b/.test(n)).map(pila))].filter(Boolean);   // «PM de prueba» no es un nombre
+    const saludo = !nombres.length ? (varios ? "Hola, ¿cómo van?" : "Hola, ¿cómo vas?")
+      : nombres.length === 1 ? `Hola ${nombres[0]}, ¿cómo vas?`
+      : nombres.length <= 3 ? `Hola ${nombres.slice(0, -1).join(", ")} y ${nombres[nombres.length - 1]}, ¿cómo van?` : "Hola a todos, ¿cómo van?";
     const proys = [...new Set(cs.map((c) => c.ID_Proyecto))].map(proyecto).filter(Boolean);
     const unoP = proys.length === 1 ? proys[0] : null;
-    const vencidos = cs.filter((c) => R.estadoCompromiso(c) === "Vencido").length;
-    const saludo = nombres.length === 1 ? `Hola, ${pila(nombres[0])}.` : "Hola a todos.";
-    const linea = (c) => `• ${c.Compromiso}${unoP ? "" : ` (${(proyecto(c.ID_Proyecto) || {}).Nombre || ""})`} — ${c.Fecha_Compromiso ? `${R.estadoCompromiso(c) === "Vencido" ? "venció el" : "vence el"} ${fecha(c.Fecha_Compromiso)}` : "sin fecha"}`;
-    let intro, lista = cs.map(linea), cola = "";
+    const vencido = (c) => R.estadoCompromiso(c, hoy) === "Vencido";
+    const cuando = (c) => (!c.Fecha_Compromiso ? "" : vencido(c) ? `era para ${fechaHablada(c.Fecha_Compromiso, hoy)}` : `vence ${fechaHablada(c.Fecha_Compromiso, hoy)}`);
+    const v = (sing, plur) => (varios ? plur : sing);   // te/les, cuentas/cuentan…
+    let cuerpo;
     if (cs.length === 1) {
-      const s = sesionDe(cs[0]);
-      intro = `Te escribo para recordarte el compromiso del proyecto ${(unoP || {}).Nombre || ""}${s ? ` que quedó en la sesión del ${fecha(s.Fecha_Corte)}` : ""}:`;
-    } else intro = `Te escribo para recordarte ${cs.length} compromisos pendientes${unoP ? ` del proyecto ${unoP.Nombre}` : ""}${vencidos ? ` (${vencidos} vencido${vencidos > 1 ? "s" : ""})` : ""}:`;
-    const pie = vencidos ? `¿Me confirmas cómo va${cs.length > 1 ? "n" : ""} y una nueva fecha para ${cs.length > 1 ? "los vencidos" : "entregarlo"}? Si hay algún impedimento, lo revisamos juntos. ¡Gracias!`
-      : `¿Me confirmas cómo va${cs.length > 1 ? "n" : ""}? Si ya ${cs.length > 1 ? "están listos" : "está listo"}, compárteme la evidencia para cerrar${cs.length > 1 ? "los" : "lo"} en el próximo seguimiento. ¡Gracias!`;
-    // Teams recibe el mensaje en el enlace: si la lista es muy larga se recorta (el resto va en el correo).
-    while (lista.length > 1 && [saludo, intro, ...lista, pie].join("\n").length > 1400) { lista.pop(); cola = `• … y ${cs.length - lista.length} más`; }
-    const mensaje = [saludo, "", intro, ...lista, ...(cola ? [cola] : []), "", pie].join("\n");
+      const c = cs[0], s = sesionDe(c), t = textoComp(c.Compromiso);
+      const de = `un compromiso${unoP ? ` del proyecto ${unoP.Nombre}` : ""}${s ? ` que quedó en la reunión del ${fechaHablada(s.Fecha_Corte, hoy).replace(/^el /, "")}` : ""}: ${t}.`;
+      cuerpo = vencido(c)
+        ? `${v("Te", "Les")} escribo por ${de} ${c.Fecha_Compromiso ? `Lo teníamos para ${fechaHablada(c.Fecha_Compromiso, hoy)}` : "Sigue abierto"} y no lo veo cerrado. ¿Me ${v("cuentas", "cuentan")} cómo va y para cuándo lo tendríamos?`
+        : `${v("Te", "Les")} recuerdo ${de}${c.Fecha_Compromiso ? ` Vence ${fechaHablada(c.Fecha_Compromiso, hoy)}.` : ""} ¿Cómo va? Si ya está listo, me ${v("compartes", "comparten")} la evidencia y lo cerramos.`;
+    } else {
+      let lista = cs.map((c, k) => `${k + 1}. ${textoComp(c.Compromiso).replace(/^./, (x) => x.toUpperCase())}${unoP ? "" : ` (${(proyecto(c.ID_Proyecto) || {}).Nombre || ""})`}${cuando(c) ? `, ${cuando(c)}` : ""}.`), cola = "";
+      while (lista.length > 1 && lista.join("\n").length > 1100) { lista.pop(); cola = `Y ${cs.length - lista.length} más que te comparto por correo.`; }
+      const nVenc = cs.filter(vencido).length;
+      cuerpo = `${v("Te", "Les")} escribo por unos pendientes${unoP ? ` de ${unoP.Nombre}` : ""}:\n${lista.join("\n")}${cola ? `\n${cola}` : ""}\n\n¿Me ${v("cuentas", "cuentan")} cómo van?${nVenc === 1 ? " Para el que ya se pasó de fecha, ¿para cuándo lo tendríamos?" : nVenc > 1 ? " Para los que ya se pasaron de fecha, ¿para cuándo los tendríamos?" : ""}`;
+    }
+    const mensaje = `${saludo}\n\n${cuerpo}\n\nGracias.`;
     const tema = unoP ? `${unoP.Nombre} · compromisos` : "Compromisos pendientes";
     return { para, mensaje, href: enlaceTeams(para, mensaje, tema) };
   }
-  // Abre un chat de Teams y deja el mensaje en el portapapeles (por si Teams no lo prellena).
   // Copia al portapapeles; dentro de Excel el portapapeles moderno suele estar bloqueado, así que se usa el método clásico como respaldo.
   async function copiarTexto(t) {
     try { await navigator.clipboard.writeText(t); return true; } catch (e) { /* sigue con el respaldo */ }
