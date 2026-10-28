@@ -1497,3 +1497,12 @@ body.con-pmo .shell { margin-right: 380px; }
 .pmo-pista.alta { border-left-color: var(--rojo); }
 .pmo-pista-t { flex: 1; }
 .pmo-card .pmo-lista { margin-top: 6px; }
+
+/* ---------- v99: recordatorios por Teams ---------- */
+.rc-canal { display: flex; gap: 0; margin: 4px 0 12px; border: 1px solid var(--linea); border-radius: var(--radio); overflow: hidden; width: fit-content; }
+.rc-canal button { border: 0; background: var(--superficie); color: var(--texto); padding: 7px 14px; font: inherit; cursor: pointer; }
+.rc-canal button + button { border-left: 1px solid var(--linea); }
+.rc-canal button.activa { background: var(--azul); color: #fff; }
+#rc-msg { white-space: pre-wrap; }
+.lk-teams { text-decoration: none; margin-left: 4px; }
+a.btn { text-decoration: none; display: inline-flex; align-items: center; }

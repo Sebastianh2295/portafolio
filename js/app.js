@@ -1016,6 +1016,35 @@
     const href = `mailto:${para.join(";")}?${cc.length ? `cc=${encodeURIComponent(cc.join(";"))}&` : ""}subject=${encodeURIComponent(asunto)}&body=${encodeURIComponent(cuerpo)}`;
     return { para, cc, asunto, cuerpo, href };
   }
+  // Mensaje corto para el chat de Teams (mismo contenido que el correo, en tono de chat).
+  const enlaceTeams = (correos, mensaje, tema) => !correos.length ? "https://teams.microsoft.com/" : `https://teams.microsoft.com/l/chat/0/0?users=${encodeURIComponent(correos.join(","))}${tema && correos.length > 1 ? `&topicName=${encodeURIComponent(tema)}` : ""}${mensaje ? `&message=${encodeURIComponent(mensaje)}` : ""}`;
+  function mensajeTeams(items) {
+    const cs = items.map((x) => x.c);
+    const para = [...new Set(cs.flatMap(correosDe))];
+    const nombres = [...new Set(cs.flatMap((c) => responsablesDe(c).map((x) => (x.r || {}).Nombre || x.Nombre)))];
+    const proys = [...new Set(cs.map((c) => c.ID_Proyecto))].map(proyecto).filter(Boolean);
+    const unoP = proys.length === 1 ? proys[0] : null;
+    const vencidos = cs.filter((c) => R.estadoCompromiso(c) === "Vencido").length;
+    const saludo = nombres.length === 1 ? `Hola, ${pila(nombres[0])}.` : "Hola a todos.";
+    const linea = (c) => `• ${c.Compromiso}${unoP ? "" : ` (${(proyecto(c.ID_Proyecto) || {}).Nombre || ""})`} — ${c.Fecha_Compromiso ? `${R.estadoCompromiso(c) === "Vencido" ? "venció el" : "vence el"} ${fecha(c.Fecha_Compromiso)}` : "sin fecha"}`;
+    let intro, lista = cs.map(linea), cola = "";
+    if (cs.length === 1) {
+      const s = sesionDe(cs[0]);
+      intro = `Te escribo para recordarte el compromiso del proyecto ${(unoP || {}).Nombre || ""}${s ? ` que quedó en la sesión del ${fecha(s.Fecha_Corte)}` : ""}:`;
+    } else intro = `Te escribo para recordarte ${cs.length} compromisos pendientes${unoP ? ` del proyecto ${unoP.Nombre}` : ""}${vencidos ? ` (${vencidos} vencido${vencidos > 1 ? "s" : ""})` : ""}:`;
+    const pie = vencidos ? `¿Me confirmas cómo va${cs.length > 1 ? "n" : ""} y una nueva fecha para ${cs.length > 1 ? "los vencidos" : "entregarlo"}? Si hay algún impedimento, lo revisamos juntos. ¡Gracias!`
+      : `¿Me confirmas cómo va${cs.length > 1 ? "n" : ""}? Si ya ${cs.length > 1 ? "están listos" : "está listo"}, compárteme la evidencia para cerrar${cs.length > 1 ? "los" : "lo"} en el próximo seguimiento. ¡Gracias!`;
+    // Teams recibe el mensaje en el enlace: si la lista es muy larga se recorta (el resto va en el correo).
+    while (lista.length > 1 && [saludo, intro, ...lista, pie].join("\n").length > 1400) { lista.pop(); cola = `• … y ${cs.length - lista.length} más`; }
+    const mensaje = [saludo, "", intro, ...lista, ...(cola ? [cola] : []), "", pie].join("\n");
+    const tema = unoP ? `${unoP.Nombre} · compromisos` : "Compromisos pendientes";
+    return { para, mensaje, href: enlaceTeams(para, mensaje, tema) };
+  }
+  // Abre un chat de Teams y deja el mensaje en el portapapeles (por si Teams no lo prellena).
+  async function abrirTeams(href, mensaje) {
+    if (mensaje) { try { await navigator.clipboard.writeText(mensaje); } catch (e) { /* sin portapapeles */ } }
+    const a = document.createElement("a"); a.href = href; a.target = "_blank"; a.rel = "noopener"; document.body.appendChild(a); a.click(); a.remove();
+  }
   // Candidatos a copia: lista fija (Catálogos), PM y stakeholders de los proyectos involucrados.
   function candidatosCopia(items) {
     const u = S.usuario, out = [];
@@ -1035,20 +1064,36 @@
       const cand = candidatosCopia(items).filter((x) => !para.some((d) => lc(d) === lc(x.correo)));
       const o = document.createElement("div");
       o.id = "recordatorio";
-      o.innerHTML = `<div class="modal-caja rec-caja" role="dialog" aria-modal="true" aria-label="Recordatorio por correo">
-        <div class="titulo-fila"><h2>✉ Recordatorio por correo</h2><button class="btn enlace" id="rc-x" aria-label="Cerrar">✕</button></div>
+      let canal = leerLocal("pmo_canal_rec", "teams") === "correo" ? "correo" : "teams";
+      o.innerHTML = `<div class="modal-caja rec-caja" role="dialog" aria-modal="true" aria-label="Recordatorio">
+        <div class="titulo-fila"><h2 id="rc-tit">Recordatorio</h2><button class="btn enlace" id="rc-x" aria-label="Cerrar">✕</button></div>
+        <div class="rc-canal" role="tablist" aria-label="Enviar por"><button type="button" role="tab" data-canal="teams">💬 Chat de Teams</button><button type="button" role="tab" data-canal="correo">✉ Correo (Outlook)</button></div>
+        <div id="rc-teams"><div class="rec-dest"><b>Chat con:</b> ${para.length ? para.map((c) => `<span class="chip-mail">${esc(c)}</span>`).join(" ") : `<span class="baja">El responsable no tiene correo registrado: se abrirá Teams para que lo busques y pegues el mensaje.</span>`}</div>
+          <p class="sub">${para.length > 1 ? "Se abre un chat grupal con los responsables. " : ""}El mensaje queda escrito en el chat y también copiado: si Teams no lo muestra, pégalo con Ctrl+V.</p>
+          <details class="rec-prev" open><summary>Vista previa del mensaje</summary><pre id="rc-msg"></pre></details></div>
+        <div id="rc-correo">
         <div class="rec-dest"><b>Para:</b> ${para.length ? para.map((c) => `<span class="chip-mail">${esc(c)}</span>`).join(" ") : `<span class="baja">El responsable no tiene correo registrado: escríbelo en Outlook.</span>`}</div>
         <div class="rec-dest"><b>Con copia a:</b> <span class="sub">desmarca a quien no aplique</span>
           <div class="rec-cc">${cand.map((x, i) => `<label class="check"><input type="checkbox" class="rc-cc" data-i="${i}" checked> ${esc(x.nombre)} <span class="sub">${esc(x.correo)} · ${esc(x.motivo)}</span></label>`).join("") || `<span class="sub">No hay stakeholders con correo ni copia fija. La copia fija se configura en Catálogos.</span>`}</div>
           <input id="rc-otros" placeholder="Otros correos en copia, separados por coma" aria-label="Otros correos en copia"></div>
-        <details class="rec-prev" open><summary>Vista previa del correo</summary><div class="rec-asunto" id="rc-asunto"></div><pre id="rc-cuerpo"></pre></details>
+        <details class="rec-prev" open><summary>Vista previa del correo</summary><div class="rec-asunto" id="rc-asunto"></div><pre id="rc-cuerpo"></pre></details></div>
         <div class="error-campo" id="rc-err"></div>
-        <div class="acciones derecha"><button class="btn" id="rc-copiar" title="Por si Outlook no abre el correo">Copiar texto</button><button class="btn" id="rc-cancelar">Cancelar</button><button class="btn primario" id="rc-abrir">Abrir en Outlook</button></div>
+        <div class="acciones derecha"><button class="btn" id="rc-copiar" title="Por si no se abre">Copiar texto</button><button class="btn" id="rc-cancelar">Cancelar</button><button class="btn primario" id="rc-abrir">Abrir en Outlook</button></div>
       </div>`;
       document.body.appendChild(o);
       const elegidos = () => [...o.querySelectorAll(".rc-cc:checked")].map((c) => cand[Number(c.dataset.i)].correo)
         .concat(String(o.querySelector("#rc-otros").value || "").split(/[,;\s]+/).filter(Boolean));
       const previa = () => { const m = correoRecordatorio(items, elegidos()); o.querySelector("#rc-asunto").textContent = `Asunto: ${m.asunto}${m.cc.length ? `  ·  CC: ${m.cc.length}` : ""}`; o.querySelector("#rc-cuerpo").textContent = m.cuerpo; return m; };
+      const tm = mensajeTeams(items);
+      o.querySelector("#rc-msg").textContent = tm.mensaje;
+      const pintarCanal = () => {
+        o.querySelectorAll("[data-canal]").forEach((b) => { const on = b.dataset.canal === canal; b.classList.toggle("activa", on); b.setAttribute("aria-selected", String(on)); });
+        o.querySelector("#rc-teams").hidden = canal !== "teams"; o.querySelector("#rc-correo").hidden = canal !== "correo";
+        o.querySelector("#rc-abrir").textContent = canal === "teams" ? "Abrir chat en Teams" : "Abrir en Outlook";
+        o.querySelector("#rc-tit").textContent = canal === "teams" ? "💬 Recordatorio por Teams" : "✉ Recordatorio por correo";
+      };
+      o.querySelectorAll("[data-canal]").forEach((b) => b.addEventListener("click", () => { canal = b.dataset.canal; guardarLocal("pmo_canal_rec", canal); pintarCanal(); }));
+      pintarCanal();
       previa();
       o.querySelectorAll(".rc-cc").forEach((c) => c.addEventListener("change", previa));
       o.querySelector("#rc-otros").addEventListener("input", previa);
@@ -1057,11 +1102,28 @@
       o.querySelector("#rc-cancelar").addEventListener("click", () => cerrar(null));
       o.addEventListener("keydown", (e) => { if (e.key === "Escape") cerrar(null); });
       o.querySelector("#rc-copiar").addEventListener("click", async () => {
+        if (canal === "teams") { try { await navigator.clipboard.writeText(tm.mensaje); toast("Mensaje copiado: pégalo en el chat de Teams"); } catch (e) { o.querySelector("#rc-err").textContent = "No se pudo copiar automáticamente; selecciona el texto de la vista previa."; } return; }
         const m = previa();
         try { await navigator.clipboard.writeText(`Para: ${m.para.join("; ")}\nCC: ${m.cc.join("; ")}\nAsunto: ${m.asunto}\n\n${m.cuerpo}`); toast("Texto copiado: pégalo en un correo nuevo"); }
         catch (e) { o.querySelector("#rc-err").textContent = "No se pudo copiar automáticamente; selecciona el texto de la vista previa."; }
       });
-      o.querySelector("#rc-abrir").addEventListener("click", () => {
+      o.querySelector("#rc-abrir").addEventListener("click", async () => {
+        if (canal === "teams") {
+          await abrirTeams(tm.href, tm.mensaje);
+          o.querySelector(".rec-caja").innerHTML = `<div class="titulo-fila"><h2>💬 ¿Enviaste el mensaje?</h2></div>
+            <p>Se abrió el chat en Teams${tm.para.length ? ` con ${esc(tm.para.join(", "))}` : ""}. El mensaje también quedó copiado: si no aparece escrito, pégalo con Ctrl+V. Cuando lo envíes, confírmalo aquí para dejar constancia en el compromiso.</p>
+            <div class="acciones derecha"><button class="btn" id="rc-no">No lo envié</button><button class="btn" id="rc-otra">Volver a abrir Teams</button><button class="btn primario" id="rc-si">Sí, lo envié</button></div>`;
+          o.querySelector("#rc-no").addEventListener("click", () => cerrar(null));
+          o.querySelector("#rc-otra").addEventListener("click", () => abrirTeams(tm.href, tm.mensaje));
+          o.querySelector("#rc-si").addEventListener("click", async () => {
+            o.remove();
+            try { await S.api.agregarFilas("Comentarios", items.map((x) => nuevoComentario(x.c, `Recordatorio enviado por Teams${tm.para.length ? ` a ${tm.para.join(", ")}` : ""}.`))); }
+            catch (e) { toast("No se pudo registrar la constancia: " + e.message, true); }
+            resolver({ ...tm, canal: "teams" });
+          });
+          o.querySelector("#rc-si").focus();
+          return;
+        }
         const otros = String(o.querySelector("#rc-otros").value || "").split(/[,;\s]+/).filter(Boolean);
         const malos = otros.filter((x) => !validoCorreo(x));
         if (malos.length) { o.querySelector("#rc-err").textContent = `Correo no válido: ${malos.join(", ")}`; return; }
@@ -1093,7 +1155,7 @@
       <div><b>${esc(x.c.Compromiso)}</b>${x.mio ? ` <span class="pill tuyo">A tu cargo</span>` : ""}
         <div class="sub">${esc(p.Nombre)} · ${esc(x.c.Responsable || "Sin responsable")} · ${x.c.Fecha_Compromiso ? `${x.e === "Vencido" ? "venció" : "vence"} el ${fecha(x.c.Fecha_Compromiso)}` : "sin fecha"}</div></div>
       <div class="nowrap"><button class="btn chico" data-al-abrir="${esc(x.c.ID_Compromiso)}">Abrir</button>
-        ${puedeComp(x.c) ? `<button class="btn chico" data-al-mail="${esc(x.c.ID_Compromiso)}" ${correo ? `title="Se abrirá un correo a ${esc(correo)}"` : `title="No hay correo del responsable: se abrirá el correo sin destinatario"`}>✉ Recordar</button>` : ""}</div></li>`; };
+        ${puedeComp(x.c) ? `<button class="btn chico" data-al-mail="${esc(x.c.ID_Compromiso)}" ${correo ? `title="Recordar por Teams o por correo a ${esc(correo)}"` : `title="No hay correo del responsable: podrás copiar el mensaje"`}>💬 Recordar</button>` : ""}</div></li>`; };
     // Recordatorio agrupado por responsable
     const porResp = {};
     [...a.vencidos, ...a.pronto].filter((x) => puedeComp(x.c)).forEach((x) => { const k = correoDe(x.c) || x.c.Responsable || "(sin responsable)"; (porResp[k] = porResp[k] || []).push(x); });
@@ -1104,12 +1166,12 @@
     m.innerHTML = `<div class="modal-caja" role="dialog" aria-modal="true" aria-label="Alertas de compromisos">
       <div class="titulo-fila"><h2>🔔 Alertas de compromisos</h2><button class="btn enlace" id="al-cerrar" aria-label="Cerrar">✕</button></div>
       <p class="sub">Compromisos abiertos de tus proyectos que ya vencieron o vencen pronto (cada compromiso define con cuántos días avisar; por defecto ${R.DIAS_COMPROMISO_POR_VENCER}).</p>
-      ${grupos.length ? `<div class="al-grupos"><span class="sub">Un solo correo por responsable:</span> ${grupos.map(([k, v], i) => `<button class="btn chico" data-al-grupo="${i}">✉ ${esc(k.includes("@") ? nombreUsuario(k) : k)} (${v.length})</button>`).join(" ")}</div>` : ""}
+      ${grupos.length ? `<div class="al-grupos"><span class="sub">Un solo mensaje por responsable:</span> ${grupos.map(([k, v], i) => `<button class="btn chico" data-al-grupo="${i}">💬 ${esc(k.includes("@") ? nombreUsuario(k) : k)} (${v.length})</button>`).join(" ")}</div>` : ""}
       <div class="form-seccion">Vencidos <span class="contador rojo">${a.vencidos.length}</span></div>
       ${a.vencidos.length ? `<ul class="alertas">${a.vencidos.map(fila).join("")}</ul>` : vacio("Nada vencido. 👏")}
       <div class="form-seccion">Por vencer <span class="contador">${a.pronto.length}</span></div>
       ${a.pronto.length ? `<ul class="alertas">${a.pronto.map(fila).join("")}</ul>` : vacio("Nada por vencer en los próximos días.")}
-      <p class="sub">«✉ Recordar» abre un correo listo en tu Outlook para el responsable y deja constancia en los comentarios del compromiso.</p>
+      <p class="sub">«💬 Recordar» abre el chat de Teams (o el correo de Outlook) con el mensaje listo para el responsable y deja constancia en los comentarios del compromiso.</p>
     </div>`;
     document.body.appendChild(m);
     $("#al-cerrar").addEventListener("click", () => { cerrarModal(); render(); });
@@ -1119,14 +1181,14 @@
     m.querySelectorAll("[data-al-mail]").forEach((b) => b.addEventListener("click", async () => {
       const r = await enviarRecordatorio([buscar(b.dataset.alMail)]);
       if (!r) return;
-      b.textContent = "✓ Correo abierto"; b.disabled = true;
-      toast(r.para.length ? `Correo listo para ${r.para.join(", ")}` : "Correo abierto: escribe el destinatario (el compromiso no tiene correo del responsable).");
+      b.textContent = r.canal === "teams" ? "✓ Enviado por Teams" : "✓ Correo abierto"; b.disabled = true;
+      toast(r.canal === "teams" ? "Constancia registrada en el compromiso" : r.para.length ? `Correo listo para ${r.para.join(", ")}` : "Correo abierto: escribe el destinatario (el compromiso no tiene correo del responsable).");
     }));
     m.querySelectorAll("[data-al-grupo]").forEach((b) => b.addEventListener("click", async () => {
       const r = await enviarRecordatorio(grupos[Number(b.dataset.alGrupo)][1]);
       if (!r) return;
-      b.textContent = "✓ Correo abierto"; b.disabled = true;
-      toast(`Correo listo para ${r.para.join(", ") || "el responsable"}`);
+      b.textContent = r.canal === "teams" ? "✓ Enviado por Teams" : "✓ Correo abierto"; b.disabled = true;
+      toast(r.canal === "teams" ? "Constancia registrada en los compromisos" : `Correo listo para ${r.para.join(", ") || "el responsable"}`);
     }));
   }
 
@@ -1248,7 +1310,7 @@
         <div class="error-campo" id="d-error" role="alert"></div>
         <div class="acciones derecha">
           <button class="btn" id="d-editar">Editar compromiso</button>
-          ${e !== "Cerrado" ? `<button class="btn" id="d-recordar" title="${esc(correoDe(c) ? `Correo a ${correoDe(c)}` : "Sin correo del responsable")}">✉ Recordar</button>` : ""}
+          ${e !== "Cerrado" ? `<button class="btn" id="d-recordar" title="${esc(correoDe(c) ? `Recordar por Teams o correo a ${correoDe(c)}` : "Sin correo del responsable")}">💬 Recordar</button>` : ""}
           ${e === "Cerrado" ? `<button class="btn" id="d-reabrir">Reabrir</button>` : `${R.estadoBase(c) === "Pendiente" ? `<button class="btn" id="d-encurso">▶ Pasar a En curso</button>` : ""}<button class="btn" id="d-comentar-cerrar">Comentar y cerrar</button>`}
           <button class="btn primario" id="d-comentar">Comentar</button></div>` : `<p class="sub">Solo el PM del proyecto, la PMO o el Admin pueden comentar.</p>`}
     </div>`;
@@ -1336,7 +1398,7 @@
     if ($("#d-encurso")) $("#d-encurso").addEventListener("click", () => accion(txt.value.trim() || "Compromiso en curso.", "En curso", "Compromiso en curso"));
     if ($("#d-reabrir")) $("#d-reabrir").addEventListener("click", () => accion(txt.value.trim() || "Compromiso reabierto.", "Pendiente", "Compromiso reabierto"));
     $("#d-editar").addEventListener("click", () => formCompromiso(c));
-    if ($("#d-recordar")) $("#d-recordar").addEventListener("click", async () => { const r = await enviarRecordatorio([{ c }]); if (!r) return; render(); detalleCompromiso(id); toast("Correo de recordatorio abierto en tu Outlook"); });
+    if ($("#d-recordar")) $("#d-recordar").addEventListener("click", async () => { const r = await enviarRecordatorio([{ c }]); if (!r) return; render(); detalleCompromiso(id); toast(r.canal === "teams" ? "Recordatorio por Teams registrado en el compromiso" : "Correo de recordatorio abierto en tu Outlook"); });
   }
 
   // ---------- Proyectos ----------
@@ -7902,7 +7964,7 @@ ${x.h}</section>`).join("")}
   // Activos, más los inactivos que el proyecto ya tenía (para no perderlos al editar).
   const proveedoresActivos = (actuales) => proveedores().filter((x) => x.Activo !== "No" || idsLista(actuales).includes(x.ID_Proveedor));
   const stakeholdersDe = (pid) => (S.datos.Stakeholders || []).filter((x) => x.ID_Proyecto === pid);
-  const contacto = (correo, tel) => [correo ? `<a href="mailto:${esc(correo)}">${esc(correo)}</a>` : "", tel ? esc(tel) : ""].filter(Boolean).join("<br>") || "—";
+  const contacto = (correo, tel) => [correo ? `<a href="mailto:${esc(correo)}">${esc(correo)}</a> <a class="lk-teams" href="${esc(enlaceTeams([correo]))}" target="_blank" rel="noopener" title="Abrir chat de Teams">💬</a>` : "", tel ? esc(tel) : ""].filter(Boolean).join("<br>") || "—";
 
   // El PM puede estar también en el equipo (stakeholders): su dedicación es UNA sola (Proyectos.Dedicacion_PM)
   // y se replica en su fila de stakeholder, para que no se sume dos veces en la capacidad.
@@ -7933,7 +7995,9 @@ ${x.h}</section>`).join("")}
     const lista = stakeholdersDe(p.ID_Proyecto).sort((a, b) => orden(a.Rol) - orden(b.Rol) || String(a.Nombre).localeCompare(String(b.Nombre), "es"));
     const faltan = roles.filter((r) => !lista.some((x) => x.Rol === r));
     const provs = idsLista(p.Proveedores).map(proveedor).filter(Boolean);
-    return `<div class="card"><div class="titulo-fila"><h2>Stakeholders y proveedores</h2>${puede ? `<button class="btn" id="b-stk">+ Stakeholder</button>` : ""}</div>
+    const correosEq = [...new Set([p.PM, ...lista.map((x) => x.Correo)].map((x) => String(x || "").trim()).filter((x) => validoCorreo(x) && lc(x) !== lc(S.usuario.Correo)))];
+    const chatEq = correosEq.length ? `<a class="btn" href="${esc(enlaceTeams(correosEq, "", `Proyecto ${p.Nombre}`))}" target="_blank" rel="noopener" title="Abre un chat grupal de Teams con: ${esc(correosEq.join(", "))}">💬 Chat con el equipo</a>` : "";
+    return `<div class="card"><div class="titulo-fila"><h2>Stakeholders y proveedores</h2><div class="acciones">${chatEq}${puede ? `<button class="btn" id="b-stk">+ Stakeholder</button>` : ""}</div></div>
       ${faltan.length ? `<div class="faltan-stk"><span class="sub">Sin asignar:</span> ${faltan.map((r) => puede ? `<button class="btn chico" data-rol-stk="${esc(r)}">+ ${esc(r)}</button>` : `<span class="pill noaplica">${esc(r)}</span>`).join(" ")}</div>` : ""}
       <div class="tabla-scroll"><table><thead><tr><th>Rol</th><th>Nombre</th><th>Cargo / área</th><th>Empresa</th><th>Contacto</th><th>Dedicación</th><th></th></tr></thead>
         <tbody><tr class="fila-pm"><td><b>PM</b></td><td>${persona(nombreUsuario(p.PM))}</td><td>Gerente del proyecto</td><td>Interno</td><td>${contacto(p.PM, "")}</td>
